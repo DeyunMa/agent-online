@@ -14,7 +14,7 @@ app.use("*", async (c, next) => {
 
 app.get("/api/health", (c) =>
   c.json({
-    name: "pi-online",
+    name: "agent-online",
     requestId: c.get("requestId"),
     status: "ok",
   }),

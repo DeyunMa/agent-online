@@ -7,6 +7,7 @@
 !.env.example
 .wrangler/
 .playwright-cli/
+.serena/
 
 # Dependencies and build output
 node_modules/

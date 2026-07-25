@@ -1,5 +1,5 @@
 export type HealthResponse = {
-  name: "pi-online";
+  name: "agent-online";
   requestId: string;
   status: "ok";
 };

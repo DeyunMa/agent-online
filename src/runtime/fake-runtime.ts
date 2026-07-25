@@ -1,7 +1,8 @@
 import type {
   CreateLeaseInput,
-  RuntimeEvent,
   RuntimeHandle,
+  SandboxCommand,
+  SandboxProcessEvent,
   SandboxRuntime,
   WorkspaceArtifact,
   WorkspaceRevision,
@@ -22,12 +23,20 @@ export class FakeSandboxRuntime implements SandboxRuntime {
     this.assertHandle(handle);
   }
 
-  async *startPi(handle: RuntimeHandle, _input: { runId: string }): AsyncIterable<RuntimeEvent> {
+  async *execute(handle: RuntimeHandle, command: SandboxCommand): AsyncIterable<SandboxProcessEvent> {
     this.assertHandle(handle);
     const sandboxLeaseId = handle.id.replace(/^fake-/, "");
-    yield { sandboxLeaseId, type: "pi.started" };
-    yield { sandboxLeaseId, tool: "read", type: "tool.started" };
-    yield { sandboxLeaseId, type: "pi.completed" };
+    const processId = `fake-process-${command.runId}`;
+    const invocation = [command.command, ...command.args].join(" ");
+
+    yield { processId, sandboxLeaseId, type: "process.started" };
+    yield {
+      chunk: `Started ${invocation} in ${command.cwd}`,
+      sandboxLeaseId,
+      stream: "stdout",
+      type: "process.output",
+    };
+    yield { exitCode: 0, sandboxLeaseId, type: "process.completed" };
   }
 
   async checkpoint(handle: RuntimeHandle, _reason: "idle" | "manual" | "run-finished"): Promise<WorkspaceArtifact> {

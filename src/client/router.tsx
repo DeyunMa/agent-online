@@ -8,7 +8,7 @@ async function getHealth(): Promise<HealthResponse> {
   const response = await fetch("/api/health");
 
   if (!response.ok) {
-    throw new Error("Unable to reach the Pi Online Worker API.");
+    throw new Error("Unable to reach the Agent Online Worker API.");
   }
 
   return response.json() as Promise<HealthResponse>;
@@ -20,7 +20,7 @@ function AppShell() {
       <aside className="sidebar">
         <Link className="brand" to="/">
           <TerminalSquare aria-hidden="true" size={20} />
-          <span>Pi Online</span>
+          <span>Agent Online</span>
         </Link>
 
         <nav aria-label="主导航" className="nav-list">
@@ -44,7 +44,7 @@ function AppShell() {
       <main className="main-content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">PI ONLINE</p>
+            <p className="eyebrow">AGENT ONLINE</p>
             <h1>项目</h1>
           </div>
           <button className="primary-action" type="button">
@@ -90,6 +90,10 @@ function Dashboard() {
           <div>
             <dt>沙箱策略</dt>
             <dd>每项目一个活动 Lease</dd>
+          </div>
+          <div>
+            <dt>Agent Runtime</dt>
+            <dd>Pi（默认）</dd>
           </div>
           <div>
             <dt>持久化</dt>

@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "pi-online",
+  "name": "agent-online",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
@@ -12,7 +12,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "pi-online-db",
+      "database_name": "agent-online-db",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
@@ -20,7 +20,7 @@
   "r2_buckets": [
     {
       "binding": "PROJECT_BUCKET",
-      "bucket_name": "pi-online-projects"
+      "bucket_name": "agent-online-projects"
     }
   ]
 }
