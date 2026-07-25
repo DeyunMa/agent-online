@@ -5,18 +5,47 @@ import { FakeSandboxRuntime } from "./fake-runtime";
 describe("FakeSandboxRuntime", () => {
   it("executes a generic command with a stable process event sequence", async () => {
     const runtime = new FakeSandboxRuntime();
-    const handle = await runtime.create({ projectId: "project_1", sandboxLeaseId: "lease_1" });
-    const events = [];
-
-    for await (const event of runtime.execute(handle, {
+    const handle = await runtime.ensureLease({ projectId: "project_1", sandboxLeaseId: "lease_1" });
+    const session = await runtime.startProcess(handle, {
+      agentRunId: "run_1",
       args: ["--mode", "rpc"],
       command: "pi",
       cwd: "/workspace",
-      runId: "run_1",
-    })) {
+    });
+    const events = [];
+
+    for await (const event of session.events()) {
       events.push(event.type);
     }
 
     expect(events).toEqual(["process.started", "process.output", "process.completed"]);
+  });
+
+  it("terminates a process session without stopping the whole lease", async () => {
+    const runtime = new FakeSandboxRuntime();
+    const handle = await runtime.ensureLease({ projectId: "project_1", sandboxLeaseId: "lease_1" });
+    const session = await runtime.startProcess(handle, {
+      agentRunId: "run_1",
+      args: [],
+      command: "pi",
+      cwd: "/workspace",
+    });
+
+    await session.terminate("cancelled");
+    const events = [];
+
+    for await (const event of session.events()) {
+      events.push(event);
+    }
+
+    expect(events.map((event) => event.type)).toEqual(["process.started", "process.completed"]);
+    expect(events.at(-1)).toMatchObject({ exitCode: 143, type: "process.completed" });
+
+    await expect(runtime.startProcess(handle, {
+      agentRunId: "run_2",
+      args: [],
+      command: "pi",
+      cwd: "/workspace",
+    })).resolves.toBeDefined();
   });
 });

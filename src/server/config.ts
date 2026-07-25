@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { defaultAgentRuntimeId } from "../agent/registry";
+import type { RuntimeConfigResponse } from "../shared/api";
 import type { AppBindings } from "./env";
 
 const publicConfigSchema = z.object({
@@ -11,7 +12,7 @@ const publicConfigSchema = z.object({
   runtimeProvider: z.enum(["fake", "e2b", "cloudflare-container"]),
 });
 
-export type PublicRuntimeConfig = z.infer<typeof publicConfigSchema>;
+export type PublicRuntimeConfig = RuntimeConfigResponse;
 
 export const publicRuntimeConfig = publicConfigSchema.parse({
   defaultAgentRuntime: defaultAgentRuntimeId,

@@ -1,8 +1,10 @@
 # ADR-0001：User、Project、SandboxLease 与 AgentRuntime 边界
 
-- 状态：Accepted（架构与工程基线 v0.3）
+- 状态：Superseded by ADR-0002（历史记录）
 - 日期：2026-07-25
 - 关联：[领域术语](../../CONTEXT.md) · [系统总览](../architecture/01-system-overview.md) · [运行时](../architecture/02-sandbox-runtime.md)
+
+> 此 ADR 保留用于追溯早期决策。其 R2 Revision、工作区恢复、多个 Lease 历史和复杂用量相关内容已被 [ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) 明确取代，不能作为当前实现合同。
 
 ## 背景
 

@@ -9,9 +9,10 @@ describe("sandbox lease state", () => {
     expect(canStartSandboxLease("failed")).toBe(true);
   });
 
-  it("treats live lease states as active", () => {
+  it("treats live lease states as active without a checkpointing state", () => {
     expect(isActiveSandboxLease("starting")).toBe(true);
     expect(isActiveSandboxLease("busy")).toBe(true);
+    expect(isActiveSandboxLease("idle")).toBe(true);
     expect(isActiveSandboxLease("stopped")).toBe(false);
     expect(canStartSandboxLease("idle")).toBe(false);
   });

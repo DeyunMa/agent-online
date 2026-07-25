@@ -1,108 +1,98 @@
-# 数据、认证、模型与用户级配额
+# 数据、认证、模型与基础用量
 
-> 状态：架构与工程基线 v0.3
-> 关联：[领域术语](../../CONTEXT.md) · [系统总览](./01-system-overview.md) · [环境变量](../setup/environment-variables.md)
+> 状态：目标架构基线 v0.4
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
-## 1. 存储边界
+## 1. 存储与秘密边界
 
-| 存储 | 保存内容 | 不保存内容 |
+| 位置 | 保存内容 | 不保存内容 |
 | --- | --- | --- |
-| D1 | Better Auth 表、Project 元数据、消息、Lease、Run、Revision 指针、用量、预留、模型连接元数据和审计。 | 完整文件树、大型终端日志、Provider 明文 Key。 |
-| R2 | 不可变工作区 Revision、manifest、Run 事件归档、构建产物。 | 公开可枚举的用户对象、唯一授权判断、Provider Key。 |
-| Worker Secrets | 平台 Gemini Key、认证 Secret、以后 BYOK 加密根密钥。 | 普通业务数据、完整 Project 内容。 |
-| 沙箱磁盘 | 当前 Lease 的 `/workspace`、Agent 进程、临时缓存和开发服务。 | 持久 Project 唯一副本、认证/模型原始 Key。 |
+| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage。 | 工作区文件、原始 Agent 事件、完整终端日志、Provider 明文 Key、私有推理。 |
+| 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
+| Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
+| 可选 Sentry | 脱敏错误和稀疏的服务端追踪元数据。 | prompt、消息正文、代码文件、密钥、原始 Agent/终端流。 |
+
+V1 没有 R2 Binding。工作区只在沙箱存活期间存在；沙箱停止或故障后，Project 可以留下元数据和对话，但文件允许丢失。
 
 ## 2. 认证与授权
 
-Better Auth 负责 `user`、`account` 和 `session`。第一版只启用邮箱密码注册/登录：`emailAndPassword.enabled = true`；不配置 Google OAuth、邮件验证、找回密码或邮件发送服务。
-
-这意味着第一版适合个人开发和受控测试。开放公共注册前，必须重新审阅邮箱验证、注册限流、滥用处理和找回密码；Better Auth 的默认密码哈希是有意提高计算成本的 `scrypt`，也需要在目标 Workers 配额下做真实验证。
+Better Auth 负责 `user`、`account`、`session` 和 `verification`。第一版只启用邮箱密码注册/登录：`emailAndPassword.enabled = true`；不配置 Google OAuth、邮件验证、找回密码或邮件发送服务。
 
 每个业务请求：
 
 1. 从 Better Auth Cookie 取得当前 `user_id`。
 2. 任何 Project 查询都按 `WHERE project.id = ? AND project.user_id = ?` 执行。
-3. 从 Project 再导出 Lease、Run、Message、Revision 和 preview 的访问权。
-4. 用户级 QuotaPolicy 和 UsageEvent 也以该 `user_id` 查询。
-5. 创建 Run 时，服务端从 Project 默认值或明确策略选择 `agent_runtime_id`，并验证它已注册；浏览器提交的值不能直接变为命令。
+3. 从 Project 推导 Message、SandboxLease、AgentRun、终端和 preview 的访问权。
+4. 创建 AgentRun 时由服务端解析已注册的 `agent_runtime_id` 与 `sandbox_runtime_id`；浏览器提交的任意 Runtime/命令都不可信。
+5. 内部管理端点先以 `ADMIN_EMAILS` Worker allowlist 保护，不为此预建角色、组织或团队模型。
 
-必须固定 `BETTER_AUTH_URL` 并设置受信任 origin；前端和 API 同域可避免 CORS 与跨域 Cookie 的复杂度。
+必须固定 `BETTER_AUTH_URL` 并设置受信任 origin；React 和 API 同域可避免 CORS 与跨域 Cookie 的复杂度。开放公共注册前，需要重新审阅邮箱验证、注册限流、滥用处理和找回密码。
 
-## 3. D1 表
+## 3. D1 目标表
 
-Better Auth 定义自己的认证表；本仓库把其当前的四张核心表（`user`、`session`、`account`、`verification`）与应用表一并维护在 D1 迁移中。新增 Better Auth 插件或自定义字段前，必须先生成并审阅新的迁移。
-
-`0002_agent_runtime.sql` 在已存在的本地/远程 `0001` 数据库上新增 Runtime 字段，不回写已经应用的首个迁移。
+Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth 插件或自定义字段前，先生成并审阅对应迁移。
 
 | 表 | 关键字段 | 用途 |
 | --- | --- | --- |
-| `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `latest_revision_id`, `active_sandbox_lease_id` | 持久 Project、默认 Runtime 和单活动 Lease 约束。 |
-| `messages` | `id`, `project_id`, `sequence`, `role`, `content`, `run_id` | Project 内对话历史。 |
-| `sandbox_leases` | `id`, `project_id`, `runtime_kind`, `provider_ref`, `status`, `started_at`, `idle_expires_at` | 应用拥有的沙箱生命周期记录；`provider_ref` 私有。 |
-| `runs` | `id`, `user_id`, `project_id`, `sandbox_lease_id`, `agent_runtime_id`, `base_revision_id`, `model_connection_id`, `status` | 一次 Agent 任务的不可变执行选择。 |
-| `workspace_revisions` | `id`, `project_id`, `parent_id`, `r2_manifest_key`, `r2_archive_key`, `reason` | 不可变 Project 版本。 |
-| `model_connections` | `id`, `user_id`, `provider`, `model_id`, `mode`, `encrypted_secret`, `key_version`, `fingerprint`, `status` | 平台模型显示与 BYOK 元数据。 |
-| `credential_leases` | `id`, `run_id`, `connection_id`, `token_hash`, `expires_at`, `revoked_at`, `max_requests` | 模型网关的短时、可撤销授权。 |
-| `usage_reservations` | `id`, `user_id`, `run_id`, `meter`, `reserved_quantity`, `state` | 启动前的资源预算预留。 |
-| `usage_events` | `id`, `user_id`, `project_id`, `run_id`, `meter`, `quantity`, `source`, `idempotency_key` | 不可变实际用量。 |
-| `audit_events` | `id`, `user_id`, `action`, `target`, `metadata` | 安全与调试追溯。 |
+| `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `created_at`, `updated_at` | 持久 Project 元数据和对话归属。 |
+| `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户消息和最终 assistant 消息。 |
+| `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
+| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, 用量与时间字段 | 一次 Agent 执行的状态、关联和基础计量。 |
 
-`projects.active_sandbox_lease_id` 只能由 `RunCoordinator` / Project 级协调器写入。它是“每个 Project 最多一个活动 Lease”的并发锁，不允许浏览器直接修改。
+`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。第一版可以直接按这些列聚合用户或内部管理视图，无需不可变事件账本。
 
-## 4. R2 对象布局
+数据库需要两个约束：
 
-```text
-users/{userId}/projects/{projectId}/revisions/{revisionId}/manifest.json
-users/{userId}/projects/{projectId}/revisions/{revisionId}/workspace.tar.zst
-users/{userId}/projects/{projectId}/runs/{runId}/events.ndjson
-users/{userId}/projects/{projectId}/runs/{runId}/artifacts/{artifactId}
+```sql
+CREATE UNIQUE INDEX sandbox_leases_one_per_project
+  ON sandbox_leases(project_id);
+
+CREATE UNIQUE INDEX agent_runs_one_active_per_project
+  ON agent_runs(project_id)
+  WHERE status IN ('queued', 'starting', 'running', 'cancelling');
 ```
 
-提交顺序：先写唯一 R2 对象，校验完成后再用 D1 事务插入 `workspace_revisions` 并更新 `projects.latest_revision_id`。事务失败时对象成为可清理孤儿；已提交的 Revision 永不指向不存在对象。
+不建立 `workspace_revisions`、`usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
 
-## 5. 默认 Gemini 与 BYOK
+## 4. 平台 Gemini 与 ModelGateway
 
-### 平台 Gemini
+- `GEMINI_API_KEY` 只存在 Worker Secret 或本地 `.dev.vars`，不写入 AgentRuntime 配置、浏览器响应、D1 或沙箱环境。
+- Worker 的 `ModelGateway` 代表当前用户调用 Gemini，并从实际 API 响应提取 token 与请求数，累加到对应 `agent_runs` 行。
+- Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
+- 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
-- `GEMINI_API_KEY` 只保存在 Worker Secret / 本地 `.dev.vars`，不写入 AgentRuntime 配置或沙箱环境。
-- 平台模型是 `ModelConnection(mode = platform)`，用户选择的是逻辑模型 ID，不是 Key。
-- Worker `ModelGateway` 代表用户调用 Gemini，并记录 token、请求数和失败情况。
+BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 
-### BYOK
+## 5. 用量与管理，不是计费
 
-BYOK 是后续用户功能，但数据边界在第一版保留：
+`AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
 
-1. 用户通过认证 API 提交 Key；服务端仅在内存中处理。
-2. D1 保存 Provider、模型、密文、nonce、key version 和不可逆指纹。
-3. BYOK 加密根密钥保存在 Worker Secret，使用版本化 AEAD 加密；不把明文返回给浏览器。
-4. 每个 Run 获取随机生成的短时 `CredentialLease`；D1 只保存 token 哈希，已实现的 AgentRuntime 只能使用原始一次性 token 调用 ModelGateway。
-5. Run 结束、取消、超时或超额时，立即撤销该 Lease。
+用量用于：
 
-令牌查询、过期、请求上限和撤销都由 D1 管理，因此第一版不需要额外的模型租约签名 Secret。启用 BYOK 前仍必须验证每个 AgentRuntime 的流式兼容、租约过期、取消、日志脱敏和出网限制。
+- 让用户看见自己的基础消耗；
+- 让项目维护者按用户、Project、日期聚合真实数据；
+- 后续接入支付前验证成本模型；
+- 在实现配额前提供最小的异常观察基础。
 
-## 6. 计量与配额，不是计费
+它不用于保存价格、套餐、信用余额、订单、发票或付款。需要强配额、预留或商用计费时，必须作为新的领域设计引入，而不是提前保留半套表。
 
-第一版不保存价格、套餐、支付或订单数据。只实现两个东西：
+## 6. 可选观测：Sentry
 
-| 能力 | 作用 |
-| --- | --- |
-| `UsageEvent` | 记录实际 `sandbox_active_ms`、模型 token、模型请求数、R2 写入/读取等原始用量。 |
-| `QuotaPolicy` + `UsageReservation` | 在启动前限制每个 User 的并发 Lease、最长运行、模型请求和每日预算。 |
+Sentry 不是运行依赖，也不应接收用户内容。真实 Worker、ModelGateway 和 SandboxRuntime 接入后，可以只接入错误监控和低采样服务端 trace，标签使用 `agent_run_id`、Runtime 种类和状态等无敏感元数据。
 
-流程：先检查用户级 `QuotaPolicy`，在 D1 写 `UsageReservation` 和 Run，再创建/复用沙箱。任何计量异常都默认阻止新的平台 Gemini Run，不能“先运行、以后补记”。
-
-BYOK 仍受沙箱时间、存储、并发和滥用限制；它只改变模型 Key 的来源。
+第一版不要启用 Session Replay、日志全量导出或 AI Agent transcript 追踪；这些能力更容易意外收集 prompt、文件或终端输出。接入前应明确 `beforeSend`/数据清洗策略、采样率和错误阈值。
 
 ## 7. 非目标
 
-- `tenants`、`memberships`、`organizations` 表。
+- R2、快照、文件恢复、版本树或长期原始执行审计。
+- 团队、组织、租户、成员角色和邀请。
 - `plans`、`subscriptions`、`prices`、`invoices`、`payments` 表或 API。
-- 将真实 Provider Key、E2B sandbox ID、Container ID 返回给前端。
-- 将未注册的 AgentRuntime 或任意 CLI 命令持久化为 User 可选模型。
+- 将真实 Provider Key、E2B sandbox ID、Container ID 或 Gemini Key 返回给前端。
+- 将未注册的 AgentRuntime 或任意 CLI 命令持久化为 User 可选项。
 
 ## 8. 外部依据
 
-- [Better Auth 安装与环境变量](https://better-auth.com/docs/installation) 和 [D1 支持](https://better-auth.com/blog/1-5)
-- [Pi 模型与自定义 Provider](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
+- [Better Auth 安装与环境变量](https://better-auth.com/docs/installation) 和 [邮箱密码登录](https://better-auth.com/docs/authentication/email-password)
 - [Gemini API Key 指南](https://ai.google.dev/gemini-api/docs/api-key)
-- [Cloudflare D1 Binding](https://developers.cloudflare.com/d1/worker-api/d1-database/) 与 [R2 Binding](https://developers.cloudflare.com/workers/runtime-apis/bindings/)
+- [Cloudflare D1 Binding](https://developers.cloudflare.com/d1/worker-api/d1-database/)
+- [Sentry for Hono on Cloudflare](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/hono/)

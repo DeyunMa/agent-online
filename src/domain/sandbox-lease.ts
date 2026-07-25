@@ -1,8 +1,8 @@
-export const sandboxLeaseStatuses = ["stopped", "starting", "ready", "busy", "idle", "checkpointing", "failed"] as const;
+export const sandboxLeaseStatuses = ["stopped", "starting", "ready", "busy", "idle", "failed"] as const;
 
 export type SandboxLeaseStatus = (typeof sandboxLeaseStatuses)[number];
 
-const activeStatuses = new Set<SandboxLeaseStatus>(["starting", "ready", "busy", "idle", "checkpointing"]);
+const activeStatuses = new Set<SandboxLeaseStatus>(["starting", "ready", "busy", "idle"]);
 
 export function isActiveSandboxLease(status: SandboxLeaseStatus) {
   return activeStatuses.has(status);

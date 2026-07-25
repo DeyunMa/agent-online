@@ -1,9 +1,9 @@
 import type { SandboxLeaseStatus } from "./sandbox-lease";
 
 export type ProjectSummary = {
-  activeSandboxLeaseStatus: SandboxLeaseStatus | null;
+  defaultAgentRuntimeId: string;
   id: string;
-  latestRevisionId: string | null;
+  sandboxLeaseStatus: SandboxLeaseStatus | null;
   title: string;
   userId: string;
 };

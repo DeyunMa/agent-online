@@ -5,38 +5,35 @@ export type RuntimeHandle = {
   kind: RuntimeKind;
 };
 
-export type CreateLeaseInput = {
+export type EnsureLeaseInput = {
   projectId: string;
   sandboxLeaseId: string;
 };
 
-export type WorkspaceRevision = {
-  id: string;
-  projectId: string;
-};
-
 export type SandboxCommand = {
+  agentRunId: string;
   args: readonly string[];
   command: string;
   cwd: string;
-  runId: string;
 };
+
+export type ProcessTerminationReason = "cancelled" | "timed_out" | "failed";
+export type SandboxStopReason = "idle" | "manual" | "failed";
 
 export type SandboxProcessEvent =
   | { processId: string; sandboxLeaseId: string; type: "process.started" }
   | { chunk: string; sandboxLeaseId: string; stream: "stderr" | "stdout"; type: "process.output" }
   | { exitCode: number; sandboxLeaseId: string; type: "process.completed" };
 
-export type WorkspaceArtifact = {
-  archiveKey: string;
-  manifestKey: string;
-};
+export interface SandboxProcessSession {
+  events(): AsyncIterable<SandboxProcessEvent>;
+  terminate(reason: ProcessTerminationReason): Promise<void>;
+  write(input: string): Promise<void>;
+}
 
 export interface SandboxRuntime {
   readonly kind: RuntimeKind;
-  checkpoint(handle: RuntimeHandle, reason: "idle" | "manual" | "run-finished"): Promise<WorkspaceArtifact>;
-  create(input: CreateLeaseInput): Promise<RuntimeHandle>;
-  execute(handle: RuntimeHandle, command: SandboxCommand): AsyncIterable<SandboxProcessEvent>;
-  restore(handle: RuntimeHandle, revision: WorkspaceRevision): Promise<void>;
-  stop(handle: RuntimeHandle, reason: "idle" | "manual" | "quota" | "failed"): Promise<void>;
+  ensureLease(input: EnsureLeaseInput): Promise<RuntimeHandle>;
+  startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession>;
+  stop(handle: RuntimeHandle, reason: SandboxStopReason): Promise<void>;
 }

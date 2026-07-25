@@ -52,10 +52,9 @@ CREATE INDEX IF NOT EXISTS verification_identifier_idx ON verification (identifi
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  latest_revision_id TEXT,
-  active_sandbox_lease_id TEXT,
+  default_agent_runtime_id TEXT NOT NULL DEFAULT 'pi',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -63,112 +62,60 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS projects_by_user_updated_at
   ON projects (user_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS sandbox_leases (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL UNIQUE REFERENCES projects (id) ON DELETE CASCADE,
+  sandbox_runtime_id TEXT NOT NULL,
+  provider_ref TEXT,
+  status TEXT NOT NULL CHECK (status IN ('stopped', 'starting', 'ready', 'busy', 'idle', 'failed')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sandbox_leases_by_status
+  ON sandbox_leases (status);
+
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  run_id TEXT,
-  sequence INTEGER NOT NULL,
-  role TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+  agent_run_id TEXT REFERENCES agent_runs (id) ON DELETE SET NULL,
+  sequence INTEGER NOT NULL CHECK (sequence >= 0),
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
   content TEXT NOT NULL,
   created_at TEXT NOT NULL,
   UNIQUE (project_id, sequence)
 );
 
-CREATE TABLE IF NOT EXISTS sandbox_leases (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  runtime_kind TEXT NOT NULL,
-  provider_ref TEXT NOT NULL,
-  status TEXT NOT NULL,
-  started_at TEXT,
-  idle_expires_at TEXT,
-  stopped_at TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
+CREATE INDEX IF NOT EXISTS messages_by_project_created_at
+  ON messages (project_id, created_at ASC);
 
-CREATE INDEX IF NOT EXISTS sandbox_leases_by_project_status
-  ON sandbox_leases (project_id, status);
-
-CREATE TABLE IF NOT EXISTS runs (
+CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  sandbox_lease_id TEXT,
-  base_revision_id TEXT,
-  model_connection_id TEXT,
-  status TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES user (id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
+  input_message_id TEXT REFERENCES messages (id) ON DELETE SET NULL,
+  sandbox_lease_id TEXT NOT NULL REFERENCES sandbox_leases (id) ON DELETE RESTRICT,
+  agent_runtime_id TEXT NOT NULL,
+  sandbox_runtime_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'starting', 'running', 'cancelling', 'succeeded', 'failed', 'cancelled', 'timed_out', 'interrupted')),
+  input_tokens INTEGER NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+  output_tokens INTEGER NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+  total_tokens INTEGER NOT NULL DEFAULT 0 CHECK (total_tokens >= 0),
+  model_request_count INTEGER NOT NULL DEFAULT 0 CHECK (model_request_count >= 0),
+  sandbox_duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (sandbox_duration_ms >= 0),
+  failure_reason TEXT,
   created_at TEXT NOT NULL,
   started_at TEXT,
   finished_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS runs_by_project_created_at
-  ON runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS agent_runs_by_project_created_at
+  ON agent_runs (project_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS workspace_revisions (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  parent_id TEXT,
-  r2_manifest_key TEXT NOT NULL,
-  r2_archive_key TEXT NOT NULL,
-  reason TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+CREATE INDEX IF NOT EXISTS agent_runs_by_user_created_at
+  ON agent_runs (user_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS model_connections (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  model_id TEXT NOT NULL,
-  mode TEXT NOT NULL,
-  encrypted_secret TEXT,
-  key_version TEXT,
-  fingerprint TEXT,
-  status TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS credential_leases (
-  id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL,
-  connection_id TEXT,
-  token_hash TEXT NOT NULL UNIQUE,
-  expires_at TEXT NOT NULL,
-  revoked_at TEXT,
-  max_requests INTEGER NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS usage_reservations (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  run_id TEXT NOT NULL,
-  meter TEXT NOT NULL,
-  reserved_quantity INTEGER NOT NULL,
-  state TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  settled_at TEXT
-);
-
-CREATE TABLE IF NOT EXISTS usage_events (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  project_id TEXT NOT NULL,
-  run_id TEXT,
-  meter TEXT NOT NULL,
-  quantity INTEGER NOT NULL,
-  source TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL UNIQUE,
-  reported_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS audit_events (
-  id TEXT PRIMARY KEY,
-  user_id TEXT,
-  action TEXT NOT NULL,
-  target TEXT NOT NULL,
-  metadata_json TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
+CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_one_active_per_project
+  ON agent_runs (project_id)
+  WHERE status IN ('queued', 'starting', 'running', 'cancelling');

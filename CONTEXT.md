@@ -1,30 +1,26 @@
 # Agent Online 领域术语
 
-> 状态：架构与工程基线 v0.3。这里定义产品语言、所有权和不变量，不替代实现代码或数据库迁移。
+> 状态：目标架构基线 v0.4。这里定义产品语言、所有权和不变量；当前实现中的旧 R2/Revision 脚手架不构成产品合同。
 
 ## 产品定义
 
 Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端和 preview；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
 
-第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。当前的默认 AgentRuntime 是 Pi；其余 Runtime 名称只表示可扩展接口，不能当作已支持能力。
+第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是唯一实际注册的 AgentRuntime；其他 Runtime 名称只表示未来可扩展接口，不能当作已支持能力。
 
 ## 核心术语
 
 | 术语 | 定义 | 关键边界 |
 | --- | --- | --- |
 | `User` | 经 Better Auth 认证的人。 | 第一版所有资源直接归属 `user_id`。 |
-| `Project` | 用户可恢复的代码项目，也是 UI 中一次编码空间。 | 持久对象；保存消息、文件版本、默认 AgentRuntime 和沙箱历史。 |
-| `Message` | 用户或 Agent 在某个 Project 中留下的一条持久化消息。 | 第一版不单独建 Thread；消息直接属于 Project。 |
-| `SandboxLease` | 应用为 Project 分配的一次临时运行环境租约。 | 不是供应商真实 sandbox ID；活动期最多一个。 |
-| `Run` | 一个 AgentRuntime 对用户任务的实际执行。 | 绑定 Project、活动 SandboxLease、实际 Runtime、模型选择和用量预留。 |
-| `WorkspaceRevision` | Project 工作区的一次不可变版本。 | 内容在 R2，指针和状态在 D1；沙箱磁盘不是事实来源。 |
-| `SandboxRuntime` | 创建、恢复、通用执行、快照和停止 Linux 沙箱的适配器端口。 | 不认识 Pi、Goose 或任何 Agent 协议。 |
-| `AgentRuntime` | 把某个 Agent 的启动协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过 `SandboxRuntime` 启动进程；当前只有 Pi 适配器注册。 |
-| `ModelConnection` | 模型来源配置。 | 平台 Gemini 是内建连接；BYOK 是用户拥有的加密连接。 |
-| `CredentialLease` | 对一个 Run 短时有效的不透明模型访问令牌。 | Agent 只能得到它，不能得到原始 Gemini 或 BYOK Key。 |
-| `UsageEvent` | 一条不可变的资源使用记录。 | 用于可观测、限额和成本保护，不等同于订单或账单。 |
-| `UsageReservation` | 启动 Run 前预留的最大资源预算。 | 防止并发 Run 绕过用户级配额。 |
-| `QuotaPolicy` | 从配置读取的用户级限制。 | 包含并发沙箱数、最长运行时间、请求数和每日预算；不是套餐。 |
+| `Project` | 用户在 UI 中看见的代码工作空间和对话容器。 | D1 持久化元数据和消息；不保存代码副本。沙箱丢失后可保留 Project，但文件允许丢失。 |
+| `Message` | 用户或助手在某个 Project 中可见的一条持久化消息。 | 只保存用户输入和最终可展示回复，不保存原始工具输出或推理。 |
+| `SandboxLease` | 应用为 Project 保留的唯一逻辑沙箱记录。 | 不是供应商真实 sandbox ID；同一时刻映射到 0 或 1 个真实沙箱，不保留实例历史。 |
+| `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
+| `SandboxRuntime` | 创建、附着、执行和停止 Linux 沙箱的适配器端口。 | 不认识 Pi、消息、模型或 D1 业务。 |
+| `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；当前只注册 Pi。 |
+| `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、转发模型请求、获得实际 usage 并累加到 `AgentRun`；不管理沙箱文件。 |
+| `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 包括输入/输出/总 token、模型请求数、沙箱时长；不是账单流水或套餐。 |
 
 ## 对应关系
 
@@ -32,34 +28,32 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 erDiagram
     USER ||--o{ PROJECT : owns
     PROJECT ||--o{ MESSAGE : contains
-    PROJECT ||--o{ WORKSPACE_REVISION : versions
-    PROJECT ||--o{ SANDBOX_LEASE : creates_over_time
-    PROJECT ||--o{ RUN : executes
-    SANDBOX_LEASE ||--o{ RUN : serves
-    USER ||--o{ MODEL_CONNECTION : configures
-    RUN ||--o{ USAGE_EVENT : emits
-    RUN ||--o| USAGE_RESERVATION : reserves
+    PROJECT ||--|| SANDBOX_LEASE : has
+    PROJECT ||--o{ AGENT_RUN : executes
+    SANDBOX_LEASE ||--o{ AGENT_RUN : serves
+    AGENT_RUN ||--o{ MESSAGE : produces_visible_output
 ```
 
-`Project.default_agent_runtime_id` 保存项目默认 Runtime；`Run.agent_runtime_id` 保存该次 Run 的有效 Runtime。生命周期内，一个 Project 可以创建多个 `SandboxLease`；第一版同一时刻最多只能有一个状态为 `starting`、`ready`、`busy` 或 `idle` 的活动租约。
+`Project.default_agent_runtime_id` 保存默认 Runtime；`AgentRun.agent_runtime_id` 保存该次实际执行的 Runtime。`sandbox_leases.project_id` 唯一，表示一个 Project 没有 Lease 历史表；Provider 实例重建时只更新同一逻辑 Lease 的私有引用和状态。
 
 ## 必须始终成立的规则
 
 1. 所有 Project 查询必须以 `(project_id, user_id)` 授权；浏览器传入的 `user_id` 一律不可信。
-2. 一个活动 `SandboxLease` 只服务一个 Project，且一个 Project 第一版最多一个活动 Lease。
-3. 多条消息和多个连续 Run 复用活动 Lease；一条消息不是一个沙箱生命周期。
-4. Lease 到期、停止或故障后，文件状态通过新的 `WorkspaceRevision` 写入 R2；重新打开 Project 时创建新沙箱冷恢复。
-5. 浏览器可见的是应用生成的 `sandboxLeaseId`、状态和能力；`provider_ref`、内部端口、E2B sandbox ID 和 Container ID 均为服务端私有数据。
-6. Agent、shell、用户 Project 和 Agent 扩展都在低信任沙箱内；Hono 控制平面、D1/R2、平台 Key 和 BYOK 密文在沙箱外。
-7. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；任何一个都不能直接写 D1 的 Project/Lease 指针。
-8. `Run.agent_runtime_id` 必须来自服务端已注册且已授权的 Runtime；浏览器不能把任意可执行命令当作 Runtime ID。
-9. 默认 Gemini 与 BYOK 都经过 `ModelGateway`；浏览器、Agent、终端日志和 R2 snapshot 都不得包含原始 Key。
-10. `UsageEvent` 只追加，必须有幂等键和来源；修正用新事件表达，不能改写历史使用量。
-11. 没有成功的 `UsageReservation` 时，不启动平台模型 Run 或远程沙箱。
+2. 一个 `SandboxLease` 只服务一个 Project，且 `sandbox_leases.project_id` 唯一；一个 Project 同时最多一个真实 Provider 沙箱。
+3. 多个连续 `AgentRun` 可复用仍存活的沙箱；一条消息不是一个沙箱生命周期。
+4. 沙箱停止、过期或故障时，当前工作区文件允许丢失。第一版不写 R2 快照、不恢复文件，也不记录沙箱历史。
+5. 同一 Project 最多一个非终态 `AgentRun`。新请求必须得到明确冲突或等待 UI 重试，不能并发修改同一工作区。
+6. 浏览器可见的是应用生成的 `sandboxLeaseId`、状态和受控能力；`provider_ref`、内部端口、E2B sandbox ID 和 Container ID 均为服务端私有数据。
+7. Agent、shell、用户代码和开发服务在低信任沙箱内；Hono 控制平面、D1 和平台 Gemini Key 在沙箱外。
+8. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；两者都不能直接修改 Project/Run 的 D1 事实。
+9. Pi 的模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
+10. `AgentRun` 终态时写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
 
 ## 有意不建模的内容
 
+- R2、`WorkspaceRevision`、工作区快照、文件版本、回滚、分支、沙箱历史和原始 Agent transcript。
+- `Session` 业务表或长期 Pi Agent 进程；对话连续性来自 Message，AgentProcess 随 `AgentRun` 结束。
+- `UsageEvent`、`UsageReservation`、`ModelConnection`、`CredentialLease`、BYOK 密文和复杂配额账本。
 - 团队、组织、租户、成员角色和邀请。
 - 价格、订阅、信用余额、付款、订单和发票。
-- 项目多分支并发沙箱。以后需要时，以复制/分支 Project 的方式实现，不能让两个沙箱并发写同一 Revision。
 - 未安装 AgentRuntime 的 UI 选择项。新增 Goose、Claude Code 或 Codex CLI 前，必须先有独立适配器、能力声明、凭据流和端到端验收。

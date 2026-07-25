@@ -1,10 +1,11 @@
 export interface AppBindings {
   ASSETS: Fetcher;
+  ADMIN_EMAILS?: string;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
   DB: D1Database;
+  E2B_API_KEY?: string;
   GEMINI_API_KEY?: string;
-  PROJECT_BUCKET: R2Bucket;
 }
 
 export interface AppVariables {

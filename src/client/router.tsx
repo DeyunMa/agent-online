@@ -97,7 +97,7 @@ function Dashboard() {
           </div>
           <div>
             <dt>持久化</dt>
-            <dd>D1 + R2</dd>
+            <dd>D1（工作区仅在沙箱中）</dd>
           </div>
         </dl>
       </aside>
