@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：目标架构基线 v0.4
+> 状态：fake P1 已读取 Better Auth 配置；真实模型和沙箱变量仍按阶段启用
 > 关联：[示例文件](../../.dev.vars.example) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -8,7 +8,7 @@
 | 类别 | 放置位置 | 示例 |
 | --- | --- | --- |
 | Secret | 本地 `.dev.vars`；生产 `wrangler secret put`。 | Better Auth Secret、Gemini Key、E2B Key。 |
-| 非敏感变量 | 代码默认值；部署后需要覆盖时使用 `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、以后 Sentry DSN。 |
+| 非敏感变量 | 真实 Runtime 实现后才按代码读取；部署后需要覆盖时使用 `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、以后 Sentry DSN。 |
 | Cloudflare Binding | `wrangler.jsonc`。 | `DB`、`ASSETS`。 |
 
 不要把真实 Key 放进 `wrangler.jsonc`、Git、截图或聊天消息。`.dev.vars.example` 只保留变量名和示例值。
@@ -19,7 +19,7 @@
 
 | 变量 | 是否需要你提供 | 用途 |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | 是，你已有。 | 平台默认 Gemini；只供 Worker 的 ModelGateway 使用。 |
+| `GEMINI_API_KEY` | 是，你已有。 | 平台默认 Gemini；D2 ModelGateway 接入后才会实际使用。 |
 | `BETTER_AUTH_URL` | 是。 | Better Auth Cookie、跳转和安全 origin 的基准 URL。 |
 | `BETTER_AUTH_SECRET` | 是，但由项目自行生成。 | Better Auth 的签名与加密 Secret。 |
 
@@ -37,15 +37,17 @@
 
 BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 Secret 或任何用户模型 Key 配置。
 
-## 4. 非敏感运行配置
+## 4. 预留的非敏感运行配置
+
+当前 fake P1 固定注册 `fake` SandboxRuntime；它不读取下列变量。不要仅设置变量就宣称已切换到 E2B、启用了 TTL 或实现了限额。D2 实现对应 Adapter 和协调层时再决定实际变量名、默认值与校验方式。
 
 | 变量 | 推荐开发值 | 说明 |
 | --- | --- | --- |
-| `RUNTIME_PROVIDER` | `fake`，接 E2B 后改 `e2b` | 决定 `SandboxRuntime` Adapter。 |
-| `DEFAULT_MODEL_ID` | 项目代码默认值 | 平台 Gemini 的逻辑模型 ID。 |
-| `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久停止当前沙箱。 |
-| `MAX_ACTIVE_SANDBOXES_PER_USER` | `1` | 第一版的用户级并发沙箱上限。 |
-| `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 的最大墙钟时间。 |
+| `RUNTIME_PROVIDER` | `e2b` | D2 选定后指定真实 `SandboxRuntime` Adapter。 |
+| `DEFAULT_MODEL_ID` | 选定的 Gemini 模型 ID | D2 ModelGateway 的服务端默认模型。 |
+| `RUNTIME_IDLE_TTL_SECONDS` | `600` | D2 中 Project 空闲多久停止当前沙箱。 |
+| `MAX_ACTIVE_SANDBOXES_PER_USER` | `1` | D2 中的用户级并发沙箱上限。 |
+| `MAX_RUN_WALL_SECONDS` | `1800` | D2 中单个 AgentRun 的最大墙钟时间。 |
 | `E2B_TEMPLATE_ID` | 留空 | 自定义 Pi 基础镜像建好后才填写。 |
 
 当前默认 AgentRuntime 固定为 `pi`，而不是对外环境变量。第二个适配器完成能力和安全验收后，再设计部署级默认值。
@@ -59,7 +61,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `DB` | D1 | Better Auth 与应用数据表。 |
 | `ASSETS` | Workers Assets | React 构建产物。 |
 
-V1 不配置 `PROJECT_BUCKET` 或任何 R2 Binding，也不需要 Durable Object。当前 `wrangler.jsonc` 中的 R2 占位配置是旧脚手架，实施 ADR-0002 时必须删除；当前全零 D1 ID 也仍只是本地开发占位值。
+V1 不配置 `PROJECT_BUCKET` 或任何 R2 Binding。当前 fake P1 也不绑定 Durable Object；真实长生命周期 Run 的持久协调方案会在 D2 单独决定。当前 `wrangler.jsonc` 只包含 D1 与 Assets binding；D1 ID 仍只是本地开发占位值。
 
 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` 只在 Wrangler 自动化/CI 部署时需要，不是 Worker 运行时 Secret；本机交互式 `wrangler login` 时不必提供给应用。
 

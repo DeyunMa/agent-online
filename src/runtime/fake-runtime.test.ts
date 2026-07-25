@@ -48,4 +48,22 @@ describe("FakeSandboxRuntime", () => {
       cwd: "/workspace",
     })).resolves.toBeDefined();
   });
+
+  it("observes cancellation while a delayed fake process is still active", async () => {
+    const runtime = new FakeSandboxRuntime({ completionDelayMs: 20 });
+    const handle = await runtime.ensureLease({ projectId: "project_1", sandboxLeaseId: "lease_1" });
+    const session = await runtime.startProcess(handle, {
+      agentRunId: "run_1",
+      args: [],
+      command: "pi",
+      cwd: "/workspace",
+    });
+    const iterator = session.events()[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: "process.started" } });
+    const completion = iterator.next();
+    await session.terminate("cancelled");
+
+    await expect(completion).resolves.toMatchObject({ value: { exitCode: 143, type: "process.completed" } });
+  });
 });

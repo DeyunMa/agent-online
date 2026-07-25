@@ -9,14 +9,6 @@ export type HealthResponse = {
   status: "ok";
 };
 
-export type RuntimeConfigResponse = {
-  defaultAgentRuntime: "pi";
-  maxActiveSandboxesPerUser: 1;
-  maxRunWallSeconds: number;
-  runtimeIdleTtlSeconds: number;
-  runtimeProvider: RuntimeKind;
-};
-
 export type SandboxLeaseResponse = {
   id: string;
   runtimeId: RuntimeKind;

@@ -1,26 +1,4 @@
-import { z } from "zod";
-
-import { defaultAgentRuntimeId } from "../agent/registry";
-import type { RuntimeConfigResponse } from "../shared/api";
 import type { AppBindings } from "./env";
-
-const publicConfigSchema = z.object({
-  defaultAgentRuntime: z.literal(defaultAgentRuntimeId),
-  maxActiveSandboxesPerUser: z.literal(1),
-  maxRunWallSeconds: z.number().int().positive(),
-  runtimeIdleTtlSeconds: z.number().int().positive(),
-  runtimeProvider: z.enum(["fake", "e2b", "cloudflare-container"]),
-});
-
-export type PublicRuntimeConfig = RuntimeConfigResponse;
-
-export const publicRuntimeConfig = publicConfigSchema.parse({
-  defaultAgentRuntime: defaultAgentRuntimeId,
-  maxActiveSandboxesPerUser: 1,
-  maxRunWallSeconds: 1_800,
-  runtimeIdleTtlSeconds: 600,
-  runtimeProvider: "fake",
-});
 
 export function getAuthConfig(env: AppBindings) {
   if (!env.BETTER_AUTH_SECRET || !env.BETTER_AUTH_URL) {

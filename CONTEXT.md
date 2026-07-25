@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：目标架构基线 v0.4。这里定义产品语言、所有权和不变量；当前实现中的旧 R2/Revision 脚手架不构成产品合同。
+> 状态：D1 + fake P1 控制面已落地。这里定义产品语言、所有权和不变量。
 
 ## 产品定义
 
@@ -19,8 +19,8 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
 | `SandboxRuntime` | 创建、附着、执行和停止 Linux 沙箱的适配器端口。 | 不认识 Pi、消息、模型或 D1 业务。 |
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；当前只注册 Pi。 |
-| `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、转发模型请求、获得实际 usage 并累加到 `AgentRun`；不管理沙箱文件。 |
-| `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 包括输入/输出/总 token、模型请求数、沙箱时长；不是账单流水或套餐。 |
+| `ModelGateway` | Worker 内的受控模型代理。 | D2 才实现；届时持有平台 Gemini Key、转发模型请求并累加实际 usage，不管理沙箱文件。 |
+| `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 字段已在 D1；fake P1 始终为零，真实 token/时长由 D2 写入，不是账单流水或套餐。 |
 
 ## 对应关系
 
@@ -46,8 +46,10 @@ erDiagram
 6. 浏览器可见的是应用生成的 `sandboxLeaseId`、状态和受控能力；`provider_ref`、内部端口、E2B sandbox ID 和 Container ID 均为服务端私有数据。
 7. Agent、shell、用户代码和开发服务在低信任沙箱内；Hono 控制平面、D1 和平台 Gemini Key 在沙箱外。
 8. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；两者都不能直接修改 Project/Run 的 D1 事实。
-9. Pi 的模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
-10. `AgentRun` 终态时写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
+9. D2 中 Pi 的模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
+10. D2 中 `AgentRun` 终态写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
+
+fake P1 的例外：它只验证 D1 生命周期和状态 SSE 合同。取消先写入 `cancelling`，再在 fake 进程结束时收敛；它不实现真实 Provider、模型调用、最终助手消息、TTL、超时、每用户沙箱上限、跨 isolate 执行协调或跨请求物理进程取消。
 
 ## 有意不建模的内容
 

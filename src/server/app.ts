@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 
 import { createAuth } from "./auth";
-import { publicRuntimeConfig } from "./config";
 import type { AppEnv } from "./env";
+import { createProjectApi } from "./project-api";
 
 export const app = new Hono<AppEnv>();
 
@@ -20,9 +20,9 @@ app.get("/api/health", (c) =>
   }),
 );
 
-app.get("/api/runtime-config", (c) => c.json(publicRuntimeConfig));
-
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
+
+app.route("/api", createProjectApi());
 
 app.notFound((c) => c.json({ error: "not_found", requestId: c.get("requestId") }, 404));
 

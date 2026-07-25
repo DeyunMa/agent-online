@@ -64,6 +64,10 @@ export interface ProjectRepository {
   listOwned(userId: string): Promise<ProjectRecord[]>;
 }
 
+export interface MessageRepository {
+  listByProjectId(projectId: string): Promise<MessageRecord[]>;
+}
+
 export interface SandboxLeaseRepository {
   findByProjectId(projectId: string): Promise<SandboxLeaseRecord | null>;
   getOrCreate(input: {
@@ -101,6 +105,9 @@ export interface AgentRunRepository {
     sandboxRuntimeId: RuntimeKind;
     userId: string;
   }): Promise<CreateQueuedAgentRunResult>;
+  /** Internal coordinator read after a cross-request cancellation transition. */
+  findById(agentRunId: string): Promise<AgentRunRecord | null>;
+  findActiveOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord | null>;
   findOwnedById(agentRunId: string, userId: string): Promise<AgentRunRecord | null>;
   transition(input: {
     failureReason?: string | null;

@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：目标架构基线 v0.4
+> 状态：D1 + fake P1 控制面已落地；真实 Pi、模型和沙箱仍是 D2
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -96,21 +96,31 @@ sequenceDiagram
     API-->>UI: SSE 事件与最终状态
 ```
 
-浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再由 AgentRuntime 和 SandboxRuntime 终止对应进程，并写入终态。
+浏览器断线不取消 Run。真实 D2 的显式取消会先将 Run 变为 `cancelling`，再由 AgentRuntime 和 SandboxRuntime 终止对应进程，并写入终态。
 
-## 6. 目标 API 合同
+当前 fake P1 已实现授权后的 Project/Message/Run 路由、当前活跃 Run 恢复、RunCoordinator 和脱敏 SSE。它只持久化用户输入与 Run 状态；由于尚未接入可信的 Pi RPC 最终回复和 ModelGateway，不能把 fake 进程输出写成 assistant Message 或真实用量。
 
-以下是实现目标，不代表当前脚手架已经提供：
+fake P1 的 SSE 在事件请求内轮询 D1，只发布 `run.status` 和 `run.completed`；取消只先写入 D1 的 `cancelling`，随后由原始协调请求在 fake 进程完成时写入 `cancelled`。它不传递原始 Agent 输出，也不证明跨 isolate 的进程终止。D2 启用真实长生命周期沙箱前，必须选择能处理 Worker 重启、跨 isolate 执行、事件重连和取消的持久协调机制。
+
+## 6. API 状态
+
+当前 P1 已实现以下同源 API：
 
 | 路径 | 作用 |
 | --- | --- |
 | `/api/auth/*` | Better Auth。 |
-| `/api/projects` | 创建、列出、读取、删除用户自己的 Project。 |
+| `/api/projects` 与 `/api/projects/:id` | 创建、列出、读取用户自己的 Project。 |
 | `/api/projects/:id/messages` | 读取 Project 的可见消息。 |
 | `/api/projects/:id/agent-runs` | 创建 AgentRun；必要时启动沙箱。 |
+| `/api/projects/:id/agent-runs/active` | 读取该 Project 当前的非终态 Run，供页面恢复。 |
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
-| `/api/projects/:id/agent-runs/:runId/events` | 订阅脱敏的当前 Run 事件。 |
+| `/api/projects/:id/agent-runs/:runId/events` | fake P1 订阅 D1 轮询出的状态和终态；原始 Agent 输出待 D2。 |
 | `/api/projects/:id/agent-runs/:runId/cancel` | 取消当前 Run。 |
+
+以下 API 留待真实 Runtime 或管理能力阶段实现：
+
+| 路径 | 作用 |
+| --- | --- |
 | `/api/projects/:id/sandbox` | 查看应用级 Lease 的公开状态。 |
 | `/api/projects/:id/sandbox/stop` | 停止当前沙箱；停止后工作区可丢失。 |
 | `/api/usage` | 当前用户的 AgentRun 聚合用量。 |

@@ -35,7 +35,7 @@ Agent Online is a personal, development-stage Coding Agent SaaS project. It is a
 | `src/client/` | React UI and browser data access. |
 | `src/server/` | Hono routes, Better Auth, configuration, and trusted HTTP boundaries. |
 | `src/domain/` | Provider-independent Project and SandboxLease rules. |
-| `src/application/` | Use-case ports and orchestration contracts; the future `RunCoordinator` belongs here. |
+| `src/application/` | Use-case ports and orchestration contracts, including `RunCoordinator`. |
 | `src/runtime/` | SandboxRuntime contract and provider adapters. |
 | `src/agent/` | AgentRuntime contract, registry, and Agent adapters. |
 | `migrations/` | Canonical D1 schema for auth and application data. |

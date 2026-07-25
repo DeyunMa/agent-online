@@ -15,6 +15,7 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
 
   constructor(
     private readonly command: SandboxCommand,
+    private readonly completionDelayMs: number,
     private readonly sandboxLeaseId: string,
   ) {}
 
@@ -23,6 +24,10 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
     const invocation = [this.command.command, ...this.command.args].join(" ");
 
     yield { processId, sandboxLeaseId: this.sandboxLeaseId, type: "process.started" };
+
+    if (this.completionDelayMs > 0) {
+      await delay(this.completionDelayMs);
+    }
 
     if (this.terminationReason) {
       yield { exitCode: 143, sandboxLeaseId: this.sandboxLeaseId, type: "process.completed" };
@@ -47,10 +52,16 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
   }
 }
 
+export type FakeSandboxRuntimeOptions = {
+  completionDelayMs?: number;
+};
+
 export class FakeSandboxRuntime implements SandboxRuntime {
   readonly kind = "fake" as const;
 
   private readonly handles = new Set<string>();
+
+  constructor(private readonly options: FakeSandboxRuntimeOptions = {}) {}
 
   async ensureLease(input: EnsureLeaseInput): Promise<RuntimeHandle> {
     const id = `fake-${input.sandboxLeaseId}`;
@@ -61,7 +72,7 @@ export class FakeSandboxRuntime implements SandboxRuntime {
   async startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession> {
     this.assertHandle(handle);
     const sandboxLeaseId = handle.id.replace(/^fake-/, "");
-    return new FakeSandboxProcessSession(command, sandboxLeaseId);
+    return new FakeSandboxProcessSession(command, this.options.completionDelayMs ?? 0, sandboxLeaseId);
   }
 
   async stop(handle: RuntimeHandle, _reason: SandboxStopReason) {
@@ -74,4 +85,8 @@ export class FakeSandboxRuntime implements SandboxRuntime {
       throw new Error(`Unknown fake runtime handle: ${handle.id}`);
     }
   }
+}
+
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }

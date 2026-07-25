@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：目标架构基线 v0.4
+> 状态：D1 + Better Auth 已接通；ModelGateway、真实 usage 和管理视图属于 D2/D3。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -39,7 +39,7 @@ Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth �
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
 | `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, 用量与时间字段 | 一次 Agent 执行的状态、关联和基础计量。 |
 
-`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。第一版可以直接按这些列聚合用户或内部管理视图，无需不可变事件账本。
+`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。fake P1 只写零值；D2 取得真实值后可直接按这些列聚合，无需不可变事件账本。
 
 数据库需要两个约束：
 
@@ -56,6 +56,8 @@ CREATE UNIQUE INDEX agent_runs_one_active_per_project
 
 ## 4. 平台 Gemini 与 ModelGateway
 
+这一节是 D2 合同，不表示当前 Worker 已有模型代理实现。
+
 - `GEMINI_API_KEY` 只存在 Worker Secret 或本地 `.dev.vars`，不写入 AgentRuntime 配置、浏览器响应、D1 或沙箱环境。
 - Worker 的 `ModelGateway` 代表当前用户调用 Gemini，并从实际 API 响应提取 token 与请求数，累加到对应 `agent_runs` 行。
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
@@ -64,6 +66,8 @@ CREATE UNIQUE INDEX agent_runs_one_active_per_project
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 
 ## 5. 用量与管理，不是计费
+
+fake P1 只显示 Run 的零值结构。用户用量与内部管理视图等真实数据存在后再实现；不应把 fake 计量当成本信息。
 
 `AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
 
