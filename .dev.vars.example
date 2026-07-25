@@ -1,0 +1,14 @@
+# Copy this file to .dev.vars. Never commit .dev.vars.
+
+# Authentication
+BETTER_AUTH_SECRET=replace-with-a-unique-high-entropy-secret
+BETTER_AUTH_URL=http://localhost:5173
+
+# Platform model
+GEMINI_API_KEY=
+
+# Add only when the real E2B runtime adapter is enabled.
+# E2B_API_KEY=
+
+# Enable only when BYOK write support is implemented.
+# CREDENTIAL_ENCRYPTION_KEY=

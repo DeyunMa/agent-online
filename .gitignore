@@ -1,0 +1,17 @@
+# Local secrets and Wrangler state
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*
+!.env.example
+.wrangler/
+.playwright-cli/
+
+# Dependencies and build output
+node_modules/
+dist/
+.vite/
+
+# Local operating-system and editor files
+.DS_Store
