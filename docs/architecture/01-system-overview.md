@@ -1,7 +1,7 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal 和受控 Project Preview 均已通过远程验收；Goose adapter、组合模板与私有 Cloudflare 产品链路已通过受控 spike。Goose UI 仍关闭，Changes 尚未实现。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview 和只读 Changes 均已通过远程验收；Goose adapter、组合模板与私有 Cloudflare 产品链路已通过受控 spike。Goose UI 仍关闭。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
 
@@ -15,7 +15,7 @@ Pi 是默认且已验收的 AgentRuntime。Goose 已按 ADR-0004 完成第二 Ru
 
 ```mermaid
 flowchart LR
-    UI["React 浏览器 UI\nProject、消息、文件、终端、preview"] -->|"same-origin HTTPS / SSE / WS"| W["Cloudflare Worker"]
+    UI["React 浏览器 UI\nProject、消息、文件、终端、preview、changes"] -->|"same-origin HTTPS / SSE / WS"| W["Cloudflare Worker"]
     W --> H["Hono 控制平面\nAuth / Project / AgentRun"]
     H --> BA["Better Auth"]
     H --> D1["D1\n用户、Project、Message、Lease、AgentRun\n临时 Terminal / Preview 所有权"]
@@ -28,6 +28,8 @@ flowchart LR
     TS --> SR
     H --> PS["ProjectPreviewService\n同源 GET/HEAD / 临时所有权"]
     PS --> SR
+    H --> CS["ProjectChangesService\n固定 Git status / diff"]
+    CS --> SR
     AR -->|"run-scoped process session"| SR
     SR --> SB["Linux Sandbox\nAgent process + shell + Project files"]
     SB -->|"opaque run-scoped model access"| MG
@@ -44,20 +46,20 @@ React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供�
 
 - Project 与用户可见消息；
 - 应用自己的 `sandboxLeaseId`、状态和可用能力；
-- 脱敏后的 Agent 状态；现有 E2B Lease 的受控文件列表、UTF-8 文本、同源 WebSocket 终端流，以及固定 Vite preset 的同源签名 Preview 内容；
+- 脱敏后的 Agent 状态；现有 E2B Lease 的受控文件列表、UTF-8 文本、同源 WebSocket 终端流、固定 Vite preset 的同源签名 Preview 内容，以及当前 Git working tree/index 的有界只读 status/diff；
 - 自己的基础用量汇总。
 
 它不能看到真实供应商 ID、Provider Key、沙箱内部端口、调度密钥或 Gemini Key，也不能指定任意二进制、Provider 或 shell 命令。
 
 ### Worker 控制平面
 
-Hono 负责鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、Preview 签名与内容网关、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
+Hono 负责鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、Preview 签名与内容网关、Changes 输入与响应边界、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
 
 Worker 能拿到对话和用量，是因为它明确拥有请求和事件协议：用户输入先写入 D1，再交给沙箱中的 Agent；Agent 的公开事件和最终回复回到 Worker；模型请求必须经过 Worker 的 ModelGateway。平台不会依赖“抓取沙箱”或读取私有推理。
 
 ### Linux 沙箱
 
-Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前 `E2BSandboxRuntime` 已实现真实沙箱、进程和 Lease 级文件合同；`FakeSandboxRuntime` 保留给无外部成本的控制面开发，其内存文件不能跨请求读取，因此公共 Files 会明确返回不可用。
+Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前 `E2BSandboxRuntime` 已实现真实沙箱、进程、Lease 级文件和受控 Git Changes 合同；`FakeSandboxRuntime` 保留给无外部成本的控制面开发，其内存文件不能跨请求读取，也不伪装 Git repository，因此公共 Files/Changes 会明确返回不可用。
 
 沙箱磁盘是 V1 Project 文件的唯一副本。空闲 TTL、显式停止、Provider 过期或故障后，文件可以丢失；Project 的 D1 元数据和对话仍保留，但新沙箱从空目录开始。
 
@@ -126,6 +128,8 @@ sequenceDiagram
 | `/api/projects/:id/messages` | 读取 Project 的可见消息。 |
 | `/api/projects/:id/files` | 在没有活动 Run 时列出现有沙箱 `/workspace` 下的受控目录。 |
 | `/api/projects/:id/files/content` | 读取受限相对路径指向的 UTF-8 文本文件。 |
+| `/api/projects/:id/changes` | 读取现有 E2B `/workspace` 当前 Git working tree/index 的有界 status；不创建沙箱或 repository。 |
+| `/api/projects/:id/changes/content` | 只为当前 status 中的精确相对路径读取 staged/unstaged 有界 unified diff。 |
 | `/api/projects/:id/agent-runs` | 创建 AgentRun，或读取当前用户该 Project 最近 50 条 Run 事实。 |
 | `/api/projects/:id/agent-runs/active` | 读取该 Project 当前的非终态 Run，供页面恢复。 |
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
@@ -154,5 +158,6 @@ sequenceDiagram
 - 团队、组织、成员邀请、Tenant、支付、套餐或订阅 API。
 - 浏览器直接连接供应商终端 URL 或模型 API。
 - 任意 command/port Preview、公开分享链接或浏览器直连 Provider Preview URL。
+- Git 历史托管、Run 归因、任意 revision/pathspec/命令，或把 Changes 保存为平台审计记录。
 - 在 Worker 或浏览器中运行 Agent。
 - 在没有适配器、能力声明、凭据设计和 E2E 前公开 Goose、Claude Code 或 Codex CLI。

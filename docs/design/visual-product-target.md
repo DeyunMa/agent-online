@@ -1,7 +1,7 @@
 # 视觉与产品目标
 
 > 状态：已确认的产品方向基准。效果图约束后续界面和功能组织，但不代表图中所有能力已经实现。
-> 当前进度：D2，以及 D3 Files、当前用户 Usage、受控 Terminal 和受控 Project Preview 均已完成远端真实浏览器验收；Goose 已完成私有 Cloudflare spike，但 UI 仍只公开 Pi。
+> 当前进度：D2，以及 D3 Files、当前用户 Usage、受控 Terminal、受控 Project Preview 和只读 Changes 均已完成远端真实浏览器验收；Goose 已完成私有 Cloudflare spike，但 UI 仍只公开 Pi。
 > 关联：[视觉基准图](./assets/agent-online-visual-target.png) · [系统总览](../architecture/01-system-overview.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ![Agent Online 视觉基准](./assets/agent-online-visual-target.png)
@@ -13,7 +13,7 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 1. 选择或创建 Project。
 2. 与当前 Project 的 Agent 对话并观察 Run 状态。
 3. 查看当前沙箱的公开状态和基础用量。
-4. 查看当前沙箱的真实文件、终端和受控 preview。
+4. 查看当前沙箱的真实文件、终端、受控 preview 和当前 Git changes。
 
 界面只是沙箱内真实 Agent 的控制与可视化层。不能用前端模拟内容冒充 Pi 回复、文件、终端、diff、用量或沙箱状态。
 
@@ -25,9 +25,9 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 | --- | --- | --- |
 | 左栏 | 品牌、Project 导航、创建入口、账号。 | Better Auth 和 `GET /api/projects`。 |
 | 中栏 | 当前 Project、Conversation、AgentRun 状态和任务输入。 | D1 Message、AgentRun 与 SSE。 |
-| 右栏 | 当前 Project 检查器；显示 Project、Sandbox、AgentRun 和真实 usage，并按后端能力逐步启用文件、终端、preview 标签。 | D1 公开事实和受控 Sandbox API。 |
+| 右栏 | 当前 Project 检查器；显示 Project、Sandbox、AgentRun 和真实 usage，并按后端能力启用文件、changes、终端、preview 标签。 | D1 公开事实和受控 Sandbox API。 |
 
-移动端按顺序折叠为顶部账号栏、Project/Conversation 主内容和 Project 检查器。固定格式区域需要稳定尺寸和滚动容器，不能因状态文字、消息长度或按钮出现而导致整体跳动。
+移动端保留 Project/Conversation 主内容，并通过页头图标打开全高 Project Inspector 抽屉；不能把检查器简单排在长对话末尾。固定格式区域需要稳定尺寸和滚动容器，不能因状态文字、消息长度或按钮出现而导致整体跳动。
 
 ## 3. 视觉规则
 
@@ -47,16 +47,16 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 
 | 阶段 | 可以展示 | 不能伪造 |
 | --- | --- | --- |
-| 当前 D2 + D3 已完成项 | 邮箱密码认证、真实 Project、Message、Run 历史、E2B + Pi、最终 assistant Message、真实 Run usage、取消、deadline、空闲 TTL、受控停止、只读 Files、当前用户全量 Usage、同源 Terminal，以及固定 Vite preset 的同源受控 Preview。 | changes、维护者视图、任意 Preview 命令/端口或任何未经网关授权的数据。 |
-| D3 后续 | 受控 Changes 和维护者基础用量视图。 | 工作区恢复、R2 快照、商业账单。 |
+| 当前 D2 + D3 已完成项 | 邮箱密码认证、真实 Project、Message、Run 历史、E2B + Pi、最终 assistant Message、真实 Run usage、取消、deadline、空闲 TTL、受控停止、只读 Files、当前用户全量 Usage、同源 Terminal、固定 Vite preset 的同源受控 Preview，以及当前 Git working tree/index 的只读 Changes。 | 维护者视图、任意 Git/Preview 命令或端口、Run diff 归因，以及任何未经网关授权的数据。 |
+| D3 后续 | 维护者基础用量视图和每用户并发护栏。 | 工作区恢复、R2 快照、商业账单。 |
 | 后续 | 基于真实 Provider 能力的 diff、仓库集成，以及通过全部公开门槛的第二个 Runtime。 | 仅凭预留 ID 或私有 spike 暴露 Goose、Claude Code 或 Codex CLI。 |
 
-右栏只显示真实的 Lease、AgentRuntime、SandboxRuntime、模型和 Run usage。Files 已使用真实 API 启用；Terminal 只在服务端公开 E2B PTY capability 时启用，并按需连接同源 WebSocket；Preview 只在服务端公开 E2B Preview capability 时启用，并加载平台签发的同源内容 URL。浏览器不接触 Provider host、内部端口、traffic token 或启动参数。
+右栏只显示真实的 Lease、AgentRuntime、SandboxRuntime、模型和 Run usage。Files 已使用真实 API 启用；Terminal 只在服务端公开 E2B PTY capability 时启用，并按需连接同源 WebSocket；Preview 只在服务端公开 E2B Preview capability 时启用，并加载平台签发的同源内容 URL；Changes 只显示固定 Git API 的真实 status/diff。浏览器不接触 Provider host、内部端口、traffic token、Git command 或启动参数。
 
 ## 5. 当前实现优先级
 
 1. 维持已确认的三栏 Project 控制台，并保持所有 loading/empty/error/disabled 状态真实。
 2. 已启用受控只读 Files：目录、文本读取和真实无沙箱/过期/错误状态。
-3. 当前用户用量聚合、受控 Terminal 和固定 Vite Preview 已启用；下一步实现只读、可审计且不伪造的 Changes。浏览器始终不能接触 Provider ID、内部端口或未受控 Provider URL。
+3. 当前用户用量聚合、受控 Terminal、固定 Vite Preview 和只读 Changes 已启用；后续优先保持真实状态、补自动化回归和维护者护栏。浏览器始终不能接触 Provider ID、内部端口或未受控 Provider URL。
 
 视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、布局跳动和无语义的大面积绿色。

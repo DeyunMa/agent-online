@@ -16,11 +16,16 @@
 
 ## 2. 组合模板
 
-精确 build：
+本阶段最初验收的精确 build：
 
 ```text
 agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8
 ```
+
+受控 Changes 上线时已用第二版不可变 build
+`agent-online-pi-goose-runtime:8916fff0-6236-43ba-a397-b0e2b8f97c47`
+取代当前 Preview 配置。第二版保留相同 Node/Pi/Goose 版本，并显式安装和探测
+Git、Bash、coreutils；最新值以资源台账和 E2E 文档为准。
 
 构建内实测：
 
@@ -100,5 +105,5 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 
 1. 保持私有 Preview 为 `spike`，先固化 capability 工具继承和输出/日志脱敏门禁。
 2. 公开门槛全部通过后再实现 React Runtime 选择，并完成刷新与移动端验收。
-3. 产品主线的跨 Run Usage、use-case/route 加固、受控 Terminal 和受控 Project
-   Preview 均已完成远端验收；下一项纵切是受控 Changes。
+3. 产品主线的跨 Run Usage、use-case/route 加固、受控 Terminal、受控 Project
+   Preview 和只读 Changes 均已完成远端验收；后续优先补自动质量门禁和维护者护栏。

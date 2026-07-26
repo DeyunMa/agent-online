@@ -33,6 +33,67 @@ export type SandboxFileEntry = {
   size: number;
 };
 
+export type SandboxChangeKind =
+  | "added"
+  | "conflicted"
+  | "deleted"
+  | "modified"
+  | "renamed"
+  | "type_changed"
+  | "untracked";
+
+export type SandboxChangeEntry = {
+  path: string;
+  previousPath: string | null;
+  stagedKind: SandboxChangeKind | null;
+  unstagedKind: SandboxChangeKind | null;
+};
+
+export type SandboxChangesSnapshot = {
+  entries: SandboxChangeEntry[];
+  truncated: boolean;
+  unsupportedEntries: boolean;
+};
+
+const maxSandboxChangePathLength = 512;
+const maxSandboxChangePathDepth = 32;
+
+export function isSupportedSandboxChangePath(value: string) {
+  if (
+    value.length === 0 ||
+    value.length > maxSandboxChangePathLength ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    value.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    return false;
+  }
+
+  const segments = value.split("/");
+  return (
+    segments.length <= maxSandboxChangePathDepth &&
+    segments.every(
+      (segment) =>
+        segment.length > 0 &&
+        segment.length <= 255 &&
+        segment !== "." &&
+        segment !== ".." &&
+        segment !== ".git",
+    )
+  );
+}
+
+export type SandboxChangeDiffSection = {
+  content: string;
+  truncated: boolean;
+};
+
+export type SandboxChangeDiff = {
+  staged: SandboxChangeDiffSection | null;
+  unstaged: SandboxChangeDiffSection | null;
+};
+
 export class SandboxPathNotFoundError extends Error {
   constructor(path: string) {
     super(`Sandbox path was not found: ${path}`);
@@ -51,6 +112,13 @@ export class SandboxPreviewUnavailableError extends Error {
   constructor(message = "Sandbox preview is unavailable") {
     super(message);
     this.name = "SandboxPreviewUnavailableError";
+  }
+}
+
+export class SandboxNotRepositoryError extends Error {
+  constructor(message = "Sandbox workspace is not a Git repository") {
+    super(message);
+    this.name = "SandboxNotRepositoryError";
   }
 }
 
@@ -155,6 +223,15 @@ export interface SandboxPreviewRuntime {
     providerProcessRef: string,
     reason: PreviewStopReason,
   ): Promise<void>;
+}
+
+export interface SandboxChangesRuntime {
+  readonly kind: RuntimeKind;
+  listChanges(handle: RuntimeHandle): Promise<SandboxChangesSnapshot>;
+  readChangeDiff(
+    handle: RuntimeHandle,
+    change: SandboxChangeEntry,
+  ): Promise<SandboxChangeDiff>;
 }
 
 export interface SandboxRuntime

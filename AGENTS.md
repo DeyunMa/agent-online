@@ -15,10 +15,10 @@ Agent Online is a personal, development-stage Coding Agent SaaS project. It is a
 - Preserve `User -> Project -> SandboxLease` ownership. Each Project has one logical SandboxLease record and at most one active provider sandbox. Browsers never receive provider sandbox IDs, internal ports, provider credentials, or raw model keys.
 - Keep one deployable Worker. Do not split frontend/backend or turn `AgentRuntime` into a separate service without an explicit architecture decision.
 - `src/client/` must not import `src/server/`; `src/domain/` stays framework/provider independent; `src/agent/` depends only on generic `SandboxRuntime` contracts, not provider SDKs.
-- `SandboxRuntime` owns sandbox lifecycle and generic process/file capabilities. Terminal and Preview are separate narrow runtime capabilities. Application modules should depend only on the capability they use. `AgentRuntime` owns an individual Agent protocol and normalized events. Do not merge those responsibilities.
+- `SandboxRuntime` owns sandbox lifecycle and generic process/file capabilities. Terminal, Preview, and Changes are separate narrow runtime capabilities. Application modules should depend only on the capability they use. `AgentRuntime` owns an individual Agent protocol and normalized events. Do not merge those responsibilities.
 - Pi is the default and currently validated AgentRuntime. Additional runtimes require an accepted ADR, a dedicated adapter, an explicit server allowlist or feature flag, ModelGateway compatibility, cancellation/final-output/usage tests, and a real end-to-end validation before UI exposure. Goose follows ADR-0004 and is executable only under `GOOSE_RUNTIME_MODE`; `spike` may accept an explicit authenticated API request but must remain absent from public capabilities and UI. Reserved IDs alone never imply support.
 - Platform model access must go through a Worker-side gateway. Never inject raw Gemini keys into a sandbox, browser response, log, or persisted data. BYOK is deferred until a separate decision.
-- V1 stores product state in D1: authentication, Project metadata, user-visible messages, `AgentRun` lifecycle, per-run aggregate usage, and only the current ephemeral Terminal/Preview coordination records. Never persist Terminal input/output or Preview content/history. The sandbox filesystem is the only workspace copy; a stopped or expired sandbox may lose its files.
+- V1 stores product state in D1: authentication, Project metadata, user-visible messages, `AgentRun` lifecycle, per-run aggregate usage, and only the current ephemeral Terminal/Preview coordination records. Never persist Terminal input/output, Preview content/history, or Git status/diff/history. Changes is a bounded read of the current sandbox working tree/index and cannot be attributed to one Run; it must reject extra repository config scopes and explicitly mark unsupported paths instead of reporting clean. The sandbox filesystem is the only workspace copy; a stopped or expired sandbox may lose its files.
 - `AgentRun` is one short-lived Agent execution, normally one user turn. A Project has at most one non-terminal AgentRun or one Terminal hard lock, and those activities are mutually exclusive; wall-clock expiry alone never unlocks a Terminal. Preview startup also requires both to be absent, but a running Preview may coexist with a later Run or Terminal and must block whole-sandbox stop/idle cleanup. Do not reintroduce durable Agent sessions, reconnectable Terminals, arbitrary preview commands/ports, workspace revision history, or raw transcript retention without a new ADR.
 
 ## Development Data Policy
@@ -54,7 +54,7 @@ Agent Online is a personal, development-stage Coding Agent SaaS project. It is a
 | --- | --- |
 | Narrow domain/runtime change | Relevant unit tests and `pnpm typecheck`. |
 | API, schema, or auth change | Relevant tests, `pnpm typecheck`, and a local D1 migration check. |
-| Shared contract or release-facing change | `pnpm typecheck`, `pnpm test`, and `pnpm build`. |
+| Shared contract or release-facing change | `pnpm check` (import boundaries, typecheck, tests, and build). |
 
 Useful commands:
 
@@ -62,6 +62,8 @@ Useful commands:
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm check:boundaries
+pnpm check
 pnpm wrangler d1 migrations apply DB --local
 pnpm cf-typegen
 ```

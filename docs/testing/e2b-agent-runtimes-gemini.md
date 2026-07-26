@@ -39,8 +39,10 @@
 | Node.js | `24.16.0` |
 | Pi | `0.82.0` |
 | Goose | `1.44.0` |
+| Git | `2.39.5` |
+| Bash | `5.2.15` |
 
-Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。模板不包含任何 Key、token 或用户数据。
+Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。模板显式安装 `bash`、`coreutils` 和 `git`，供受控 Changes 使用；模板不包含任何 Key、token 或用户数据。
 
 构建：
 
@@ -51,7 +53,7 @@ pnpm build:e2b-agent-template
 当前已验证的精确 build：
 
 ```text
-agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8
+agent-online-pi-goose-runtime:8916fff0-6236-43ba-a397-b0e2b8f97c47
 ```
 
 旧 `agent-online-pi-runtime` 模板和构建脚本暂时保留为回滚工具，但新的 Project Runtime 验证必须使用组合模板，不能因切换 Agent 重建沙箱。
@@ -86,7 +88,7 @@ pnpm test:e2e:e2b-agent-runtimes
 
 ## 通过条件
 
-1. 组合模板实测版本正确，`/workspace` 可写。
+1. 组合模板实测 Node/Pi/Goose/Git/Bash 版本正确，`/workspace` 可写。
 2. 沙箱环境中没有 Gemini/E2B Key，也没有常驻 ModelGateway token。
 3. Pi 创建共享文件，Goose 读取并修改，Pi 再读取并修改；全程使用同一 Provider sandbox。
 4. 两个 adapter 都解析真实协议并产生成功的 `agent.completed` 与最终文本。
@@ -97,10 +99,10 @@ pnpm test:e2e:e2b-agent-runtimes
 
 ## 2026-07-26 结果
 
-- 组合 E2B template 构建成功，镜像内三项版本探针通过。
-- 第一次运行因本机 `cloudflared` 不在 `PATH` 而在创建沙箱前失败；指定已安装二进制后继续。
+- 第二版组合 E2B template 构建成功，镜像内 Node/Pi/Goose/Git/Bash 版本探针通过。
+- 第一次运行因本机 `cloudflared` 不在 `PATH` 而在创建沙箱前失败；通过 Homebrew 安装官方二进制后重新执行。
 - 直接 CLI 链路通过后，严格 adapter parser 首次发现 Goose 会输出 session 信息；adapter 增加官方 `--quiet` 参数后，stdout 成为受控 `stream-json`。
-- 最终 adapter 级 `Pi -> Goose -> Pi`、每 Run 签名 capability、真实 usage、Key 隔离和可观察的 Goose 取消/沙箱复用全部通过，最近一次耗时约 48 秒。
+- 最终 adapter 级 `Pi -> Goose -> Pi`、每 Run 签名 capability、真实 usage、Key 隔离和可观察的 Goose 取消/沙箱复用全部通过；第二版模板最近一次完整 E2E 耗时约 47 秒。
 
 ## Cloudflare Preview 结果
 

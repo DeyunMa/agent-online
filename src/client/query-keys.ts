@@ -18,6 +18,17 @@ export function projectFileQueryKey(projectId: string, path: string) {
   return ["project-file", projectId, path] as const;
 }
 
+export function projectChangesQueryKey(projectId: string) {
+  return ["project-changes", projectId] as const;
+}
+
+export function projectChangeQueryKey(
+  projectId: string,
+  path: string,
+) {
+  return ["project-change", projectId, path] as const;
+}
+
 export function projectPreviewQueryKey(projectId: string) {
   return ["project-preview", projectId] as const;
 }

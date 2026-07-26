@@ -1,13 +1,13 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway、Pi/Goose Run 聚合 usage、当前用户跨 Run 聚合，以及 Terminal/Preview 临时所有权均已通过远程验收；维护者视图仍待实现。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway、Pi/Goose Run 聚合 usage、当前用户跨 Run 聚合、Terminal/Preview 临时所有权，以及不落库的只读 Changes 均已通过远程验收；维护者视图仍待实现。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
 
 | 位置 | 保存内容 | 不保存内容 |
 | --- | --- | --- |
-| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage，以及当前临时 Terminal/Preview 协调行。 | Project 文件、原始 Agent 事件、终端输入/输出/滚屏、Preview 页面/日志/截图/访问历史、Provider 明文 Key、私有推理。 |
+| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage，以及当前临时 Terminal/Preview 协调行。 | Project 文件、Git status/diff/history、原始 Agent 事件、终端输入/输出/滚屏、Preview 页面/日志/截图/访问历史、Provider 明文 Key、私有推理。 |
 | 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
 | Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
 | 可选 Sentry | 脱敏错误和稀疏的服务端追踪元数据。 | prompt、消息正文、代码文件、密钥、原始 Agent/终端流。 |
@@ -82,7 +82,7 @@ END;
 
 `preview_sessions.status='starting'` 只覆盖启动竞态；进入 `running` 后允许后续 AgentRun 和 Terminal 复用同一沙箱。停止沙箱与 idle cleanup 则必须检查任意活动 Preview。`expires_at` 只供 durable Workflow 调度，不能仅因墙钟经过就把私有进程当作已经停止。
 
-不建立 `workspace_revisions`、`usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
+不建立 `workspace_revisions`、Git changes/history、`usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。Changes 每次直接读取当前沙箱 Git working tree/index，不新增 D1 表或迁移。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
 
 ## 4. 平台 Gemini 与 ModelGateway
 

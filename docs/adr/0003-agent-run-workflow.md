@@ -104,7 +104,7 @@ starting / running  -> cancelling
                      -> cancelled
 ```
 
-正常路径使用 `SandboxRuntime.terminateProcess()` 只终止当前 Pi 进程，Lease 回到 `idle`，Project 文件继续存在。进程引用缺失或 Provider 无法精确终止时，允许 fail-closed 停止整个沙箱。
+正常路径使用 `SandboxRuntime.terminateProcess()` 只终止当前 Agent 进程，Lease 回到 `idle`，Project 文件继续存在。进程引用缺失或 Provider 无法精确终止时，允许 fail-closed 停止整个沙箱。
 
 D1 收敛后，Hono 尽力终止原执行 Workflow，并创建一个只负责空闲 TTL 的 `idle-cleanup` Workflow。即使这个调度失败，E2B 自身的 sandbox timeout 仍提供最终成本上界。
 
@@ -156,7 +156,7 @@ Gemini Key 只存在于 Worker Secret。Workflow 为每个 Run 签发绑定 `pro
 
 1. Workflow 参数和输出不含 prompt、最终回复、Provider 引用或凭据。
 2. 同一 Project 并发创建最多一个非终态 Run。
-3. Workflow 重试不会启动第二个 Pi 进程。
+3. Workflow 重试不会启动第二个 Agent 进程。
 4. 正常取消只停止当前进程并保留沙箱；无法精确终止时才停止整个沙箱。
 5. deadline 和执行中断都能让 D1 收敛到终态。
 6. 空闲清理不会停止已被新 Run 使用的沙箱。

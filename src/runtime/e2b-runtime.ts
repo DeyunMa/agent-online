@@ -16,6 +16,9 @@ import type {
   EnsureLeaseInput,
   ProcessTerminationReason,
   RuntimeHandle,
+  SandboxChangeDiff,
+  SandboxChangeEntry,
+  SandboxChangesRuntime,
   SandboxCommand,
   SandboxFileEntry,
   SandboxProcessEvent,
@@ -33,10 +36,18 @@ import type {
   PreviewStopReason,
 } from "./contract";
 import {
+  isSupportedSandboxChangePath,
+  SandboxNotRepositoryError,
   SandboxPathNotFoundError,
   SandboxPreviewUnavailableError,
   SandboxUnavailableError,
 } from "./contract";
+import {
+  maxGitDiffSectionBytes,
+  maxGitStatusBytes,
+  parseGitStatusOutput,
+  truncateUtf8,
+} from "./git-changes";
 
 type E2BCommandHandle = Pick<
   CommandHandle,
@@ -82,6 +93,7 @@ export type E2BSandboxClient = {
 
 export type E2BSandboxRuntimeOptions = {
   apiKey: string;
+  changesTimeoutMs?: number;
   client?: E2BSandboxClient;
   processTimeoutMs?: number;
   sandboxTimeoutMs?: number;
@@ -94,6 +106,7 @@ export type E2BSandboxRuntimeOptions = {
 const defaultSandboxTimeoutMs = 30 * 60 * 1_000;
 const defaultProcessTimeoutMs = 30 * 60 * 1_000;
 const defaultTerminalTimeoutMs = 30 * 60 * 1_000;
+const defaultChangesTimeoutMs = 15_000;
 const previewConfigPath =
   "/tmp/agent-online-vite-preview.config.mjs";
 const previewConfig = `export default {
@@ -109,6 +122,8 @@ const previewConfig = `export default {
 `;
 const previewPort = 3000;
 const previewWorkingDirectory = "/workspace";
+const changesWorkingDirectory = "/workspace";
+const maxGitConfigBytes = 64 * 1_024;
 export const defaultTerminalOutputLimitBytes = 8 * 1_024 * 1_024;
 export const defaultTerminalPendingOutputBytes = 256 * 1_024;
 
@@ -119,6 +134,7 @@ const defaultClient: E2BSandboxClient = {
 
 export class E2BSandboxRuntime
   implements
+    SandboxChangesRuntime,
     SandboxPreviewRuntime,
     SandboxRuntime,
     SandboxTerminalRuntime
@@ -127,6 +143,7 @@ export class E2BSandboxRuntime
   readonly kind = "e2b" as const;
 
   private readonly client: E2BSandboxClient;
+  private readonly changesTimeoutMs: number;
   private readonly processTimeoutMs: number;
   private readonly sandboxTimeoutMs: number;
   private readonly terminalOutputLimitBytes: number;
@@ -140,6 +157,9 @@ export class E2BSandboxRuntime
     }
 
     this.client = options.client ?? defaultClient;
+    this.changesTimeoutMs = requirePositiveTimeout(
+      options.changesTimeoutMs ?? defaultChangesTimeoutMs,
+    );
     this.processTimeoutMs = requirePositiveTimeout(options.processTimeoutMs ?? defaultProcessTimeoutMs);
     this.sandboxTimeoutMs = requirePositiveTimeout(options.sandboxTimeoutMs ?? defaultSandboxTimeoutMs);
     this.terminalOutputLimitBytes = requirePositiveTimeout(
@@ -281,6 +301,93 @@ export class E2BSandboxRuntime
       }));
     } catch (error) {
       throw mapFilesystemError(error, path);
+    }
+  }
+
+  async listChanges(handle: RuntimeHandle) {
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      await assertSafeGitConfiguration(
+        sandbox,
+        this.changesTimeoutMs,
+      );
+      const result = await runBoundedGitCommand(
+        sandbox,
+        changesWorkingDirectory,
+        [
+          "--no-pager",
+          "--literal-pathspecs",
+          "-c",
+          "core.fsmonitor=false",
+          "-c",
+          "core.untrackedCache=false",
+          "status",
+          "--porcelain=v1",
+          "-z",
+          "--untracked-files=all",
+          "--ignore-submodules=all",
+        ],
+        maxGitStatusBytes + 1,
+        this.changesTimeoutMs,
+      );
+      const bounded = truncateUtf8(result.stdout, maxGitStatusBytes);
+      if (result.exitCode === 44) {
+        throw new SandboxNotRepositoryError();
+      }
+      if (
+        result.exitCode !== 0 &&
+        !(result.exitCode === 141 && bounded.truncated)
+      ) {
+        throw new Error("Git status failed");
+      }
+
+      return parseGitStatusOutput(bounded.text, bounded.truncated);
+    } catch (error) {
+      if (error instanceof SandboxNotFoundError) {
+        throw new SandboxUnavailableError();
+      }
+      throw error;
+    }
+  }
+
+  async readChangeDiff(
+    handle: RuntimeHandle,
+    change: SandboxChangeEntry,
+  ): Promise<SandboxChangeDiff> {
+    assertSandboxChange(change);
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      await assertSafeGitConfiguration(
+        sandbox,
+        this.changesTimeoutMs,
+      );
+      const staged = change.stagedKind
+        ? await readGitDiffSection(
+            sandbox,
+            changesWorkingDirectory,
+            createTrackedDiffArgs(change, true),
+            this.changesTimeoutMs,
+            false,
+          )
+        : null;
+      const unstaged = change.unstagedKind
+        ? await readGitDiffSection(
+            sandbox,
+            changesWorkingDirectory,
+            change.unstagedKind === "untracked"
+              ? createUntrackedDiffArgs(change.path)
+              : createTrackedDiffArgs(change, false),
+            this.changesTimeoutMs,
+            change.unstagedKind === "untracked",
+          )
+        : null;
+
+      return { staged, unstaged };
+    } catch (error) {
+      if (error instanceof SandboxNotFoundError) {
+        throw new SandboxUnavailableError();
+      }
+      throw error;
     }
   }
 
@@ -771,6 +878,218 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
 
 function terminalEventSize(event: SandboxTerminalEvent) {
   return event.type === "terminal.output" ? event.chunk.byteLength : 0;
+}
+
+const boundedGitCommandScript = `
+set -uo pipefail
+[ -d "$GIT_DIR" ] && [ ! -L "$GIT_DIR" ] || exit 44
+[ -f "$GIT_DIR/config" ] && [ ! -L "$GIT_DIR/config" ] || exit 45
+[ ! -e "$GIT_DIR/commondir" ] && [ ! -L "$GIT_DIR/commondir" ] || exit 46
+[ ! -e "$GIT_DIR/config.worktree" ] && [ ! -L "$GIT_DIR/config.worktree" ] || exit 47
+/usr/bin/env -i \
+  GIT_ATTR_NOSYSTEM=1 \
+  GIT_CONFIG_GLOBAL=/dev/null \
+  GIT_CONFIG_NOSYSTEM=1 \
+  GIT_DIR=/workspace/.git \
+  GIT_LITERAL_PATHSPECS=1 \
+  GIT_NO_LAZY_FETCH=1 \
+  GIT_OPTIONAL_LOCKS=0 \
+  GIT_PAGER=cat \
+  GIT_TERMINAL_PROMPT=0 \
+  GIT_WORK_TREE=/workspace \
+  HOME=/tmp/agent-online-git-home \
+  LC_ALL=C \
+  PATH=/usr/bin:/bin \
+  XDG_CONFIG_HOME=/tmp/agent-online-git-home \
+  /usr/bin/git "$@" 2>/dev/null |
+  /usr/bin/head -c "$AGENT_ONLINE_OUTPUT_LIMIT"
+`.trim();
+
+async function assertSafeGitConfiguration(
+  sandbox: E2BSandbox,
+  timeoutMs: number,
+) {
+  const result = await runBoundedGitCommand(
+    sandbox,
+    changesWorkingDirectory,
+    [
+      "--no-pager",
+      "config",
+      "--file",
+      "/workspace/.git/config",
+      "--no-includes",
+      "--name-only",
+      "--null",
+      "--list",
+    ],
+    maxGitConfigBytes + 1,
+    timeoutMs,
+  );
+  const bounded = truncateUtf8(result.stdout, maxGitConfigBytes);
+  if (result.exitCode === 44) {
+    throw new SandboxNotRepositoryError();
+  }
+  if (result.exitCode !== 0 || bounded.truncated) {
+    throw new Error("Git configuration validation failed");
+  }
+
+  const keys = bounded.text
+    .split("\0")
+    .filter(Boolean)
+    .map((key) => key.toLowerCase());
+  if (keys.some(isUnsafeGitConfigurationKey)) {
+    throw new Error("Git configuration is not safe for Changes");
+  }
+}
+
+function isUnsafeGitConfigurationKey(key: string) {
+  return (
+    key.startsWith("include.") ||
+    key.startsWith("includeif.") ||
+    key.startsWith("filter.") ||
+    key === "extensions.worktreeconfig" ||
+    key === "diff.external" ||
+    (/^diff\..+\.(command|textconv)$/u.test(key)) ||
+    key === "core.attributesfile" ||
+    key === "core.fsmonitor" ||
+    key === "core.hookspath" ||
+    key === "core.worktree"
+  );
+}
+
+async function readGitDiffSection(
+  sandbox: E2BSandbox,
+  cwd: string,
+  args: readonly string[],
+  timeoutMs: number,
+  allowDifferenceExitCode: boolean,
+) {
+  const result = await runBoundedGitCommand(
+    sandbox,
+    cwd,
+    args,
+    maxGitDiffSectionBytes + 1,
+    timeoutMs,
+  );
+  const bounded = truncateUtf8(
+    result.stdout,
+    maxGitDiffSectionBytes,
+  );
+  if (result.exitCode === 44) {
+    throw new SandboxNotRepositoryError();
+  }
+  if (
+    result.exitCode !== 0 &&
+    !(allowDifferenceExitCode && result.exitCode === 1) &&
+    !(result.exitCode === 141 && bounded.truncated)
+  ) {
+    throw new Error("Git diff failed");
+  }
+
+  return {
+    content: bounded.text,
+    truncated: bounded.truncated,
+  };
+}
+
+async function runBoundedGitCommand(
+  sandbox: E2BSandbox,
+  cwd: string,
+  gitArgs: readonly string[],
+  outputLimitBytes: number,
+  timeoutMs: number,
+) {
+  const process = await sandbox.commands.run(
+    toShellCommand({
+      args: [
+        "-i",
+        `AGENT_ONLINE_OUTPUT_LIMIT=${outputLimitBytes}`,
+        "GIT_DIR=/workspace/.git",
+        "/bin/bash",
+        "--noprofile",
+        "--norc",
+        "-c",
+        boundedGitCommandScript,
+        "agent-online-git",
+        ...gitArgs,
+      ],
+      command: "/usr/bin/env",
+    }),
+    {
+      background: true,
+      cwd,
+      timeoutMs,
+    },
+  );
+
+  try {
+    return await process.wait();
+  } catch (error) {
+    if (error instanceof CommandExitError) {
+      return error;
+    }
+    throw error;
+  }
+}
+
+function createTrackedDiffArgs(
+  change: SandboxChangeEntry,
+  staged: boolean,
+) {
+  const paths =
+    change.previousPath === null
+      ? [change.path]
+      : [change.previousPath, change.path];
+  return [
+    "--no-pager",
+    "--literal-pathspecs",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    "diff",
+    ...(staged ? ["--cached"] : []),
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--ignore-submodules=all",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--",
+    ...paths,
+  ];
+}
+
+function createUntrackedDiffArgs(path: string) {
+  return [
+    "--no-pager",
+    "--literal-pathspecs",
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.untrackedCache=false",
+    "diff",
+    "--no-index",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
+    "--",
+    "/dev/null",
+    path,
+  ];
+}
+
+function assertSandboxChange(change: SandboxChangeEntry) {
+  if (
+    !isSupportedSandboxChangePath(change.path) ||
+    (change.previousPath !== null &&
+      !isSupportedSandboxChangePath(change.previousPath)) ||
+    (!change.stagedKind && !change.unstagedKind)
+  ) {
+    throw new Error("E2B Changes entry is invalid");
+  }
 }
 
 function toShellCommand(

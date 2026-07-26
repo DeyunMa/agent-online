@@ -1,0 +1,223 @@
+# 当前项目架构
+
+> 文档状态：当前实现基准
+>
+> 校准日期：2026-07-26
+>
+> 适用范围：`main` 分支当前代码、Cloudflare Preview 部署和 E2B 组合模板
+
+本文描述 Agent Online **现在实际运行的架构**。ADR 负责记录决策原因，阶段文档负责保存验收证据；本文只回答当前系统由什么组成、各层负责什么以及数据如何流动。
+
+## 1. 产品定位
+
+Agent Online 是一个个人开发、开源导向的 Hosted Coding Agent SaaS 学习项目。用户通过浏览器注册、创建 Project，并在远程隔离沙箱中运行 Coding Agent。
+
+浏览器中展示的是 Agent 控制台，不是“浏览器内 Agent”。真实 Pi/Goose 进程、工具调用和 Project 文件都位于沙箱内；Cloudflare Worker 位于沙箱外，负责产品控制面。
+
+当前产品边界：
+
+- 单用户直接拥有 Project，没有 Team、Tenant、Organization 或 Membership。
+- 一个 Project 是一组用户可见消息、多个短生命周期 AgentRun 和一条逻辑 SandboxLease 的聚合。
+- Project 文件只存在于当前沙箱文件系统；D1 不保存文件内容，R2 不参与当前版本。
+- Pi 是当前公开 Runtime；Goose 已完成受控 spike，但未向普通浏览器能力和 UI 公开。
+- 计量只做真实用量观察，不包含套餐、账单、支付或配额扣减。
+
+## 2. 部署拓扑
+
+```mermaid
+flowchart LR
+  B["Browser<br/>React Console"]
+
+  subgraph CF["Cloudflare: one Worker deployment"]
+    A["Static Assets"]
+    H["Hono Control Plane"]
+    BA["Better Auth"]
+    W["Cloudflare Workflows"]
+    D1[("D1")]
+    MG["Run-authorized ModelGateway"]
+  end
+
+  subgraph SB["E2B Project Sandbox"]
+    FS[("/workspace")]
+    AR["AgentRuntime<br/>Pi; Goose gated"]
+    PTY["Controlled PTY"]
+    PV["Fixed Vite Preview"]
+    GIT["Read-only Git inspection"]
+  end
+
+  G["Gemini OpenAI-compatible API"]
+
+  B -->|"same-origin HTTPS / SSE / WebSocket"| H
+  B --> A
+  H --> BA
+  BA --> D1
+  H --> D1
+  H --> W
+  W --> H
+  H -->|"SandboxRuntime adapter"| SB
+  AR --> FS
+  PTY --> FS
+  PV --> FS
+  GIT --> FS
+  AR -->|"short-lived Run capability"| MG
+  MG -->|"platform Gemini key"| G
+```
+
+一个仓库只产生一个 Worker 部署单元：
+
+- React 静态资源由 Workers Assets 提供。
+- `/api/*` 先进入 Hono。
+- Hono、Better Auth、ModelGateway 和 Workflow 入口属于同一个可信 Worker 边界。
+- D1 是唯一产品数据库。
+- E2B 是当前真实 Sandbox Provider，不是第二个业务后端。
+
+## 3. 资源模型
+
+```mermaid
+erDiagram
+  USER ||--o{ PROJECT : owns
+  PROJECT ||--o| SANDBOX_LEASE : has
+  PROJECT ||--o{ MESSAGE : contains
+  PROJECT ||--o{ AGENT_RUN : executes
+  SANDBOX_LEASE ||--o{ AGENT_RUN : used_by
+  PROJECT ||--o| TERMINAL_SESSION : temporarily_occupies
+  PROJECT ||--o| PREVIEW_SESSION : temporarily_runs
+  AGENT_RUN o|--|| MESSAGE : consumes_input
+  AGENT_RUN ||--o| MESSAGE : produces_final_reply
+```
+
+核心关系和不变量：
+
+| 资源 | 含义 | 关键不变量 |
+| --- | --- | --- |
+| User | Better Auth 用户 | 直接拥有 Project；所有产品查询都按当前用户过滤。 |
+| Project | 代码项目、对话和运行记录的容器 | 不存在额外 Workspace/Session 聚合。 |
+| SandboxLease | Project 的逻辑沙箱槽位 | 每个 Project 最多一行 Lease；同一时刻最多一个活动 Provider 沙箱。 |
+| AgentRun | 一次短生命周期 Agent 执行，通常对应一个用户回合 | 每个 Project 同时最多一个非终态 Run。 |
+| Message | 用户输入或最终可见 assistant 回复 | 不保存 raw Agent transcript、私有推理或逐 token 输出。 |
+| TerminalSession | 当前 Project 的临时 PTY 占用 | 每个 Project 最多一个；与 AgentRun 硬互斥。 |
+| PreviewSession | 当前固定 Vite Preview 进程 | 每个 Project 最多一个；只保存临时控制状态。 |
+
+SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以复用仍存活的 `/workspace`；沙箱停止、过期或 Provider 故障后，Project 文件允许丢失。
+
+## 4. 代码分层
+
+| 路径 | 职责 | 不能承担的职责 |
+| --- | --- | --- |
+| `src/client/` | React UI、查询缓存、同源 API/SSE/WebSocket 客户端 | 不能导入 `src/server/`，不能接触 Provider 标识或密钥。 |
+| `src/server/` | Hono 路由、鉴权、公开 DTO、配置、D1 adapter、ModelGateway、Workflow 入口 | 不在路由中拼接任意 Agent/沙箱命令。 |
+| `src/application/` | Project/Run/Files/Changes/Terminal/Preview/Usage 用例编排 | 不依赖 Hono 或浏览器状态。 |
+| `src/domain/` | AgentRun、SandboxLease 等 Provider 无关规则 | 不依赖框架、D1、E2B 或具体 Agent。 |
+| `src/runtime/` | Sandbox 生命周期、进程、文件、PTY、Preview、Changes 能力接口和 E2B/fake adapter | 不理解 Pi/Goose 协议或产品鉴权。 |
+| `src/agent/` | AgentRuntime 合同，以及 Pi/Goose CLI 协议归一化 | 不直接持有 Gemini Key，不管理 SandboxLease。 |
+| `src/shared/` | 浏览器和 Worker 共享的公开 DTO/协议类型 | 不包含 Provider 私有字段。 |
+| `worker/` | Cloudflare Worker 导出入口 | 不承载业务用例实现。 |
+
+`AgentRuntime` 和 `SandboxRuntime` 是可替换的代码边界，不是独立服务：
+
+- `AgentRuntime` 决定如何启动 Agent CLI、解析事件、提取最终回复和取消当前 Agent 进程。
+- `SandboxRuntime` 决定如何创建/连接沙箱、启动通用进程、访问文件、PTY 和 Preview。
+- 具体 E2B adapter 可以由一个类实现多种 capability，但 application 用例只依赖所需的窄接口。
+
+## 5. 主要执行流
+
+### 5.1 创建 AgentRun
+
+1. 浏览器向 `POST /api/projects/:projectId/agent-runs` 提交用户消息。
+2. Hono 验证登录、Project 所有权、部署开关和 AgentRuntime policy。
+3. application 在 D1 中取得或创建 SandboxLease，并原子写入用户 Message 和 `queued` AgentRun。
+4. Cloudflare Workflow 成为真实执行所有者。
+5. Workflow 从 D1 回读输入，签发只绑定当前 Run/Project/Model/期限的 ModelGateway capability。
+6. `SandboxRuntime.ensureLease()` 连接现有沙箱或创建新沙箱。
+7. `AgentRuntime` 在 `/workspace` 内启动 Agent 进程。
+8. Agent 使用短时 capability 调用 Worker ModelGateway；ModelGateway 替换成平台 Gemini Key，并把每次模型 usage 累加到 AgentRun。
+9. application 只把最终可见回复写成 assistant Message，并把 Run 收敛到终态。
+10. Lease 进入 `idle`，Workflow 在 idle TTL 后以条件更新抢占并停止沙箱。
+
+Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage，最终回复由 Message API 读取。
+
+### 5.2 取消和恢复
+
+- 取消优先终止当前 Agent 进程，并保留同一 Project 的沙箱文件。
+- 若无法精确终止进程，系统会隔离或停止整个沙箱以恢复边界。
+- Worker/Workflow 所有者丢失时，非终态 Run 会收敛为 `interrupted`；超时收敛为 `timed_out`。
+- Provider 操作失败不会把密钥或 Provider 错误正文返回浏览器。
+
+### 5.3 Files 和 Changes
+
+- 两者都是当前沙箱的受控只读视图，不创建沙箱。
+- Files 只允许读取 `/workspace` 下的安全相对路径和有限大小 UTF-8 文本。
+- Changes 只运行平台固定 Git 命令，返回当前 working tree/index 的有界 status 和 diff。
+- 活动 AgentRun 或 Terminal 期间拒绝读取，避免把并发中的文件状态宣传成一致快照。
+- Changes 是尽力一致的当前视图，不是历史、审计日志或 Run 归因。
+
+### 5.4 Terminal
+
+- 浏览器使用同源 WebSocket 连接 Worker。
+- Worker 在现有/可恢复 Lease 中启动固定工作目录 `/workspace` 的 PTY。
+- D1 仅保存当前互斥记录和 Worker 私有 Provider 引用；终端输入输出不持久化。
+- Terminal 与 AgentRun、Files、Changes、手动 Stop 互斥；断线、显式关闭或到期后释放。
+
+### 5.5 Preview
+
+- Worker 只允许启动平台固定的 `vite-v1` preset、固定端口 `3000` 和固定工作目录 `/workspace`。
+- 浏览器拿到的是短时签名的同源内容 URL，不是 Provider host、端口或 traffic token。
+- Worker 仅代理 `GET`/`HEAD`，过滤请求/响应头，注入 CSP 并改写 HTML 根路径。
+- PreviewSession 只记录当前进程所有权；不保存页面内容、日志、截图或访问历史。
+
+## 6. 数据与信任边界
+
+### 浏览器可以获得
+
+- Project、Message、AgentRun 的公开字段。
+- 脱敏后的 SandboxLease 状态和 Runtime 类型。
+- 聚合 usage。
+- 有界 Files、Changes、Terminal 字节流和签名 Preview 内容 URL。
+
+### 浏览器不能获得
+
+- E2B sandbox ID、Provider process ID、内部 host 或 traffic token。
+- `GEMINI_API_KEY`、`E2B_API_KEY`、`BETTER_AUTH_SECRET` 或 Run capability 原文。
+- raw Agent transcript、私有推理、任意环境变量或任意命令执行接口。
+
+### D1 保存
+
+- Better Auth 用户、账号、会话和验证数据。
+- Project 元数据。
+- 用户可见 Message。
+- AgentRun 生命周期与聚合 usage。
+- SandboxLease 和当前 Terminal/Preview 的临时协调行。
+
+### D1/R2 不保存
+
+- Project 文件或快照。
+- raw Agent transcript、逐 token 输出、工具完整日志。
+- 终端滚屏。
+- Preview 页面、截图或请求历史。
+- Git diff 历史。
+
+## 7. 当前能力状态
+
+| 能力 | 当前状态 |
+| --- | --- |
+| 邮箱密码注册/登录 | 已实现；可配置 open/allowlist。 |
+| Project、Message、AgentRun | 已实现。 |
+| Pi + Gemini | 已公开并通过真实 E2E。 |
+| Goose | adapter、组合模板和远端 spike 已完成；浏览器仍不公开。 |
+| Files | E2B 下受控只读；fake 下明确 unavailable。 |
+| Usage | 当前用户 all-time 聚合；无计费语义。 |
+| Terminal | E2B 下受控 PTY。 |
+| Preview | E2B 下固定 Vite Preview。 |
+| Changes | E2B 下当前 Git 状态和有界 diff。 |
+| R2、BYOK、支付、团队 | 未实现，且不属于当前版本。 |
+
+## 8. 相关基准
+
+- [D1 表设计](./database-schema.md)
+- [HTTP、SSE 与 WebSocket 接口](./http-api.md)
+- [平台限制与限制对象](./platform-limits.md)
+- [系统 ADR](../adr/0002-run-agent-process-and-lease-lifecycle.md)
+- [Workflow ADR](../adr/0003-agent-run-workflow.md)
+- [Terminal ADR](../adr/0005-controlled-project-terminal.md)
+- [Preview ADR](../adr/0006-controlled-project-preview.md)
+- [Changes ADR](../adr/0007-controlled-project-changes.md)

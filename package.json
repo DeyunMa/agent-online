@@ -15,6 +15,8 @@
     "validate:preview-config": "node scripts/validate-preview-config.mjs",
     "deploy:preview": "pnpm validate:preview-config && pnpm build:preview && wrangler deploy --env preview",
     "deploy:preview:dry-run": "pnpm build:preview && wrangler deploy --env preview --dry-run",
+    "check": "pnpm check:boundaries && pnpm typecheck && pnpm test && pnpm build",
+    "check:boundaries": "node scripts/check-import-boundaries.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "build:e2b-pi-template": "node templates/e2b/build-pi-runtime-template.mjs",
@@ -37,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@babel/parser": "8.0.4",
     "@cloudflare/vite-plugin": "^1.47.0",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",

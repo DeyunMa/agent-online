@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { defaultAgentRuntimeId } from "../agent/registry";
 import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import { createAuth } from "./auth";
+import { createChangesApi } from "./changes-api";
 import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
@@ -36,6 +37,7 @@ app.get("/api/capabilities", (c) => {
   );
   return c.json({
     agentRuntimeIds: [...policy.publicRuntimeIds],
+    changesEnabled: sandboxRuntimeId === "e2b",
     defaultAgentRuntimeId,
     runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
     previewEnabled: sandboxRuntimeId === "e2b",
@@ -48,6 +50,7 @@ app.post(modelGatewayEndpointPath, (c) => createWorkerModelGateway(c.env)(c.req.
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
 
 app.route("/api", createProjectApi());
+app.route("/api", createChangesApi());
 app.route("/api", createUsageApi());
 app.route("/api", createTerminalApi());
 app.route("/api", createPreviewApi());

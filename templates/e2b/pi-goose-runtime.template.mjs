@@ -7,7 +7,7 @@ export const piGooseRuntimeTemplate = Object.freeze({
   gooseVersion: "1.44.0",
   gooseArchive: "goose-x86_64-unknown-linux-gnu.tar.bz2",
   gooseSha256: "87883ab52e3748e49cf7b1ed08677337651c35d6f68f1ef9f74e8c58bcaecd73",
-  tag: "v1",
+  tag: "v2",
 });
 
 export function createPiGooseRuntimeTemplate() {
@@ -28,7 +28,7 @@ export function createPiGooseRuntimeTemplate() {
   return Template()
     .fromNodeImage(piGooseRuntimeTemplate.nodeVersion)
     .runCmd(
-      "apt-get update && apt-get install --yes --no-install-recommends bzip2 ca-certificates curl && rm -rf /var/lib/apt/lists/*",
+      "apt-get update && apt-get install --yes --no-install-recommends bash bzip2 ca-certificates coreutils curl git && rm -rf /var/lib/apt/lists/*",
       { user: "root" },
     )
     .runCmd(
@@ -39,6 +39,8 @@ export function createPiGooseRuntimeTemplate() {
     .makeDir("/workspace", { mode: 0o1777, user: "root" })
     .setWorkdir("/workspace")
     .runCmd("node --version")
+    .runCmd("/usr/bin/git --version")
+    .runCmd("/bin/bash --version | head -n 1")
     .runCmd("pi --version")
     .runCmd("goose --version");
 }

@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CirclePause, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ChevronRight,
+  CirclePause,
+  PanelRightOpen,
+  Plus,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse } from "../../shared/api";
@@ -15,6 +20,7 @@ import {
   agentRunQueryKey,
   agentRunsQueryKey,
   projectDetailQueryKey,
+  projectChangesQueryKey,
   projectMessagesQueryKey,
   projectQueryKey,
   platformCapabilitiesQueryKey,
@@ -36,13 +42,18 @@ import { AppHeaderSlot } from "./app-header-slot";
 export function ProjectConsole({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const inspectorToggleRef = useRef<HTMLButtonElement>(null);
+  const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamOutput, setStreamOutput] = useState("");
   const [streamError, setStreamError] = useState<BrowserApiError | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
   const [terminalActive, setTerminalActive] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [view, setView] = useState<ProjectConsoleView>("conversation");
+  const mobileInspectorOpen =
+    inspectorOpen && isMobileInspectorViewport;
 
   const project = useQuery({
     queryFn: () => browserApi.getProject(projectId),
@@ -129,6 +140,12 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     platformCapabilities.isPending ||
     platformCapabilities.isError ||
     !platformCapabilities.data.runCreationEnabled;
+  const closeInspector = useCallback(() => {
+    setInspectorOpen(false);
+    window.requestAnimationFrame(() => {
+      inspectorToggleRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
 
   useEffect(() => {
     setActiveRunId(null);
@@ -137,8 +154,42 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     setPreviewActive(false);
     setPreviewStarting(false);
     setTerminalActive(false);
+    setInspectorOpen(false);
     setView("conversation");
   }, [projectId]);
+
+  useEffect(() => {
+    if (!mobileInspectorOpen) {
+      return;
+    }
+
+    function handleInspectorKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeInspector();
+      }
+    }
+
+    window.addEventListener("keydown", handleInspectorKeyDown);
+    return () =>
+      window.removeEventListener("keydown", handleInspectorKeyDown);
+  }, [closeInspector, mobileInspectorOpen]);
+
+  useEffect(() => {
+    if (!isMobileInspectorViewport) {
+      setInspectorOpen(false);
+      return;
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.closest(".project-inspector")
+      ) {
+        inspectorToggleRef.current?.focus({ preventScroll: true });
+      }
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [isMobileInspectorViewport]);
 
   useEffect(() => {
     const recoveredRun = recoveredActiveRun;
@@ -255,20 +306,33 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             <ChevronRight aria-hidden="true" size={14} />
             <strong>Agent run</strong>
           </nav>
-          <button
-            className="new-run-action"
-            disabled={
-              activeRunIsBlocking ||
-              runCreationUnavailable ||
-              previewStarting ||
-              terminalActive
-            }
-            onClick={() => composerRef.current?.focus()}
-            type="button"
-          >
-            <Plus aria-hidden="true" size={16} />
-            <span>New run</span>
-          </button>
+          <div className="project-console-header-actions">
+            <button
+              aria-expanded={mobileInspectorOpen}
+              aria-label="Open project inspector"
+              className="icon-button project-inspector-toggle"
+              onClick={() => setInspectorOpen(true)}
+              ref={inspectorToggleRef}
+              title="Project inspector"
+              type="button"
+            >
+              <PanelRightOpen aria-hidden="true" size={17} />
+            </button>
+            <button
+              className="new-run-action"
+              disabled={
+                activeRunIsBlocking ||
+                runCreationUnavailable ||
+                previewStarting ||
+                terminalActive
+              }
+              onClick={() => composerRef.current?.focus()}
+              type="button"
+            >
+              <Plus aria-hidden="true" size={16} />
+              <span>New run</span>
+            </button>
+          </div>
         </div>
       </AppHeaderSlot>
       <section className="project-console">
@@ -358,21 +422,37 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           />
         </main>
 
+        {mobileInspectorOpen ? (
+          <button
+            aria-label="Dismiss project inspector"
+            className="project-inspector-backdrop"
+            onClick={closeInspector}
+            type="button"
+          />
+        ) : null}
         <ProjectInspector
+          changesEnabled={
+            platformCapabilities.data?.changesEnabled === true
+          }
           hasActiveRun={activeRunIsBlocking}
           isStopping={stopSandbox.isPending}
           onStopSandbox={() => stopSandbox.mutate()}
+          onMobileClose={closeInspector}
           onPreviewActivityChange={setPreviewActive}
           onPreviewStartingChange={setPreviewStarting}
           onTerminalActivityChange={(active) => {
             setTerminalActive(active);
             if (!active) {
               void queryClient.invalidateQueries({
+                queryKey: projectChangesQueryKey(projectId),
+              });
+              void queryClient.invalidateQueries({
                 queryKey: projectDetailQueryKey(projectId),
               });
             }
           }}
           project={project.data}
+          mobileOpen={mobileInspectorOpen}
           previewActive={previewActive}
           previewEnabled={
             platformCapabilities.data?.previewEnabled === true
@@ -390,6 +470,27 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   );
 }
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : window.matchMedia(query).matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    function updateMatches(event: MediaQueryListEvent) {
+      setMatches(event.matches);
+    }
+
+    setMatches(media.matches);
+    media.addEventListener("change", updateMatches);
+    return () => media.removeEventListener("change", updateMatches);
+  }, [query]);
+
+  return matches;
+}
+
 async function invalidateProjectState(
   queryClient: ReturnType<typeof useQueryClient>,
   projectId: string,
@@ -404,6 +505,9 @@ async function invalidateProjectState(
     }),
     queryClient.invalidateQueries({
       queryKey: projectDetailQueryKey(projectId),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: projectChangesQueryKey(projectId),
     }),
     queryClient.invalidateQueries({ queryKey: userUsageQueryKey }),
   ]);

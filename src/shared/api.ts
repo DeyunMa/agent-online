@@ -1,7 +1,10 @@
 import type { AgentRuntimeId } from "../agent/contract";
 import type { AgentRunStatus } from "../domain/agent-run";
 import type { SandboxLeaseStatus } from "../domain/sandbox-lease";
-import type { RuntimeKind } from "../runtime/contract";
+import type {
+  RuntimeKind,
+  SandboxChangeKind,
+} from "../runtime/contract";
 
 export type HealthResponse = {
   name: "agent-online";
@@ -11,10 +14,36 @@ export type HealthResponse = {
 
 export type PlatformCapabilitiesResponse = {
   agentRuntimeIds: AgentRuntimeId[];
+  changesEnabled: boolean;
   defaultAgentRuntimeId: AgentRuntimeId;
   runCreationEnabled: boolean;
   previewEnabled: boolean;
   terminalEnabled: boolean;
+};
+
+export type ProjectChangeEntryResponse = {
+  path: string;
+  previousPath: string | null;
+  stagedKind: SandboxChangeKind | null;
+  unstagedKind: SandboxChangeKind | null;
+};
+
+export type ProjectChangesResponse = {
+  entries: ProjectChangeEntryResponse[];
+  repository: boolean;
+  truncated: boolean;
+  unsupportedEntries: boolean;
+};
+
+export type ProjectChangeDiffSectionResponse = {
+  content: string;
+  truncated: boolean;
+};
+
+export type ProjectChangeDiffResponse = {
+  change: ProjectChangeEntryResponse;
+  staged: ProjectChangeDiffSectionResponse | null;
+  unstaged: ProjectChangeDiffSectionResponse | null;
 };
 
 export type ProjectPreviewResponse = {

@@ -1,7 +1,7 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal 和受控 Project Preview 已通过远程验收；D4 Goose adapter/组合模板已通过私有 Cloudflare 受控 spike，但公开能力仍受门控。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
+> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview 和只读 Changes 已通过远程验收；D4 Goose adapter/组合模板已通过私有 Cloudflare 受控 spike，但公开能力仍受门控。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
 
@@ -35,14 +35,14 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、部署邮箱 allowlist 和全局 Run 开关。D3 只读 Files、当前用户全量 Usage API/UI、受控 Terminal 与受控 Project Preview 均已完成授权边界、代码、测试、迁移、部署和远端真实浏览器验收。Preview 已验证固定 Vite、同源 GET/HEAD 网关、Agent 修改后刷新、Run/Terminal 并行、Stop 互斥、显式停止和 Workflow expiry。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Cloudflare spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。Changes 当前仍禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、部署邮箱 allowlist 和全局 Run 开关。D3 只读 Files、当前用户全量 Usage API/UI、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成授权边界、代码、测试、部署和远端真实浏览器验收。Preview 已验证固定 Vite、同源 GET/HEAD 网关、Agent 修改后刷新、Run/Terminal 并行、Stop 互斥、显式停止和 Workflow expiry；Changes 已验证固定 Git、主配置与额外 config scope 拒绝、隐藏路径标记、有界 staged/unstaged diff、no-store、显式响应映射和移动端检查器抽屉。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Cloudflare spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。
 
-D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进。前四项已完成远端验收；下一步是受控只读 Changes。维护者用量、日期筛选和配额仍留待后续。
+D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进，五项均已完成远端验收。import boundary 与 GitHub Actions 基础门禁也已加入；下一阶段优先补自动浏览器 smoke、维护者用量/每用户并发护栏，再决定 Goose 是否满足公开门槛。日期筛选、配额和公共注册仍留待后续。
 
 ## 3. 当前与未来 Runtime 的边界
 
 - `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟真实 wall-clock timeout，内存文件也不具备跨请求连续性，因此公共 Files 和 Terminal 不可用。
-- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放，不能直接暴露 E2B URL。
+- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：默认且已验收的 AgentRuntime，也是当前公开执行路径。
 - Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛已通过，但 capability 输出脱敏和浏览器选择验收前仍不可出现在 UI 中。
@@ -62,6 +62,7 @@ D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Ch
 8. Cloudflare Workflows Free 当前每次调用的 CPU 边界为 10ms、每 instance 最多 50 个外部 subrequest；预览环境必须持续验证典型 Pi Run，并在超限时停止公开注册。
 9. Terminal 最长 30 分钟，关闭后复用 10 分钟 idle TTL；不保存 transcript，也不允许关闭浏览器后继续占用交互 PTY。
 10. Preview 最长 30 分钟，只能运行固定 Vite preset 和端口；活动时阻止整沙箱回收，停止后复用 10 分钟 idle TTL，不保存页面、日志、截图或访问历史。
+11. Changes 不创建沙箱、不延长 Lease、不保存 diff，也不增加外部资源；status/diff 在 Worker 与沙箱两侧都有固定大小边界。
 
 截至 2026-07-26，当前 Cloudflare Worker、Static Assets、D1、Workflows 和 Workers Logs 均可使用 Workers Free 额度。E2B Hobby 虽无月费，但沙箱计算按秒计费，只有一次性 $100 credits；因此当前系统不是“所有外部算力永久免费”。未来切换 Cloudflare Sandbox/Containers 需要 Workers Paid，最低平台费用不再为 $0。完整口径见 [D2 阶段基线](../status/2026-07-26-d2-baseline.md)。
 

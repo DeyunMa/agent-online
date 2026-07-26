@@ -10,6 +10,7 @@ import {
   CreateAgentRunService,
   type AgentRunExecutionStarter,
 } from "../application/create-agent-run";
+import { ProjectChangesService } from "../application/project-changes";
 import { ProjectFilesService } from "../application/project-files";
 import { ProjectPreviewService } from "../application/project-preview";
 import {
@@ -63,6 +64,7 @@ export type ServerServices = {
   defaultModelId: string;
   enabledAgentRuntimeIds: readonly AgentRuntimeId[];
   messages: MessageRepository;
+  projectChanges: ProjectChangesService;
   projectFiles: ProjectFilesService;
   projectPreviews: ProjectPreviewService;
   projectSandboxes: ProjectSandboxController;
@@ -106,6 +108,14 @@ export function createServerServices(env: AppBindings): ServerServices {
     e2bRuntime ??= createE2BRunExecution(env).runtime;
     return e2bRuntime;
   };
+  const getChangesRuntime = (id: RuntimeKind) => {
+    if (id !== sandboxRuntimeId || id !== "e2b") {
+      return null;
+    }
+
+    e2bRuntime ??= createE2BRunExecution(env).runtime;
+    return e2bRuntime;
+  };
   const runExecutions =
     sandboxRuntimeId === "fake"
       ? createInlineFakeDispatcher(
@@ -132,6 +142,12 @@ export function createServerServices(env: AppBindings): ServerServices {
     defaultModelId: getDefaultModelId(env),
     enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
     messages,
+    projectChanges: new ProjectChangesService({
+      agentRuns,
+      getSandboxRuntime: getChangesRuntime,
+      sandboxLeases,
+      terminalSessions,
+    }),
     projectFiles: new ProjectFilesService({
       agentRuns,
       getSandboxRuntime,

@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal 与受控 Project Preview 均已完成私有 Cloudflare 验收；Terminal/Preview 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成私有 Cloudflare 验收；Terminal/Preview/Changes 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -46,7 +46,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` | ModelGateway 的服务端默认模型。 |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久后由 Workflow 停止当前沙箱。 |
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
-| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference；构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
+| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference；当前 build 还显式安装并探测 Git、Bash 和 coreutils，供受控 Changes 使用。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
 | `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 当前为 `spike` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose，但不向 UI 公布；`public` 才公开选择。只有 E2B 支持 Goose。 |
 
@@ -64,7 +64,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 
 `ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
 
-浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、`previewEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。`terminalEnabled` / `previewEnabled` 只表示服务端安装了对应 E2B capability，不包含 Provider 标识、端口或 traffic token。前端禁用只是交互反馈，服务端 D1 所有权与互斥才是强制边界。
+浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、`previewEnabled`、`changesEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。这些 capability 只表示服务端安装了对应 E2B 能力，不包含 Provider 标识、端口、traffic token、Git command 或内部路径。前端禁用只是交互反馈，服务端所有权、固定参数与互斥才是强制边界。
 
 ## 6. Cloudflare Binding，不是环境变量
 
@@ -106,6 +106,7 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 - `CREDENTIAL_ENCRYPTION_KEY`，直到明确开始实现 BYOK 写入。
 - Goose 不需要独立模型 Key，它只能使用现有短时 ModelGateway capability。Claude Code 或 Codex CLI 的凭据仍不需要。
 - Preview 固定端口、preset、启动等待和 30 分钟上限是代码合同，不提供环境变量或浏览器覆盖；改动这些边界需要先更新 ADR-0006。
+- Changes 的固定 Git/Bash/coreutils 路径、输出上限和危险配置拒绝是代码合同，不提供环境变量或浏览器覆盖；改动前先更新 ADR-0007。
 
 ## 9. 外部依据
 

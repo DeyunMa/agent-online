@@ -1,19 +1,20 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files、受控 Terminal 与受控 Project Preview 均已通过私有 Cloudflare 环境验收；Goose 公开产品路径仍受门控。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files、受控 Terminal、受控 Project Preview 与只读 Changes 均已通过私有 Cloudflare 环境验收；Goose 公开产品路径仍受门控。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
 
 一个 `SandboxLease` 绑定一个 Project 的当前临时环境。应用级 Lease ID 稳定，供应商实例 ID 只保存在服务端 `provider_ref` 中；浏览器永远看不到供应商 ID、端口、Provider Key 或模型 Key。
 
-运行期有两条独立扩展轴。`SandboxRuntime` 在代码中进一步按能力拆为生命周期、进程、文件、终端和 Preview 接口，application 模块只依赖所需能力：
+运行期有两条独立扩展轴。`SandboxRuntime` 在代码中进一步按能力拆为生命周期、进程、文件、终端、Preview 和 Changes 接口，application 模块只依赖所需能力：
 
 | 端口 | 负责什么 | 不负责什么 |
 | --- | --- | --- |
 | `SandboxLifecycleRuntime` / `SandboxProcessRuntime` / `SandboxFilesystemRuntime` | 取得或停止当前沙箱、运行通用进程，以及受控文件 IO。组合类型 `SandboxRuntime` 只聚合这三项。 | Pi 协议、D1、Message、模型调用、WebSocket/HTTP 授权。 |
 | `SandboxTerminalRuntime` | 创建、resize、输入、读取和明确关闭一个 PTY。 | 浏览器鉴权、D1 互斥、WebSocket 协议或终端历史。 |
 | `SandboxPreviewRuntime` | 启动/探测/终止平台固定 Preview，并由服务端受控 fetch 固定端口。 | 任意命令/端口、公开 URL、签名 capability、D1 所有权或 HTML 展示策略。 |
+| `SandboxChangesRuntime` | 用固定 Git 命令读取当前 working tree/index 的有界 status 与 staged/unstaged diff。 | 任意 Git 命令/revision/pathspec、Run 归因、历史保存或 repository 修改。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
 Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和 Preview Workflow 真实 E2E，但在 ADR-0004 的剩余安全与浏览器验收通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
@@ -106,6 +107,15 @@ interface SandboxPreviewRuntime {
     reason: "client_stopped" | "expired" | "failed",
   ): Promise<void>;
 }
+
+interface SandboxChangesRuntime {
+  readonly kind: RuntimeKind;
+  listChanges(handle: RuntimeHandle): Promise<SandboxChangesSnapshot>;
+  readChangeDiff(
+    handle: RuntimeHandle,
+    change: SandboxChangeEntry,
+  ): Promise<SandboxChangeDiff>;
+}
 ```
 
 ```ts
@@ -159,7 +169,7 @@ stateDiagram-v2
 
 1. 每个 Project 只有一条逻辑 Lease。
 2. D1 部分唯一索引与 Terminal trigger 保证每个 Project 同时最多一个非终态 Run 或一条 Terminal 硬锁。
-3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止、固定 Preview fetch 和停止沙箱。
+3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止、固定 Preview fetch、受控 Git Changes 和停止沙箱。
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
 5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
@@ -230,7 +240,25 @@ GET/HEAD。Worker 移除 Cookie、Authorization、Provider Location/host/control
 连接。30 分钟 expiry、显式 Stop、进程消失和停止后的 10 分钟 Lease idle cleanup
 由 Workflow/应用服务收敛；D1 不保存页面、日志、截图或访问历史。
 
-## 7. 已注册与预留 Runtime
+## 7. 只读 Changes 边界
+
+`ProjectChangesService` 只接受 Project ID，以及列表中刚读取出的精确相对路径。它不调用
+`ensureLease()`，不初始化 Git，也不接收 command、revision、cwd、env 或任意 pathspec。
+活动 AgentRun/Terminal 时返回 `project_busy`；Preview running 可以共存。活动检查、
+Lease 读取、status 与 diff 不是事务，因此结果只表示请求时的尽力一致当前视图。
+
+E2B 实现固定 `/workspace/.git` 和系统 Git/Bash/coreutils 路径，以空环境运行；
+忽略 system/global config，拒绝 `commondir`、`config.worktree` 和
+`extensions.worktreeConfig`，并在每次读取前拒绝 include、filter、external diff、
+textconv、fsmonitor、attributesFile、hooksPath 和 worktree 覆盖。status 最多 500 项/
+128 KiB，staged 与 unstaged diff 各最多 128 KiB；输出经 pipe 直接截断，不写无界临时
+文件。浏览器只能读取 status 中仍存在的路径，响应使用 `private, no-store`。被路径
+策略过滤的合法 Git 条目通过 `unsupportedEntries` 明确标记，不能显示为 clean。
+
+fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git 历史或 Run 前后快照，
+所以 Changes 不能表示“某次 Run 产生的文件”。
+
+## 8. 已注册与预留 Runtime
 
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
@@ -241,7 +269,7 @@ GET/HEAD。Worker 移除 Cookie、Authorization、Provider Location/host/control
 
 新增适配器前必须独立验收镜像安装、模型凭据路径、事件映射、取消、日志脱敏、网络策略和沙箱隔离。不能因为 Runtime ID 已存在就把它暴露给用户。
 
-## 8. 后续扩展要求
+## 9. 后续扩展要求
 
 已完成：
 
@@ -251,23 +279,23 @@ GET/HEAD。Worker 移除 Cookie、Authorization、Provider Location/host/control
 - E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板和可写 `/workspace`，不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
 - wall-clock timeout、空闲 TTL 与明确的资源释放路径。
 - 固定 `vite-v1` Preview、同源 GET/HEAD 内容网关、D1 临时所有权、30 分钟 expiry 与停止后的 idle cleanup。
+- 固定 Git status/diff、危险 repository 配置拒绝、输出截断、no-store 和桌面/移动端 Project Inspector。
 
 待完成：
 
 - 每用户并发上限和基础 usage 管理视图。
-- 受控 Changes；停止后仍不恢复任何 Project 文件。
 - Cloudflare 远程环境中更复杂任务对 Workflow Free CPU 和 subrequest 上限的持续验证。
 
 执行协调设计见 [ADR-0003](../adr/0003-agent-run-workflow.md)。在受控 API 完成前，不得向浏览器开放 Provider ID、内部端口或任意 shell 命令。
 
-## 9. 非目标
+## 10. 非目标
 
 - R2 快照、Project 文件版本、沙箱历史或完整原始执行归档。
 - 浏览器直连 Provider、模型 API 或沙箱内部端口。
 - 任意 Preview command/port、应用后端 API 代理、公开分享链接或持久部署。
 - 常驻 Agent session、跨 Run resume 或未授权的任意 CLI。
 
-## 10. 外部依据
+## 11. 外部依据
 
 - [Pi RPC](https://pi.dev/docs/latest/rpc) 与 [Pi Provider 配置](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
 - [Goose repository](https://github.com/aaif-goose/goose) 与 [Goose CLI commands](https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/goose-cli-commands.md)

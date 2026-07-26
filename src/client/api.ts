@@ -7,6 +7,8 @@ import type {
   HealthResponse,
   MessageResponse,
   PlatformCapabilitiesResponse,
+  ProjectChangeDiffResponse,
+  ProjectChangesResponse,
   ProjectDirectoryResponse,
   ProjectFileResponse,
   ProjectPreviewResponse,
@@ -158,6 +160,19 @@ function projectFilesPath(projectId: string, path: string, content = false) {
   return `/api/projects/${encodeURIComponent(projectId)}/files${suffix}${search}`;
 }
 
+function projectChangesPath(
+  projectId: string,
+  path?: string,
+) {
+  const query = new URLSearchParams();
+  if (path !== undefined) {
+    query.set("path", path);
+  }
+  const suffix = path === undefined ? "" : "/content";
+  const search = query.size > 0 ? `?${query.toString()}` : "";
+  return `/api/projects/${encodeURIComponent(projectId)}/changes${suffix}${search}`;
+}
+
 export const browserApi = {
   cancelAgentRun(projectId: string, runId: string) {
     return requestJson<AgentRunResponse>(`${runPath(projectId, runId)}/cancel`, { method: "POST" });
@@ -215,6 +230,18 @@ export const browserApi = {
 
   listProjectFiles(projectId: string, path: string) {
     return requestJson<ProjectDirectoryResponse>(projectFilesPath(projectId, path));
+  },
+
+  listProjectChanges(projectId: string) {
+    return requestJson<ProjectChangesResponse>(
+      projectChangesPath(projectId),
+    );
+  },
+
+  readProjectChange(projectId: string, path: string) {
+    return requestJson<ProjectChangeDiffResponse>(
+      projectChangesPath(projectId, path),
+    );
   },
 
   readProjectFile(projectId: string, path: string) {

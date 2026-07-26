@@ -201,4 +201,4 @@ V1 默认只公开 Pi，并安装一个 SandboxRuntime 实现（开发期可为 
 
 截至 2026-07-26，本 ADR 的 D1 迁移、领域合同、fake runtime、认证 Project、Message、单 Lease/单活动 Run、SSE、基础用量、Gemini ModelGateway 与 E2B + Pi/Goose 均已实现。远程 Preview 还验证了跨 Runtime 连续 Run 文件复用、取消、deadline、空闲 TTL 和手动停止。只读 Files 已通过真实 E2B 验收：只附着现有 Lease，不新增 D1/R2，不公开 Provider 信息；停止后不请求文件或展示陈旧缓存，fake 因缺少跨请求文件连续性而明确不可用。
 
-Terminal 已按 ADR-0005 复用本 ADR 的 Project 授权与单 Lease 边界，并以独立 D1 互斥和生命周期实现。Preview 也已按 ADR-0006 使用固定 preset、独立临时 D1 所有权、同源内容网关和 durable expiry/idle cleanup 完成远端验收；它没有复用 Files 的尽力一致检查作为安全锁。Sentry 仍只是可选错误观测，不成为运行前提。
+Terminal 已按 ADR-0005 复用本 ADR 的 Project 授权与单 Lease 边界，并以独立 D1 互斥和生命周期实现。Preview 也已按 ADR-0006 使用固定 preset、独立临时 D1 所有权、同源内容网关和 durable expiry/idle cleanup 完成远端验收；它没有复用 Files 的尽力一致检查作为安全锁。Changes 已按 ADR-0007 以窄 Runtime capability 读取当前 Git working tree/index，不新增 D1/R2、历史或 Run 归因。Sentry 仍只是可选错误观测，不成为运行前提。

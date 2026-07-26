@@ -1,5 +1,10 @@
-import { LoaderCircle, Square } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { LoaderCircle, Square, X } from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type {
   AgentRunResponse,
@@ -17,15 +22,24 @@ import {
   shortRunId,
 } from "../presentation";
 import { ErrorState } from "./ui-states";
+import { ProjectChanges } from "./project-changes";
 import { ProjectFiles } from "./project-files";
 import { ProjectPreview } from "./project-preview";
 import { ProjectTerminal } from "./project-terminal";
 
-type InspectorView = "files" | "overview" | "preview" | "terminal";
+type InspectorView =
+  | "changes"
+  | "files"
+  | "overview"
+  | "preview"
+  | "terminal";
 
 export function ProjectInspector({
+  changesEnabled,
   hasActiveRun,
   isStopping,
+  mobileOpen,
+  onMobileClose,
   onStopSandbox,
   onPreviewActivityChange,
   onPreviewStartingChange,
@@ -39,8 +53,11 @@ export function ProjectInspector({
   terminalActive,
   terminalEnabled,
 }: {
+  changesEnabled: boolean;
   hasActiveRun: boolean;
   isStopping: boolean;
+  mobileOpen: boolean;
+  onMobileClose(): void;
   onStopSandbox: () => void;
   onPreviewActivityChange(active: boolean): void;
   onPreviewStartingChange(starting: boolean): void;
@@ -54,7 +71,14 @@ export function ProjectInspector({
   terminalActive: boolean;
   terminalEnabled: boolean;
 }) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const inspectorRef = useRef<HTMLElement>(null);
   const [view, setView] = useState<InspectorView>("overview");
+  useEffect(() => {
+    if (!changesEnabled && view === "changes") {
+      setView("overview");
+    }
+  }, [changesEnabled, view]);
   useEffect(() => {
     if (!terminalEnabled && view === "terminal") {
       setView("overview");
@@ -65,6 +89,23 @@ export function ProjectInspector({
       setView("overview");
     }
   }, [previewEnabled, view]);
+  useEffect(() => {
+    if (!mobileOpen) {
+      return;
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
+    function handleTab(event: KeyboardEvent) {
+      trapMobileInspectorFocus(event, inspectorRef.current);
+    }
+    document.addEventListener("keydown", handleTab);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleTab);
+    };
+  }, [mobileOpen]);
   const lease = project.sandboxLease;
   const canStop =
     lease !== null &&
@@ -75,9 +116,27 @@ export function ProjectInspector({
     !isStopping;
 
   return (
-    <aside className="project-inspector">
+    <aside
+      aria-labelledby="project-inspector-title"
+      aria-modal={mobileOpen || undefined}
+      className={`project-inspector ${mobileOpen ? "project-inspector-mobile-open" : ""}`}
+      ref={inspectorRef}
+      role={mobileOpen ? "dialog" : undefined}
+    >
       <header className="project-inspector-header">
-        <h2>Project inspector</h2>
+        <h2 id="project-inspector-title">Project inspector</h2>
+        {mobileOpen ? (
+          <button
+            aria-label="Close project inspector"
+            className="icon-button project-inspector-close"
+            onClick={onMobileClose}
+            ref={closeButtonRef}
+            title="Close project inspector"
+            type="button"
+          >
+            <X aria-hidden="true" size={17} />
+          </button>
+        ) : null}
       </header>
 
       <div
@@ -103,6 +162,19 @@ export function ProjectInspector({
         >
           Files
         </button>
+        {changesEnabled ? (
+          <button
+            aria-selected={view === "changes"}
+            className={`inspector-tab ${view === "changes" ? "inspector-tab-active" : ""}`}
+            onClick={() => setView("changes")}
+            role="tab"
+            type="button"
+          >
+            Changes
+          </button>
+        ) : (
+          <DisabledInspectorTab label="Changes" />
+        )}
         {terminalEnabled ? (
           <button
             aria-selected={view === "terminal"}
@@ -179,6 +251,14 @@ export function ProjectInspector({
       ) : view === "files" ? (
         <ProjectFiles
           hasActiveRun={hasActiveRun || terminalActive}
+          projectId={project.id}
+          sandboxAvailable={
+            lease !== null && isActiveSandboxLease(lease.status)
+          }
+        />
+      ) : view === "changes" ? (
+        <ProjectChanges
+          projectBusy={hasActiveRun || terminalActive}
           projectId={project.id}
           sandboxAvailable={
             lease !== null && isActiveSandboxLease(lease.status)
@@ -305,4 +385,34 @@ function runtimeLabel(value: string) {
     return "Fake";
   }
   return value;
+}
+
+function trapMobileInspectorFocus(
+  event: KeyboardEvent,
+  inspector: HTMLElement | null,
+) {
+  if (event.key !== "Tab" || !inspector) {
+    return;
+  }
+
+  const focusable = Array.from(
+    inspector.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => element.getClientRects().length > 0);
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  if (!first || !last) {
+    event.preventDefault();
+    return;
+  }
+
+  const current = document.activeElement;
+  if (event.shiftKey && (current === first || !inspector.contains(current))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && current === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }

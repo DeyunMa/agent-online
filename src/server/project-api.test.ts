@@ -479,6 +479,7 @@ function createFixture(
     defaultModelId: "gemini-3.6-flash",
     enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
     messages,
+    projectChanges: {} as ServerServices["projectChanges"],
     projectFiles: new ProjectFilesService({
       agentRuns,
       getSandboxRuntime: () => sandboxRuntime,

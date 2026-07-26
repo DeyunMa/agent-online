@@ -1,10 +1,10 @@
 # Agent Online 领域术语
 
-> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal 和受控 Project Preview 均已完成私有 Cloudflare 环境验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择仍未开放。
+> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview 和只读 Changes 均已完成私有 Cloudflare 环境验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择仍未开放。
 
 ## 产品定义
 
-Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端和 preview；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
+Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端、preview 和当前 Git changes；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
 
 第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认且已验收的 AgentRuntime；Goose 按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 完成本地与私有 Preview spike，但在浏览器选择和剩余安全复核通过前不能当作公开产品能力。
 
@@ -20,7 +20,8 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `AgentRunWorkflow` | 每个 AgentRun 一个的 Cloudflare Workflow 执行所有者。 | 只接收 Project/Run 应用 ID；D1 仍是产品事实，不保存 raw transcript。 |
 | `TerminalSession` | 一个 Project 当前临时 PTY 的 D1 互斥记录。 | 关闭即删除；不保存终端输入、输出、滚屏或审计历史，浏览器看不到私有 PID。 |
 | `PreviewSession` | 一个 Project 当前临时 Preview 进程的 D1 所有权记录。 | 只保存固定端口、私有进程引用和 expiry；停止即删除，不保存页面、日志、截图或访问历史。 |
-| `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件、终端和 Preview 等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，也不提供真实 Terminal/Preview。 |
+| `ProjectChanges` | 当前 Project 沙箱中 Git working tree/index 的受控只读视图。 | 不持久化，不是 Run diff、版本历史或审计记录；不能归因到某一次 AgentRun。 |
+| `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件、终端、Preview 和 Changes 等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，也不提供真实 Terminal/Preview/Changes。 |
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | `AgentRun` 上的聚合计量字段，以及由这些字段计算出的当前用户汇总。 | 真实 Runtime 写 token、模型请求数和沙箱时长；`GET /api/usage` 只做全量聚合，它不是账单流水或套餐。 |
@@ -61,6 +62,7 @@ erDiagram
 14. Terminal 只通过同源认证 WebSocket 代理当前 E2B PTY；D1 临时行保存硬互斥及私有 sandbox/PTY 终止引用。30 分钟 expiry 和关闭后的 idle cleanup 都由 Workflow 承担持久调度，终端内容不持久化。
 15. Preview 只能在无活动 Run/Terminal 且已有存活 Lease 时启动。`starting` 阶段参与 D1 互斥；进入 `running` 后可以与后续 Run/Terminal 共存，但会阻止整沙箱 Stop 和 idle cleanup。
 16. Preview 只运行平台固定的 Vite preset、固定 `/workspace` 和固定内部端口。浏览器只拿到绑定 Project/PreviewSession/expiry 的同源短时 capability，不能拿到 Provider host、traffic token、内部端口或任意启动参数。
+17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
 
 ## 有意不建模的内容
 

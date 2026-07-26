@@ -64,16 +64,6 @@ export function ProjectRunTabs({
       >
         Runs
       </button>
-      <button
-        aria-label="Changes unavailable"
-        className="console-tab"
-        disabled
-        role="tab"
-        title="Changes are not available"
-        type="button"
-      >
-        Changes
-      </button>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
+> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -11,7 +11,7 @@
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
 | Gemini API | `GEMINI_API_KEY` | D2 Worker ModelGateway 和真实 E2E。 | 已由本地 `.dev.vars` 提供。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱。 | 已由本地 `.dev.vars` 提供。 |
-| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter 与 Preview 产品链路 E2E。 |
+| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose、Git、Bash、coreutils 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter、Preview 和 Changes 产品链路 E2E。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
 
@@ -31,7 +31,7 @@
 | 私有访问 | owner 邮箱。 | 已以 `ACCESS_ALLOWED_EMAILS` Secret 写入；`ACCESS_MODE=allowlist`。 |
 | Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline、Run/Terminal/Preview expiry 与空闲回收已成功，复杂任务限额仍需观察。 |
 
-当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal 和固定 Vite Preview；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
+当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
 ## 3. 当前成本口径
 
