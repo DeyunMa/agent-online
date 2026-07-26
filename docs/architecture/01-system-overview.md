@@ -1,7 +1,7 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2、D3 Files、当前用户跨 Run Usage 与受控 Terminal 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。Goose UI 与 Preview 仍关闭。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal 和受控 Project Preview 均已通过远程验收；Goose adapter、组合模板与私有 Cloudflare 产品链路已通过受控 spike。Goose UI 仍关闭，Changes 尚未实现。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
 
@@ -18,7 +18,7 @@ flowchart LR
     UI["React 浏览器 UI\nProject、消息、文件、终端、preview"] -->|"same-origin HTTPS / SSE / WS"| W["Cloudflare Worker"]
     W --> H["Hono 控制平面\nAuth / Project / AgentRun"]
     H --> BA["Better Auth"]
-    H --> D1["D1\n用户、Project、Message、Lease、AgentRun、临时 Terminal 占用"]
+    H --> D1["D1\n用户、Project、Message、Lease、AgentRun\n临时 Terminal / Preview 所有权"]
     H --> MG["ModelGateway\n平台 Gemini Key 和 usage"]
     H --> WF["AgentRunWorkflow\n一个 Run 一个 instance"]
     WF --> RC["RunExecutionService / RunCoordinator"]
@@ -26,6 +26,8 @@ flowchart LR
     RC --> SR["SandboxRuntime\nfake / E2B / later CF"]
     H --> TS["ProjectTerminalService\n同源 WebSocket / 临时互斥"]
     TS --> SR
+    H --> PS["ProjectPreviewService\n同源 GET/HEAD / 临时所有权"]
+    PS --> SR
     AR -->|"run-scoped process session"| SR
     SR --> SB["Linux Sandbox\nAgent process + shell + Project files"]
     SB -->|"opaque run-scoped model access"| MG
@@ -42,14 +44,14 @@ React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供�
 
 - Project 与用户可见消息；
 - 应用自己的 `sandboxLeaseId`、状态和可用能力；
-- 脱敏后的 Agent 状态；现有 E2B Lease 的受控文件列表、UTF-8 文本和同源 WebSocket 终端流；preview 只有在对应 API 完成后才可见；
+- 脱敏后的 Agent 状态；现有 E2B Lease 的受控文件列表、UTF-8 文本、同源 WebSocket 终端流，以及固定 Vite preset 的同源签名 Preview 内容；
 - 自己的基础用量汇总。
 
 它不能看到真实供应商 ID、Provider Key、沙箱内部端口、调度密钥或 Gemini Key，也不能指定任意二进制、Provider 或 shell 命令。
 
 ### Worker 控制平面
 
-Hono 负责鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
+Hono 负责鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、Preview 签名与内容网关、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
 
 Worker 能拿到对话和用量，是因为它明确拥有请求和事件协议：用户输入先写入 D1，再交给沙箱中的 Agent；Agent 的公开事件和最终回复回到 Worker；模型请求必须经过 Worker 的 ModelGateway。平台不会依赖“抓取沙箱”或读取私有推理。
 
@@ -70,9 +72,12 @@ Agent 进程、shell、Project 文件、终端和用户启动的开发服务都�
 一个 AgentRun  -> 一个短生命周期 AgentProcess
 一个 Project   -> 0 或 1 个 TerminalSession 硬锁
 一个 Project   -> AgentRun 与 Terminal 不能同时活动
+一个 Project   -> 0 或 1 个 PreviewSession
+Preview starting -> 与 AgentRun / Terminal 互斥
+Preview running  -> 可与后续 AgentRun / Terminal 共存
 ```
 
-`Project` 没有单独 Session 表，也不包含文件快照。`SandboxLease` 是稳定的应用 ID，Provider 物理实例重建时更新同一行即可。多个连续 Run 可以复用仍存活的沙箱；AgentRun 结束时 AgentProcess 必须终结。
+`Project` 没有对话 Session 表，也不包含文件快照。`TerminalSession` 和 `PreviewSession` 只是当前临时进程的协调记录，不是历史。`SandboxLease` 是稳定的应用 ID，Provider 物理实例重建时更新同一行即可。多个连续 Run 可以复用仍存活的沙箱；AgentRun 结束时 AgentProcess 必须终结。运行中的 Preview 会阻止整沙箱手动停止和 idle cleanup，显式停止后才恢复普通 Lease 回收。
 
 ## 5. 一次 AgentRun 的流程
 
@@ -126,8 +131,12 @@ sequenceDiagram
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
 | `/api/projects/:id/agent-runs/:runId/events` | 订阅 D1 轮询出的状态和终态，不公开 raw Agent 输出。 |
 | `/api/projects/:id/agent-runs/:runId/cancel` | 取消当前 Run。 |
-| `/api/projects/:id/sandbox/stop` | 在没有非终态 Run 或活动 Terminal 时原子脱离并停止当前沙箱；不公开 Provider ID。 |
+| `/api/projects/:id/sandbox/stop` | 在没有非终态 Run、活动 Terminal 或活动 Preview 时原子脱离并停止当前沙箱；不公开 Provider ID。 |
 | `/api/projects/:id/terminal` | 同源认证 WebSocket；打开当前 E2B `/workspace` PTY，代理受限输入/resize/输出/关闭，不公开 Provider ID 或 PID。 |
+| `/api/projects/:id/preview` | 读取当前临时 Preview 的公开状态和同源内容 URL；不返回 Provider host、端口或进程引用。 |
+| `/api/projects/:id/preview/start` | 在现有空闲 E2B Lease 中启动平台固定的 `vite-v1` Preview。 |
+| `/api/projects/:id/preview/stop` | 终止当前固定 Preview 进程、删除临时 D1 行并安排 Lease idle cleanup。 |
+| `/api/projects/:id/preview/content/:token/*` | 使用绑定 Project/PreviewSession/expiry 的短时 capability 代理 GET/HEAD 内容；不接受任意端口。 |
 | `/api/usage` | 认证后按当前 `user_id` 返回全量 AgentRun 总计、Project 和 AgentRuntime 聚合，不返回用户或 Provider 私有字段。 |
 
 以下 API 留待后续 Runtime 或管理能力阶段实现：
@@ -144,5 +153,6 @@ sequenceDiagram
 - R2 Project 文件快照、文件版本、回滚、沙箱历史和完整原始执行归档。
 - 团队、组织、成员邀请、Tenant、支付、套餐或订阅 API。
 - 浏览器直接连接供应商终端 URL 或模型 API。
+- 任意 command/port Preview、公开分享链接或浏览器直连 Provider Preview URL。
 - 在 Worker 或浏览器中运行 Agent。
 - 在没有适配器、能力声明、凭据设计和 E2E 前公开 Goose、Claude Code 或 Codex CLI。

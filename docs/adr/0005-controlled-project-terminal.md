@@ -1,6 +1,6 @@
 # ADR-0005：以同源 WebSocket 提供受控 Project Terminal
 
-- 状态：Accepted；本地实现与测试已完成，远程 Preview 验收待执行
+- 状态：Accepted；实现、迁移、部署与远程验收已完成
 - 日期：2026-07-26
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](./0003-agent-run-workflow.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
@@ -112,4 +112,4 @@ PTY 自然退出、浏览器断开或用户关闭时，Worker 先确认 PTY 已�
 
 ## 后果
 
-Terminal 增加一个临时 D1 表、一项 Runtime capability、一条同源 WebSocket 路径，以及 expiry/idle cleanup 两种 Workflow payload，但不增加外部服务、环境变量、R2、第二个 Worker 或长期数据。下一项受控沙箱能力 Preview 必须复用相同授权与 Lease 边界，并独立处理端口代理和生命周期。
+Terminal 增加一个临时 D1 表、一项 Runtime capability、一条同源 WebSocket 路径，以及 expiry/idle cleanup 两种 Workflow payload，但不增加外部服务、环境变量、R2、第二个 Worker 或长期数据。后续 Preview 已按 [ADR-0006](./0006-controlled-project-preview.md) 复用相同授权与 Lease 边界，并独立处理固定进程、同源内容代理和生命周期。

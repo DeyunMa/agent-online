@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
+> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -24,14 +24,14 @@
 | 待办 | 用户需要提供或确认 | 项目侧动作 |
 | --- | --- | --- |
 | Cloudflare 身份 | 目标 Account 已确认，Wrangler OAuth 已连接。 | 已完成；本机其他 Account 环境变量需按资源台账显式排除。 |
-| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 3 个迁移。 |
+| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 5 个迁移。 |
 | Worker 地址 | `workers.dev`。 | 已设置同源 `BETTER_AUTH_URL`，未配置自定义域。 |
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
 | 私有访问 | owner 邮箱。 | 已以 `ACCESS_ALLOWED_EMAILS` Secret 写入；`ACCESS_MODE=allowlist`。 |
-| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline 和空闲回收已成功，复杂任务限额仍需观察。 |
+| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline、Run/Terminal/Preview expiry 与空闲回收已成功，复杂任务限额仍需观察。 |
 
-当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke 和真实 Run；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
+当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal 和固定 Vite Preview；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
 ## 3. 当前成本口径
 

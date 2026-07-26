@@ -147,7 +147,7 @@ sequenceDiagram
 
 `AgentRuntime` 和 `SandboxRuntime` 可以独立新增，但不是任意组合。每个 AgentRuntime 声明所需能力，例如流式输出、stdin、进程终止、TTY、网络策略和模型访问模式；每个 SandboxRuntime 声明能提供的能力。Platform 只允许满足需求的已验收组合。
 
-第一版只实际注册 Pi 和一个 SandboxRuntime 实现（开发期可为 fake，真实验证优先 E2B）。运行中不切换 Agent 或 Sandbox。未来更换 Provider 或 Agent 只能在 Project 没有非终态 Run 时发生；新 Provider 沙箱从空工作区开始，不迁移旧文件。浏览器不暴露任意 Provider、CLI 或命令选择。
+V1 默认只公开 Pi，并安装一个 SandboxRuntime 实现（开发期可为 fake，真实验证优先 E2B）。单个 AgentRun 启动后不切换 Agent 或 Sandbox；Project 只能在没有非终态 Run 时为下一 Run 选择服务端已验收、已门控的 AgentRuntime。更换 Sandbox Provider 或重建 Provider 实例会从空工作区开始，不迁移旧文件。浏览器不暴露任意 Provider、CLI 或命令选择。
 
 [ADR-0004](./0004-goose-agent-runtime-spike.md) 在不改变上述单 Lease/单活动 Run 边界的前提下，批准 Goose 作为第二 Runtime 的受控 spike。它要求 Pi 与 Goose 使用同一个组合模板，因此切换 AgentRuntime 不重建当前 Provider 沙箱；只有切换 Sandbox Provider 或当前沙箱失效时才接受空工作区。Goose 在真实 E2E 前不构成公开产品能力。
 
@@ -176,7 +176,7 @@ sequenceDiagram
 - 用户心智简单：一个 Project、一个当前沙箱、连续对话和执行记录。
 - 项目不再依赖 R2，存储、恢复、对象清理和迁移面显著缩小。
 - `AgentRun` 清晰承载状态、取消、用量和管理汇总；不把执行细节塞进 Message 或模糊 Session 概念。
-- 仍保留以后替换 Pi、Goose、CLI 或 Sandbox Provider 的边界，而不假装它们今天已支持。
+- 仍保留以后替换 Pi、Goose、CLI 或 Sandbox Provider 的边界，同时只把通过独立门槛的 Runtime 暴露为公开产品能力。
 
 ### 代价
 
@@ -201,4 +201,4 @@ sequenceDiagram
 
 截至 2026-07-26，本 ADR 的 D1 迁移、领域合同、fake runtime、认证 Project、Message、单 Lease/单活动 Run、SSE、基础用量、Gemini ModelGateway 与 E2B + Pi/Goose 均已实现。远程 Preview 还验证了跨 Runtime 连续 Run 文件复用、取消、deadline、空闲 TTL 和手动停止。只读 Files 已通过真实 E2B 验收：只附着现有 Lease，不新增 D1/R2，不公开 Provider 信息；停止后不请求文件或展示陈旧缓存，fake 因缺少跨请求文件连续性而明确不可用。
 
-Terminal 已按 ADR-0005 复用本 ADR 的 Project 授权与单 Lease 边界，并以独立 D1 互斥和生命周期实现；后续 Preview 也必须拥有自己的端口与关闭约束，不能把 Files 的尽力一致检查当作严格锁。Sentry 仍只是可选错误观测，不成为运行前提。
+Terminal 已按 ADR-0005 复用本 ADR 的 Project 授权与单 Lease 边界，并以独立 D1 互斥和生命周期实现。Preview 也已按 ADR-0006 使用固定 preset、独立临时 D1 所有权、同源内容网关和 durable expiry/idle cleanup 完成远端验收；它没有复用 Files 的尽力一致检查作为安全锁。Sentry 仍只是可选错误观测，不成为运行前提。

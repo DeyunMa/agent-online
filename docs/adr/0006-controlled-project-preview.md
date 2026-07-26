@@ -1,6 +1,6 @@
 # ADR-0006：以同源只读网关提供受控 Project Preview
 
-- 状态：Accepted；实现与远程验收进行中
+- 状态：Accepted；实现、迁移、部署与远程验收已完成
 - 日期：2026-07-26
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0005](./0005-controlled-project-terminal.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
@@ -18,7 +18,8 @@ E2B sandbox ID、Provider host、固定内部端口、traffic token 或任意启
 它不进入 `AgentRuntime`，也不扩大只关心 Agent 进程的调用方接口。E2B adapter 在创建
 新沙箱时设置 `network.allowPublicTraffic=false`；Worker 只在服务端使用 E2B
 `trafficAccessToken`。在该策略部署前创建、没有 traffic token 的旧沙箱不会被 Preview
-临时放宽，而是明确失败；新 Run 重建沙箱后再启用。
+临时放宽，而是明确失败；用户需要先手动停止旧沙箱，再由后续 Run 创建新沙箱，
+或者使用新的 Project，然后才能启用 Preview。
 
 V1 只运行以下平台固定 `vite-v1` preset：
 
@@ -41,6 +42,11 @@ JavaScript 内容做字符串改写。Vite 8 即使关闭 HMR 仍会从 HTML 或
 加载固定的 `@vite/client`；网关只对这一条平台已知资源返回不联网的最小 style runtime，
 保留初始 CSS 注入并避免浏览器发起 V1 不支持的 WebSocket。Preview tab 隐藏时不挂载
 iframe，但服务端 Preview 生命周期保持不变。
+
+E2B 启动时优先通过文件 API 写入平台固定 config。Provider 的文件 RPC 在已存活沙箱上
+出现瞬时错误时，adapter 会先重连重试；两次失败后只允许执行一个平台拥有、内容已
+base64 编码的固定写入命令。该 fallback 不接收浏览器命令、Project 文件内容、Key、
+Provider ID 或任意路径，仍然只写 `/tmp/agent-online-vite-preview.config.mjs`。
 
 ### 2. D1 只保存当前临时 Preview
 
@@ -114,6 +120,21 @@ E2B 自身 timeout 是 Provider 故障下的最终成本边界。
 5. Stop、进程自然退出、expiry 和沙箱消失都会收敛 D1 行并安排 idle cleanup。
 6. iframe 能加载真实 HTML/JS/CSS，刷新后看见 Agent 对同一 `/workspace` 的修改。
 7. 桌面与移动布局无重叠、遮挡或不可达控制。
+
+## 实施结果
+
+截至 2026-07-26：
+
+- `0005_preview_sessions.sql`、`SandboxPreviewRuntime`、`ProjectPreviewService`、
+  同源 Hono 网关、React Preview 面板和两类 Workflow payload 已上线私有 Preview。
+- 真实 E2B Project 先加载 V1 HTML/JS/CSS，再在 Preview 运行期间完成 Pi Run 修改；
+  手动 Reload 后页面显示 V2，证明 Vite 文件监听和转换缓存失效路径生效。
+- Preview 运行期间可以完成 Pi Run，也可以连接真实 `/workspace` Terminal；整沙箱
+  Stop 返回 `project_busy`，显式停止 Preview 后才能停止沙箱。
+- 独立 Workflow smoke 已完成 expiry sleep 与幂等释放步骤；显式 Stop 后 D1
+  `preview_sessions` 清空，最终手动 Stop 让 Lease 收敛为 `stopped` 并清除私有引用。
+- `1440x900` 和 `390x844` 真实浏览器均成功加载页面，控制台无 error/warning；
+  公共响应和页面未出现 Provider host、sandbox ID、内部端口或 Key。
 
 ## 后果
 

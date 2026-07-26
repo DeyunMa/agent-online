@@ -1,6 +1,6 @@
 # Cloudflare Preview 资源台账
 
-> 状态：2026-07-26 已创建 Preview，`RUNS_ENABLED=true`，Pi/Goose、Files、Usage、Terminal、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
+> 状态：2026-07-26 已创建私有 Cloudflare 环境，`RUNS_ENABLED=true`，Pi/Goose、Files、Usage、Terminal、Project Preview、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -28,7 +28,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `099981b2-b923-44bb-94f6-b41f89dfcb16` |
+| 当前部署版本 | `f9d1a2ea-9496-45fb-97f1-8524d31494f8` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -53,8 +53,9 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0002_d2_run_execution.sql`
 - `0003_provider_process_ref.sql`
 - `0004_terminal_sessions.sql`
+- `0005_preview_sessions.sql`
 
-D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage 和活动 Terminal 的临时互斥行。Terminal 关闭后该行已删除，不保存命令或输出。没有创建 R2、KV、Durable Object 或文件快照。
+D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage，以及当前 Terminal/Preview 的临时协调行。Terminal/Preview 停止后对应行删除；不保存终端命令/输出、Preview 页面/日志/截图或访问历史。没有创建 R2、KV、Durable Object 或文件快照。
 
 ## 4. Workflow
 
@@ -64,7 +65,7 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 | Worker Binding | `AGENT_RUN_WORKFLOW` |
 | Dashboard | [Workflow Instances](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/workflows/agent-online-preview-run/instances) |
 
-打开 `RUNS_ENABLED` 后，受邀 owner 已通过该 Workflow 完成真实 AgentRun、Run 空闲回收，以及 Terminal expiry/idle cleanup 的持久调度。30 分钟 Terminal expiry 的完整等待未纳入本轮远端 smoke，expiry claim 和调度失败路径由自动测试覆盖。
+打开 `RUNS_ENABLED` 后，受邀 owner 已通过该 Workflow 完成真实 AgentRun、Run 空闲回收，以及 Terminal/Preview expiry 与 idle cleanup 的持久调度。30 分钟 Terminal expiry 的完整等待未纳入远端 smoke，expiry claim 和调度失败路径由自动测试覆盖；Preview 另以 50 秒独立 Workflow smoke 验证了 sleep、expiry 与幂等释放步骤。
 
 ## 5. 非敏感变量
 
@@ -108,7 +109,7 @@ Preview 在 `wrangler.jsonc` 中启用：
 - Workers Traces：关闭。
 - 外部日志导出、Tail Worker 和 Sentry：未配置。
 
-当前应用记录 Worker invocation，并在 Gemini 上游拒绝请求时增加受控协议诊断：只包含 HTTP 状态、错误类别、消息角色和工具/签名数量，不包含 prompt、消息正文、代码文件、终端输出、签名值或 Secret。Run 启动失败只记录安全阶段名，不记录 Provider 标识。若以后增加日志字段，必须先复核该边界。
+当前应用记录 Worker invocation，并在 Gemini 上游拒绝请求时增加受控协议诊断：只包含 HTTP 状态、错误类别、消息角色和工具/签名数量，不包含 prompt、消息正文、代码文件、终端输出、签名值或 Secret。Run/Preview 启动失败只记录安全阶段名和错误类名，不记录 Provider 标识、内部端口、签名 capability 或 config 内容。若以后增加日志字段，必须先复核该边界。
 
 Cloudflare Workers Free 当前包含每天 200,000 条日志事件并保留 3 天；该额度和保留期可能变化，见 [Workers Logs 官方说明](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)。
 
@@ -132,6 +133,12 @@ Preview 已验证：
 - Goose 长 shell 的跨请求取消收敛为 `cancelled`；临时 8 秒 deadline 收敛为 `timed_out`，恢复 1800 秒后超过 8 秒的任务成功。
 - 临时 8 秒空闲 TTL 的最新 Workflow 实例完成 sleep、原子脱离和停止；正式 TTL 已恢复为 600 秒。
 - Files 在真实 E2B Lease 上完成目录和文本读取；空闲回收和手动 Stop 后显示明确停止状态，不创建新沙箱、不请求文件且不展示陈旧缓存。
+- `/api/capabilities` 返回 `previewEnabled=true`；Project Inspector 只在现有 E2B Lease 上启动固定 `vite-v1`，浏览器不能传入 command、port、cwd、env 或 Provider URL。
+- 真实 Preview 成功加载 V1 HTML/JS/CSS；保持 Preview 运行时完成 Pi Run 修改同一 `/workspace`，手动 Reload 后显示 V2，CSS 注入和 Vite 文件缓存失效均生效。
+- Preview 运行时完成真实 Terminal 连接和文件读取；Run 与 Terminal 可复用同一沙箱，整沙箱 Stop 返回 `409 project_busy`。
+- 显式停止 Preview 后临时 D1 行清空，随后手动 Stop 成功；最终 Lease 为 `stopped`，Provider 引用、PreviewSession 和 TerminalSession 均已清理。
+- 独立 `preview-expiry` Workflow smoke 以 50 秒 future expiry 完成 sleep 与 release，返回 `released=false` 表示目标 Project 当时已无待释放 Preview，不影响 D1。
+- `1440x900` 与 `390x844` 的干净浏览器会话均加载真实 V2 页面，控制台 0 error/warning；响应和 DOM 未出现 E2B host、sandbox ID、内部端口或 Key。
 - 最终公开能力仍只有 Pi，未登录 Project API 为 `401`；D1 抽查未发现 Key/capability 名称，终态 Run/停止 Lease 的私有引用均已清空。
 
 尚未验证：
@@ -140,7 +147,7 @@ Preview 已验证：
 - Goose capability 在子工具中的继承和精确输出/日志脱敏自动门禁。
 - Goose 浏览器选择、刷新恢复和移动端交互。
 
-验收期间产生的取消、超时和探针 Run 记录保留在 Preview D1 中，用于确认状态和 usage 收敛；它们不是生产数据。最终测试沙箱已通过手动 Stop 停止，Provider 引用已清空，文件按 V1 设计允许丢失。
+验收期间产生的取消、超时和探针 Run 记录保留在 Preview D1 中，用于确认状态和 usage 收敛；它们不是生产数据。最终测试 Preview 和 Terminal 行均已删除，沙箱已通过手动 Stop 停止，Provider 引用已清空，文件按 V1 设计允许丢失。
 
 ## 9. 运维命令
 

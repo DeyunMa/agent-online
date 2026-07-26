@@ -73,7 +73,9 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 | Files 与手动 Stop | 真实目录/文本可见；手动停止后 Lease 为 `stopped`、Provider 引用为空，Files 不显示陈旧缓存。 |
 | 公开能力与脱敏 | `/api/capabilities` 仍只公布 Pi；浏览器响应不含 Provider 标识，D1 Message 未发现 Key 或 capability 名称。 |
 
-最终部署 Worker 版本为 `d424d9ed-4a4f-45ea-aa89-2856cc78885a`。验收期间的临时 deadline/TTL 配置均已恢复，当前为 1800 秒和 600 秒。
+本阶段 Goose 验收使用的 Worker 版本为 `d424d9ed-4a4f-45ea-aa89-2856cc78885a`。
+当前部署版本以 [Cloudflare Preview 资源台账](../setup/cloudflare-preview-resources.md)
+为准。验收期间的临时 deadline/TTL 配置均已恢复，当前为 1800 秒和 600 秒。
 
 首次 TTL 探针紧邻部署启动，命中了仍在传播的旧 Workflow 版本；等待最新 Workflow 版本生效后重新执行，8 秒 sleep 与停止步骤均通过。涉及 timeout/TTL 的后续部署必须先确认 Workflow 版本传播完成。
 
@@ -98,4 +100,5 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 
 1. 保持私有 Preview 为 `spike`，先固化 capability 工具继承和输出/日志脱敏门禁。
 2. 公开门槛全部通过后再实现 React Runtime 选择，并完成刷新与移动端验收。
-3. 产品主线的跨 Run Usage、use-case/route 加固和受控 Terminal 已完成本地实现；下一步是 Terminal 远端验收与受控 Preview。
+3. 产品主线的跨 Run Usage、use-case/route 加固、受控 Terminal 和受控 Project
+   Preview 均已完成远端验收；下一项纵切是受控 Changes。

@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板与受控 Terminal 均已完成私有 Preview 验收；Terminal 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal 与受控 Project Preview 均已完成私有 Cloudflare 验收；Terminal/Preview 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -64,7 +64,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 
 `ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
 
-浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。`terminalEnabled` 只表示服务端安装了 E2B PTY capability，不包含 Provider 标识。前端禁用只是交互反馈，服务端 D1 互斥才是强制边界。
+浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、`previewEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。`terminalEnabled` / `previewEnabled` 只表示服务端安装了对应 E2B capability，不包含 Provider 标识、端口或 traffic token。前端禁用只是交互反馈，服务端 D1 所有权与互斥才是强制边界。
 
 ## 6. Cloudflare Binding，不是环境变量
 
@@ -74,7 +74,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | --- | --- | --- |
 | `DB` | D1 | Better Auth 与应用数据表。 |
 | `ASSETS` | Workers Assets | React 构建产物。 |
-| `AGENT_RUN_WORKFLOW` | Cloudflare Workflows | 每个真实 AgentRun 的执行、重试、deadline 和空闲清理，以及 Terminal 关闭后的 idle cleanup。 |
+| `AGENT_RUN_WORKFLOW` | Cloudflare Workflows | 每个真实 AgentRun 的执行、重试、deadline 和空闲清理，以及 Terminal/Preview expiry 与关闭后的 idle cleanup。 |
 
 V1 不配置 `PROJECT_BUCKET`、R2 或 Durable Object Binding。`AGENT_RUN_WORKFLOW` 已在 `wrangler.jsonc` 声明；它不需要用户在 `.dev.vars` 填值。D1 ID 仍是本地开发占位值，远程部署前必须替换。
 
@@ -105,6 +105,7 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 - SMTP、Resend、邮件验证和密码找回变量。
 - `CREDENTIAL_ENCRYPTION_KEY`，直到明确开始实现 BYOK 写入。
 - Goose 不需要独立模型 Key，它只能使用现有短时 ModelGateway capability。Claude Code 或 Codex CLI 的凭据仍不需要。
+- Preview 固定端口、preset、启动等待和 30 分钟上限是代码合同，不提供环境变量或浏览器覆盖；改动这些边界需要先更新 ADR-0006。
 
 ## 9. 外部依据
 

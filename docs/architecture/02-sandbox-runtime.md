@@ -1,17 +1,19 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files 与受控 Terminal 均已通过私有 Preview；Goose 公开产品路径仍受门控，Preview 端口代理尚未实现。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files、受控 Terminal 与受控 Project Preview 均已通过私有 Cloudflare 环境验收；Goose 公开产品路径仍受门控。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
 
 一个 `SandboxLease` 绑定一个 Project 的当前临时环境。应用级 Lease ID 稳定，供应商实例 ID 只保存在服务端 `provider_ref` 中；浏览器永远看不到供应商 ID、端口、Provider Key 或模型 Key。
 
-运行期有两个独立端口。`SandboxRuntime` 在代码中进一步按能力拆为生命周期、进程、文件和终端接口，application 模块只依赖所需能力：
+运行期有两条独立扩展轴。`SandboxRuntime` 在代码中进一步按能力拆为生命周期、进程、文件、终端和 Preview 接口，application 模块只依赖所需能力：
 
 | 端口 | 负责什么 | 不负责什么 |
 | --- | --- | --- |
-| `SandboxRuntime` | 取得当前沙箱、启动通用进程、读写 stdin、读取进程事件、终止进程、受控文件 IO 与停止沙箱。E2B 另实现独立 `SandboxTerminalRuntime` PTY capability。 | Pi 协议、D1、Message、模型调用、WebSocket 授权。 |
+| `SandboxLifecycleRuntime` / `SandboxProcessRuntime` / `SandboxFilesystemRuntime` | 取得或停止当前沙箱、运行通用进程，以及受控文件 IO。组合类型 `SandboxRuntime` 只聚合这三项。 | Pi 协议、D1、Message、模型调用、WebSocket/HTTP 授权。 |
+| `SandboxTerminalRuntime` | 创建、resize、输入、读取和明确关闭一个 PTY。 | 浏览器鉴权、D1 互斥、WebSocket 协议或终端历史。 |
+| `SandboxPreviewRuntime` | 启动/探测/终止平台固定 Preview，并由服务端受控 fetch 固定端口。 | 任意命令/端口、公开 URL、签名 capability、D1 所有权或 HTML 展示策略。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
 Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和 Preview Workflow 真实 E2E，但在 ADR-0004 的剩余安全与浏览器验收通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
@@ -34,6 +36,7 @@ type SandboxCommand = {
   args: readonly string[];
   command: string;
   cwd: string;
+  env?: Readonly<Record<string, string>>;
 };
 
 interface SandboxProcessSession {
@@ -43,25 +46,30 @@ interface SandboxProcessSession {
   write(input: string): Promise<void>;
 }
 
-interface SandboxRuntime {
+interface SandboxLifecycleRuntime {
   readonly kind: RuntimeKind;
-  readonly filesystemScope: "lease" | "runtime-instance";
   ensureLease(input: EnsureLeaseInput): Promise<RuntimeHandle>;
+  stop(handle: RuntimeHandle, reason: SandboxStopReason): Promise<void>;
+}
+
+interface SandboxFilesystemRuntime {
+  readonly filesystemScope: "lease" | "runtime-instance";
+  readonly kind: RuntimeKind;
   listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]>;
   readFile(handle: RuntimeHandle, path: string): Promise<Uint8Array>;
-  startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession>;
-  terminateProcess(handle: RuntimeHandle, providerProcessRef: string, reason: ProcessTerminationReason): Promise<void>;
-  stop(handle: RuntimeHandle, reason: "idle" | "manual" | "failed"): Promise<void>;
   writeFile(handle: RuntimeHandle, path: string, content: string): Promise<void>;
 }
 
-interface SandboxTerminalSession {
-  readonly providerProcessRef: string;
-  close(reason: "client_closed" | "expired" | "failed"): Promise<void>;
-  events(): AsyncIterable<SandboxTerminalEvent>;
-  resize(size: { cols: number; rows: number }): Promise<void>;
-  write(input: Uint8Array): Promise<void>;
+interface SandboxProcessRuntime {
+  readonly kind: RuntimeKind;
+  startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession>;
+  terminateProcess(handle: RuntimeHandle, providerProcessRef: string, reason: ProcessTerminationReason): Promise<void>;
 }
+
+interface SandboxRuntime
+  extends SandboxFilesystemRuntime,
+    SandboxLifecycleRuntime,
+    SandboxProcessRuntime {}
 
 interface SandboxTerminalRuntime {
   readonly kind: RuntimeKind;
@@ -73,6 +81,29 @@ interface SandboxTerminalRuntime {
     handle: RuntimeHandle,
     providerProcessRef: string,
     reason: TerminalCloseReason,
+  ): Promise<void>;
+}
+
+interface SandboxPreviewRuntime {
+  readonly kind: RuntimeKind;
+  fetchPreview(
+    handle: RuntimeHandle,
+    port: number,
+    request: { headers: Readonly<Record<string, string>>; method: "GET" | "HEAD"; pathAndQuery: string },
+  ): Promise<Response>;
+  isPreviewRunning(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    port: number,
+  ): Promise<boolean>;
+  startPreview(
+    handle: RuntimeHandle,
+    input: SandboxPreviewStartInput,
+  ): Promise<{ providerProcessRef: string }>;
+  terminatePreview(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    reason: "client_stopped" | "expired" | "failed",
   ): Promise<void>;
 }
 ```
@@ -128,11 +159,11 @@ stateDiagram-v2
 
 1. 每个 Project 只有一条逻辑 Lease。
 2. D1 部分唯一索引与 Terminal trigger 保证每个 Project 同时最多一个非终态 Run 或一条 Terminal 硬锁。
-3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止和停止沙箱。
+3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止、固定 Preview fetch 和停止沙箱。
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
 5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
-当前仍不实现每用户活动沙箱上限或 preview。
+当前仍不实现每用户活动沙箱上限；Project Preview 已实现，但只支持 ADR-0006 的固定 `vite-v1` preset。
 
 ## 4. 只读 Files 边界
 
@@ -152,8 +183,8 @@ stateDiagram-v2
 
 活动 Run 检查、Lease 读取和 Provider 文件读取不是一个原子事务；逐层检查与最终
 读取也存在低概率 TOCTOU。个人项目阶段把 Files 定义为无活动 Run 下的尽力一致
-只读视图，不把它当作严格并发锁。Terminal 已使用 D1 临时互斥与独立生命周期；
-Preview 仍必须有自己的端口授权与生命周期约束。
+只读视图，不把它当作严格并发锁。Terminal 和 Preview 都使用自己的 D1 临时所有权
+与生命周期，不把 Files 检查当作安全锁。
 
 ## 5. 受控 Terminal 边界
 
@@ -176,7 +207,30 @@ Lease 沙箱并启动 E2B PTY。它固定 `/workspace`，限制尺寸、单条�
 按释放时 `updated_at` 等待 10 分钟并尝试停止仍未被复用的沙箱。终端输入、输出
 和滚屏从不进入 D1。
 
-## 6. 已注册与预留 Runtime
+## 6. 受控 Preview 边界
+
+`ProjectPreviewService` 只在 Project 已有 `idle|ready` E2B Lease、且没有活动
+AgentRun/Terminal 时 claim 一条 `preview_sessions`。`starting` 行通过 D1 trigger
+阻止新 Run；固定 Vite 进程进入 `running` 后，后续 Run 和 Terminal 可以复用同一
+`/workspace`，让用户修改后手动 Reload。活动 Preview 始终阻止整沙箱手动 Stop 和
+idle cleanup。
+
+`SandboxPreviewRuntime` 只接收平台生成的 `vite-v1` 参数：
+
+- 工作目录 `/workspace`、固定端口 `3000`、固定本地 Vite 二进制；
+- 不执行 Project script、不加载 Project Vite config、不通过 `npx` 下载；
+- E2B public traffic 关闭，Provider traffic token 只在 Worker adapter 内使用；
+- config 文件 RPC 瞬时失败时先重连重试，最后只允许平台固定内容和固定 `/tmp`
+  路径的受控写入 fallback，不能传入用户命令或 Key。
+
+浏览器只通过绑定 Project、PreviewSession 和 expiry 的同源短时 capability 发起
+GET/HEAD。Worker 移除 Cookie、Authorization、Provider Location/host/control header，
+并以 iframe sandbox 和 CSP 禁止 WebSocket、form、弹窗及顶层导航。Vite 8 固定
+`@vite/client` 资源由平台最小 style runtime 替代，只负责初始 CSS 注入，不建立 HMR
+连接。30 分钟 expiry、显式 Stop、进程消失和停止后的 10 分钟 Lease idle cleanup
+由 Workflow/应用服务收敛；D1 不保存页面、日志、截图或访问历史。
+
+## 7. 已注册与预留 Runtime
 
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
@@ -187,7 +241,7 @@ Lease 沙箱并启动 E2B PTY。它固定 `/workspace`，限制尺寸、单条�
 
 新增适配器前必须独立验收镜像安装、模型凭据路径、事件映射、取消、日志脱敏、网络策略和沙箱隔离。不能因为 Runtime ID 已存在就把它暴露给用户。
 
-## 7. 后续扩展要求
+## 8. 后续扩展要求
 
 已完成：
 
@@ -196,22 +250,24 @@ Lease 沙箱并启动 E2B PTY。它固定 `/workspace`，限制尺寸、单条�
 - Pi RPC 的最终回复、受控 ModelGateway 通道和真实 usage 聚合。
 - E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板和可写 `/workspace`，不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
 - wall-clock timeout、空闲 TTL 与明确的资源释放路径。
+- 固定 `vite-v1` Preview、同源 GET/HEAD 内容网关、D1 临时所有权、30 分钟 expiry 与停止后的 idle cleanup。
 
 待完成：
 
 - 每用户并发上限和基础 usage 管理视图。
-- 经授权的 preview 网关；停止后不恢复任何 Project 文件。
+- 受控 Changes；停止后仍不恢复任何 Project 文件。
 - Cloudflare 远程环境中更复杂任务对 Workflow Free CPU 和 subrequest 上限的持续验证。
 
 执行协调设计见 [ADR-0003](../adr/0003-agent-run-workflow.md)。在受控 API 完成前，不得向浏览器开放 Provider ID、内部端口或任意 shell 命令。
 
-## 8. 非目标
+## 9. 非目标
 
 - R2 快照、Project 文件版本、沙箱历史或完整原始执行归档。
 - 浏览器直连 Provider、模型 API 或沙箱内部端口。
+- 任意 Preview command/port、应用后端 API 代理、公开分享链接或持久部署。
 - 常驻 Agent session、跨 Run resume 或未授权的任意 CLI。
 
-## 9. 外部依据
+## 10. 外部依据
 
 - [Pi RPC](https://pi.dev/docs/latest/rpc) 与 [Pi Provider 配置](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
 - [Goose repository](https://github.com/aaif-goose/goose) 与 [Goose CLI commands](https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/goose-cli-commands.md)
