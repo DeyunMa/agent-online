@@ -148,6 +148,12 @@ export function createServerServices(env: AppBindings): ServerServices {
       createId: () => crypto.randomUUID(),
       getSandboxRuntime: getTerminalRuntime,
       previewSessions,
+      reportFailure: ({ errorName, stage }) => {
+        console.error("project_preview_failure", {
+          errorName,
+          stage,
+        });
+      },
       sandboxLeases,
       sandboxRuntimeId,
       scheduleExpiry:

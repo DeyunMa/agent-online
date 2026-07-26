@@ -71,6 +71,16 @@ export type ProjectPreviewServiceOptions = {
   createId(): string;
   getSandboxRuntime(id: RuntimeKind): SandboxPreviewRuntime | null;
   previewSessions: PreviewSessionRepository;
+  reportFailure?(input: {
+    errorName: string;
+    stage:
+      | "content_base"
+      | "mark_running"
+      | "mark_running_conflict"
+      | "runtime_lookup"
+      | "runtime_start"
+      | "schedule_expiry";
+  }): void;
   sandboxLeases: Pick<SandboxLeaseRepository, "findByProjectId">;
   sandboxRuntimeId: RuntimeKind;
   scheduleExpiry(input: {
@@ -133,7 +143,8 @@ export class ProjectPreviewService {
     let runtime: SandboxPreviewRuntime | null;
     try {
       runtime = this.options.getSandboxRuntime(lease.runtimeId);
-    } catch {
+    } catch (error) {
+      this.reportFailure("runtime_lookup", error);
       return { kind: "provider_error" };
     }
     if (!runtime) {
@@ -163,11 +174,14 @@ export class ProjectPreviewService {
         previewSessionId: claimed.session.id,
         projectId,
       });
-    } catch {
+    } catch (error) {
+      this.reportFailure("schedule_expiry", error);
       await this.release(claimed.session);
       return { kind: "provider_error" };
     }
 
+    let stage: "content_base" | "mark_running" | "runtime_start" =
+      "content_base";
     try {
       const contentBasePath =
         await this.options.createContentBasePath({
@@ -176,6 +190,7 @@ export class ProjectPreviewService {
           previewSessionId: claimed.session.id,
           projectId,
         });
+      stage = "runtime_start";
       const started = await runtime.startPreview(
         toRuntimeHandle(claimed.session, lease.runtimeId),
         {
@@ -186,12 +201,14 @@ export class ProjectPreviewService {
           startupTimeoutMs: this.startupTimeoutMs,
         },
       );
+      stage = "mark_running";
       const running = await this.options.previewSessions.markRunning(
         claimed.session.id,
         started.providerProcessRef,
         this.timestamp(),
       );
       if (!running) {
+        this.reportFailure("mark_running_conflict");
         await runtime
           .terminatePreview(
             toRuntimeHandle(claimed.session, lease.runtimeId),
@@ -212,10 +229,24 @@ export class ProjectPreviewService {
           sessionId: running.id,
         },
       };
-    } catch {
+    } catch (error) {
+      this.reportFailure(stage, error);
       await this.release(claimed.session);
       return { kind: "provider_error" };
     }
+  }
+
+  private reportFailure(
+    stage: Parameters<
+      NonNullable<ProjectPreviewServiceOptions["reportFailure"]>
+    >[0]["stage"],
+    error?: unknown,
+  ) {
+    this.options.reportFailure?.({
+      errorName:
+        error instanceof Error ? error.name : "UnknownError",
+      stage,
+    });
   }
 
   async inspect(projectId: string): Promise<InspectProjectPreviewResult> {

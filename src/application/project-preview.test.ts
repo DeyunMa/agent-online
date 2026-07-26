@@ -97,6 +97,10 @@ describe("ProjectPreviewService", () => {
       expectedProviderSandboxRef: "sandbox-1",
       sessionId: "preview-1",
     });
+    expect(harness.reportFailure).toHaveBeenCalledWith({
+      errorName: "Error",
+      stage: "content_base",
+    });
   });
 
   it("reconciles a naturally exited process and schedules idle cleanup", async () => {
@@ -263,6 +267,7 @@ function createHarness(
     }
   });
   const scheduleIdleCleanup = vi.fn(async () => undefined);
+  const reportFailure = vi.fn();
   const service = new ProjectPreviewService({
     agentRuns: {
       findActiveByProjectId: vi.fn(async () =>
@@ -284,6 +289,7 @@ function createHarness(
       return runtime;
     },
     previewSessions,
+    reportFailure,
     sandboxLeases: {
       findByProjectId: vi.fn(async () => lease),
     },
@@ -297,6 +303,7 @@ function createHarness(
 
   return {
     previewSessions,
+    reportFailure,
     runtime,
     scheduleExpiry,
     scheduleIdleCleanup,
