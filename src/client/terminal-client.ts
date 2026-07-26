@@ -26,6 +26,9 @@ export interface BrowserTerminalConnection {
   write(data: string): void;
 }
 
+const terminalInputChunkBytes = 8 * 1_024;
+const terminalInputFlushDelayMs = 8;
+
 export function connectProjectTerminal(
   projectId: string,
   size: { cols: number; rows: number },
@@ -36,9 +39,44 @@ export function connectProjectTerminal(
   let deliberateClose = false;
   let errorReported = false;
   let forceCloseTimer: ReturnType<typeof setTimeout> | null = null;
+  let inputFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingInput = "";
   let ready = false;
   let serverClosed = false;
 
+  const clearInputFlushTimer = () => {
+    if (inputFlushTimer) {
+      clearTimeout(inputFlushTimer);
+      inputFlushTimer = null;
+    }
+  };
+  const flushInput = () => {
+    clearInputFlushTimer();
+    if (!ready || socket.readyState !== WebSocket.OPEN || !pendingInput) {
+      return;
+    }
+
+    const { chunk, remaining } = takeUtf8Prefix(
+      pendingInput,
+      terminalInputChunkBytes,
+    );
+    pendingInput = remaining;
+    sendMessage(socket, { data: chunk, type: "input" });
+    if (pendingInput) {
+      inputFlushTimer = setTimeout(
+        flushInput,
+        terminalInputFlushDelayMs,
+      );
+    }
+  };
+  const scheduleInputFlush = () => {
+    if (!inputFlushTimer) {
+      inputFlushTimer = setTimeout(
+        flushInput,
+        terminalInputFlushDelayMs,
+      );
+    }
+  };
   const clearForceCloseTimer = () => {
     if (forceCloseTimer) {
       clearTimeout(forceCloseTimer);
@@ -96,6 +134,7 @@ export function connectProjectTerminal(
     if (message.type === "ready") {
       ready = true;
       handlers.onReady(message.expiresAt);
+      flushInput();
       return;
     }
     if (message.type === "error") {
@@ -112,6 +151,8 @@ export function connectProjectTerminal(
     reportError("network_error");
   });
   socket.addEventListener("close", () => {
+    clearInputFlushTimer();
+    pendingInput = "";
     clearForceCloseTimer();
     if (!deliberateClose && !serverClosed && !errorReported) {
       reportError("network_error");
@@ -122,6 +163,8 @@ export function connectProjectTerminal(
   return {
     close() {
       deliberateClose = true;
+      flushInput();
+      pendingInput = "";
       ready = false;
       if (socket.readyState === WebSocket.OPEN) {
         sendMessage(socket, { type: "close" });
@@ -133,6 +176,8 @@ export function connectProjectTerminal(
     dispose() {
       deliberateClose = true;
       ready = false;
+      clearInputFlushTimer();
+      pendingInput = "";
       clearForceCloseTimer();
       if (
         socket.readyState === WebSocket.OPEN ||
@@ -148,9 +193,32 @@ export function connectProjectTerminal(
     },
     write(data) {
       if (ready && socket.readyState === WebSocket.OPEN && data) {
-        sendMessage(socket, { data, type: "input" });
+        pendingInput += data;
+        scheduleInputFlush();
       }
     },
+  };
+}
+
+export function takeUtf8Prefix(source: string, maxBytes: number) {
+  if (!source || !Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    return { chunk: "", remaining: source };
+  }
+
+  const encoder = new TextEncoder();
+  let bytes = 0;
+  let end = 0;
+  for (const symbol of source) {
+    const nextBytes = encoder.encode(symbol).byteLength;
+    if (bytes + nextBytes > maxBytes) {
+      break;
+    }
+    bytes += nextBytes;
+    end += symbol.length;
+  }
+  return {
+    chunk: source.slice(0, end),
+    remaining: source.slice(end),
   };
 }
 

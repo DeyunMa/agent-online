@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseTerminalServerMessage } from "./terminal-client";
+import {
+  parseTerminalServerMessage,
+  takeUtf8Prefix,
+} from "./terminal-client";
 
 describe("Terminal browser protocol", () => {
   it("accepts only public normalized server messages", () => {
@@ -36,5 +39,16 @@ describe("Terminal browser protocol", () => {
         '{"type":"error","code":"e2b_internal"}',
       ),
     ).toBeNull();
+  });
+
+  it("chunks terminal input on UTF-8 boundaries", () => {
+    expect(takeUtf8Prefix("abc中文def", 7)).toEqual({
+      chunk: "abc中",
+      remaining: "文def",
+    });
+    expect(takeUtf8Prefix("plain", 8)).toEqual({
+      chunk: "plain",
+      remaining: "",
+    });
   });
 });
