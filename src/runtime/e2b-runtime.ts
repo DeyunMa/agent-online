@@ -94,6 +94,20 @@ export type E2BSandboxRuntimeOptions = {
 const defaultSandboxTimeoutMs = 30 * 60 * 1_000;
 const defaultProcessTimeoutMs = 30 * 60 * 1_000;
 const defaultTerminalTimeoutMs = 30 * 60 * 1_000;
+const previewConfigPath =
+  "/tmp/agent-online-vite-preview.config.mjs";
+const previewConfig = `export default {
+  appType: "spa",
+  clearScreen: false,
+  root: "/workspace",
+  server: {
+    cors: false,
+    hmr: false,
+    watch: null,
+    ws: false,
+  },
+};
+`;
 const previewPort = 3000;
 const previewWorkingDirectory = "/workspace";
 export const defaultTerminalOutputLimitBytes = 8 * 1_024 * 1_024;
@@ -338,6 +352,7 @@ export class E2BSandboxRuntime
       this.sandboxes.set(sandbox.sandboxId, sandbox);
     }
     requireTrafficAccessToken(sandbox);
+    await sandbox.files.write(previewConfigPath, previewConfig);
 
     const process = await sandbox.commands.run(
       toShellCommand(preset),
@@ -773,6 +788,8 @@ function vitePreviewPreset(contentBasePath: string) {
       "--port",
       String(previewPort),
       "--strictPort",
+      "--config",
+      previewConfigPath,
       "--base",
       contentBasePath,
     ],

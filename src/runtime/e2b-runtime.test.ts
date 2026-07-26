@@ -177,7 +177,7 @@ describe("E2BSandboxRuntime", () => {
 
       expect(started).toEqual({ providerProcessRef: "42" });
       expect(sandbox.command).toBe(
-        "'./node_modules/.bin/vite' '--host' '0.0.0.0' '--port' '3000' '--strictPort' '--base' '/api/projects/project-1/preview/content/capability/'",
+        "'./node_modules/.bin/vite' '--host' '0.0.0.0' '--port' '3000' '--strictPort' '--config' '/tmp/agent-online-vite-preview.config.mjs' '--base' '/api/projects/project-1/preview/content/capability/'",
       );
       expect(sandbox.commandOptions).toMatchObject({
         background: true,
@@ -190,6 +190,12 @@ describe("E2BSandboxRuntime", () => {
         timeoutMs: 1_815_000,
       });
       expect(sandbox.process.disconnected).toBe(true);
+      expect(sandbox.fileWrites).toEqual([
+        {
+          content: expect.stringContaining("hmr: false"),
+          path: "/tmp/agent-online-vite-preview.config.mjs",
+        },
+      ]);
       expect(response.status).toBe(200);
       const proxyCall = fetchMock.mock.calls.at(-1);
       expect(proxyCall?.[0]).toBe(
@@ -387,6 +393,7 @@ class FakeE2BSandbox {
     size: { cols: number; rows: number };
   }> = [];
   readonly timeoutValues: number[] = [];
+  readonly fileWrites: Array<{ content: string; path: string }> = [];
   readonly files = {
     list: async (_path: string) => [
       {
@@ -402,7 +409,9 @@ class FakeE2BSandbox {
     ],
     read: async (_path: string, _options: { format: "bytes" }) =>
       new TextEncoder().encode("example"),
-    write: async (_path: string, _content: string) => undefined,
+    write: async (path: string, content: string) => {
+      this.fileWrites.push({ content, path });
+    },
   };
 
   readonly commands = {

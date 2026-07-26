@@ -25,13 +25,16 @@ V1 只运行以下平台固定 `vite-v1` preset：
 ```text
 cwd: /workspace
 command: ./node_modules/.bin/vite --host 0.0.0.0 --port 3000 --strictPort
+config: /tmp/agent-online-vite-preview.config.mjs
 base: /api/projects/<projectId>/preview/content/<signed-capability>/
 env: HOST=0.0.0.0, PORT=3000, BROWSER=none
 ```
 
 浏览器不能传入 command、args、cwd、env、端口或 Provider 参数。项目必须在本地
 `node_modules` 中安装 Vite；缺少固定二进制时 Preview 明确失败，不通过 `npx` 下载，
-也不执行项目自定义 script。平台在启动前生成与该 Preview session 同寿命的签名 base，
+也不执行项目自定义 script 或加载项目自定义 Vite config。E2B adapter 在 `/tmp`
+写入平台固定 config，关闭 HMR、WebSocket、文件监听和 CORS。平台在启动前生成与该
+Preview session 同寿命的签名 base，
 Vite 因此会把 HTML、模块依赖和 CSS 资源统一指向同源代理路径；Worker 不对任意
 JavaScript 内容做字符串改写。
 
