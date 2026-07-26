@@ -1,12 +1,12 @@
 # Agent Online 领域术语
 
-> 状态：D2 已完成私有 Cloudflare Preview 验收；D3 受控只读 Files 已完成本地实现，远程部署验收、用量聚合、Terminal 和 Preview 待完成。
+> 状态：D2 已完成私有 Cloudflare Preview 验收；D3 受控只读 Files 已完成本地实现。Goose 第二 Runtime spike 已获准但仍受 feature flag 和真实 E2E 门控；远程 Files 验收、用量聚合、Terminal 和 Preview 待完成。
 
 ## 产品定义
 
 Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端和 preview；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
 
-第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是唯一实际注册的 AgentRuntime；其他 Runtime 名称只表示未来可扩展接口，不能当作已支持能力。
+第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认且已验收的 AgentRuntime；Goose 按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 作为受控候选实现，在全部真实 E2E 通过前不能当作产品能力。
 
 ## 核心术语
 
@@ -19,7 +19,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
 | `AgentRunWorkflow` | 每个 AgentRun 一个的 Cloudflare Workflow 执行所有者。 | 只接收 Project/Run 应用 ID；D1 仍是产品事实，不保存 raw transcript。 |
 | `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，不能当作跨请求 Project 文件。 |
-| `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；当前只注册 Pi。 |
+| `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 真实 Runtime 写 token、模型请求数和沙箱时长；它不是账单流水或套餐。 |
 
@@ -47,7 +47,7 @@ erDiagram
 6. 浏览器可见的是应用生成的 `sandboxLeaseId`、状态和受控能力；`provider_ref`、内部端口、E2B sandbox ID 和 Container ID 均为服务端私有数据。
 7. Agent、shell、用户代码和开发服务在低信任沙箱内；Hono 控制平面、D1 和平台 Gemini Key 在沙箱外。
 8. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；两者都不能直接修改 Project/Run 的 D1 事实。
-9. Pi 的模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
+9. Pi 和任何新增 Runtime 的平台模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
 10. `AgentRun` 终态写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
 11. 真实执行 owner 是 [ADR-0003](./docs/adr/0003-agent-run-workflow.md) 中每个 Run 一个的 `AgentRunWorkflow`；Workflow 重试不能再次启动已非 `queued` 的 Run。
 12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED` 是紧急停止新执行的服务端开关，设为 `false` 时必须在任何 Message、Lease 或 AgentRun 写入前失败。
@@ -60,4 +60,4 @@ erDiagram
 - `UsageEvent`、`UsageReservation`、`ModelConnection`、`CredentialLease`、BYOK 密文和复杂配额账本。
 - 团队、组织、租户、成员角色和邀请。
 - 价格、订阅、信用余额、付款、订单和发票。
-- 未安装 AgentRuntime 的 UI 选择项。新增 Goose、Claude Code 或 Codex CLI 前，必须先有独立适配器、能力声明、凭据流和端到端验收。
+- 未通过验收的 AgentRuntime UI 选择项。Goose 依 ADR-0004 实施并保持门控；Claude Code 或 Codex CLI 仍只有保留 ID，新增前必须有独立 ADR、适配器、能力声明、凭据流和端到端验收。

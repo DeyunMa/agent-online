@@ -1,7 +1,7 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；只读 Files 已完成本地实现，远程验收、终端和 preview 待完成。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；只读 Files 已完成本地实现；Goose 独立 adapter 与组合模板处于门控 spike。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
 
@@ -14,7 +14,7 @@
 | `SandboxRuntime` | 取得当前沙箱、启动通用进程、读写 stdin、读取进程事件、终止进程、受控文件 IO 与停止沙箱。 | Pi 协议、D1、Message、模型调用。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
-当前 AgentRuntime 只注册 `pi`。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行 Pi 二进制。
+Pi 是默认且已验收的 AgentRuntime。Goose 已获准作为独立 adapter 实施，但在 ADR-0004 的真实 E2E 全部通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
 
 ## 2. 当前代码合同
 
@@ -74,11 +74,17 @@ interface AgentExecution {
 interface AgentRuntime {
   readonly capabilities: AgentRuntimeCapabilities;
   readonly id: "pi" | "goose" | "claude-code" | "codex-cli";
-  start(context: { processes: { start(command: SandboxCommand): Promise<SandboxProcessSession> } }, input: AgentRunInput): Promise<AgentExecution>;
+  start(
+    context: {
+      files: { write(path: string, content: string): Promise<void> };
+      processes: { start(command: SandboxCommand): Promise<SandboxProcessSession> };
+    },
+    input: AgentRunInput,
+  ): Promise<AgentExecution>;
 }
 ```
 
-`AgentRunInput` 只带 Project、Run、应用 Lease ID、工作目录、用户任务和短时 ModelGateway capability。它不包含 Provider 管理凭据、真实 sandbox ID 或 Gemini Key。Pi 适配器实现 RPC JSONL、最终可见文本提取、工具事件归一化、abort 与进程终止。
+`AgentRunInput` 只带 Project、Run、应用 Lease ID、工作目录、用户任务和短时 ModelGateway capability。它不包含 Provider 管理凭据、真实 sandbox ID 或 Gemini Key。Pi 适配器实现 RPC JSONL、最终可见文本提取、工具事件归一化、abort 与进程终止；Goose adapter 只能实现自己的固定 headless JSONL 协议，不能复用 Runtime ID 生成任意命令。
 
 ## 3. 当前生命周期
 
@@ -89,9 +95,9 @@ stateDiagram-v2
     [*] --> stopped
     stopped --> starting: Workflow 领取 Run
     starting --> ready: 沙箱已取得并持久化私有引用
-    ready --> busy: Pi 进程已启动
+    ready --> busy: Agent 进程已启动
     starting --> failed: 启动失败
-    ready --> failed: Pi 启动失败
+    ready --> failed: Agent 启动失败
     busy --> idle: Run 成功、失败或取消
     busy --> failed: 运行期无法收敛 Lease 状态
     idle --> stopped: 空闲 Workflow 原子认领并停止
@@ -101,9 +107,9 @@ stateDiagram-v2
 
 1. 每个 Project 只有一条逻辑 Lease。
 2. D1 部分唯一索引保证每个 Project 同时最多一个非终态 Run。
-3. Pi 适配器通过受控进程接口得到事件；E2B 适配器支持重连当前沙箱、启动进程、按 PID 终止和停止沙箱。
+3. Pi 适配器通过受控进程接口得到事件；Goose 只有在门控 E2E 通过后才加入可用 registry；E2B 适配器支持重连当前沙箱、启动进程、按 PID 终止和停止沙箱。
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
-5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止 Pi。
+5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
 当前仍不实现每用户活动沙箱上限、终端或 preview。
 
@@ -132,8 +138,8 @@ stateDiagram-v2
 
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
-| Pi | 唯一已注册的 AgentRuntime；支持 fake 与 E2B 执行。 | 暂不提供选择 UI。 |
-| Goose | 仅预留 Runtime ID。 | 不可以。 |
+| Pi | 默认且已验收；支持 fake 控制面与真实 E2B 执行。 | 当前执行路径；选择 UI 随第二 Runtime 一起设计。 |
+| Goose | ADR-0004 门控 spike；独立 adapter 与组合模板待真实 E2E。 | 验收前不可以。 |
 | Claude Code | 仅预留 Runtime ID。 | 不可以。 |
 | Codex CLI | 仅预留 Runtime ID。 | 不可以。 |
 
@@ -146,7 +152,7 @@ stateDiagram-v2
 - Cloudflare Workflow 的执行所有权、重试恢复、跨请求取消、deadline 和空闲 TTL。
 - 真实 Provider sandbox ID 和 process reference 的私有持久化与失效处理。
 - Pi RPC 的最终回复、受控 ModelGateway 通道和真实 usage 聚合。
-- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build，预装固定 Node/Pi 版本和可写 `/workspace`；不能在每个 Run 下载 Node 或安装 Pi，也不能把任何模型 Key 烘焙进 template。
+- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板和可写 `/workspace`，不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
 - wall-clock timeout、空闲 TTL 与明确的资源释放路径。
 
 待完成：
@@ -161,10 +167,11 @@ stateDiagram-v2
 
 - R2 快照、Project 文件版本、沙箱历史或完整原始执行归档。
 - 浏览器直连 Provider、模型 API 或沙箱内部端口。
-- 常驻 Pi session、跨 Run resume 或未授权的任意 CLI。
+- 常驻 Agent session、跨 Run resume 或未授权的任意 CLI。
 
 ## 8. 外部依据
 
 - [Pi RPC](https://pi.dev/docs/latest/rpc) 与 [Pi Provider 配置](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
+- [Goose repository](https://github.com/aaif-goose/goose) 与 [Goose CLI commands](https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/goose-cli-commands.md)
 - [E2B Sandbox 文档](https://e2b.dev/docs/sandbox)
 - [Cloudflare Containers](https://developers.cloudflare.com/containers/)

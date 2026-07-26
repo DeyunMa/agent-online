@@ -149,6 +149,8 @@ sequenceDiagram
 
 第一版只实际注册 Pi 和一个 SandboxRuntime 实现（开发期可为 fake，真实验证优先 E2B）。运行中不切换 Agent 或 Sandbox。未来更换 Provider 或 Agent 只能在 Project 没有非终态 Run 时发生；新 Provider 沙箱从空工作区开始，不迁移旧文件。浏览器不暴露任意 Provider、CLI 或命令选择。
 
+[ADR-0004](./0004-goose-agent-runtime-spike.md) 在不改变上述单 Lease/单活动 Run 边界的前提下，批准 Goose 作为第二 Runtime 的受控 spike。它要求 Pi 与 Goose 使用同一个组合模板，因此切换 AgentRuntime 不重建当前 Provider 沙箱；只有切换 Sandbox Provider 或当前沙箱失效时才接受空工作区。Goose 在真实 E2E 前不构成公开产品能力。
+
 ### 7. 第一版的模型与管理边界
 
 - 默认且唯一的模型来源是平台 Gemini。`GEMINI_API_KEY` 只存在 Worker Secret 或本地 `.dev.vars`。

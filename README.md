@@ -20,7 +20,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 ## 当前实现
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
-- Pi 是唯一注册的 AgentRuntime；`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
+- Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime spike 已按 ADR-0004 获准，但在真实 E2E 通过前保持服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
@@ -40,7 +40,7 @@ D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结�
 - R2 Project 文件快照、文件版本、回滚、沙箱历史、原始 Agent transcript 或长期终端日志。
 - 团队、组织、Tenant、Membership 或共享 Project。
 - 套餐、价格、订阅、支付、充值、发票、退款和税务。
-- BYOK、第三方登录、公开 Runtime 选择，或把 Goose、Claude Code、Codex CLI 的名称当作已支持功能。
+- BYOK、第三方登录、未验收的公开 Runtime 选择，或把 Goose、Claude Code、Codex CLI 的名称直接当作已支持功能。
 - 每条消息新建沙箱，或为每个 Project 永久保留一个物理沙箱。
 
 计量仍在范围内，但它服务于成本观察、用户展示和以后接计费，不是商业账单系统。
@@ -56,6 +56,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [CONTEXT.md](./CONTEXT.md) | 当前统一术语、资源关系和不变量。 |
 | [ADR-0002](./docs/adr/0002-run-agent-process-and-lease-lifecycle.md) | 已接受的轻量 V1 数据、运行和沙箱边界。 |
 | [ADR-0003](./docs/adr/0003-agent-run-workflow.md) | 每个 AgentRun 一个 Workflow 的执行、取消、TTL 和恢复边界。 |
+| [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) | Goose 独立 adapter、组合模板、模型通道与产品启用门槛。 |
 | [系统总览](./docs/architecture/01-system-overview.md) | 单 Worker 请求流与浏览器、Worker、Agent、沙箱之间的数据路径。 |
 | [沙箱与 Agent 运行时](./docs/architecture/02-sandbox-runtime.md) | `SandboxLease` 生命周期、`SandboxRuntime` 与 `AgentRuntime` 的合同。 |
 | [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与可选观测。 |

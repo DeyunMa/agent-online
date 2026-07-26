@@ -64,7 +64,7 @@ CREATE UNIQUE INDEX agent_runs_one_active_per_project
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
-短时能力令牌、Pi custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi + Gemini spike 和 Cloudflare 远程 Workflow 均已完成代表性验收；复杂任务下的免费层 CPU/subrequest 上限仍需持续观察。
+短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi + Gemini spike 和 Cloudflare 远程 Workflow 均已完成代表性验收；Goose 必须按 [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) 复用同一网关且不能把 Gemini Key 注入沙箱。复杂任务下的免费层 CPU/subrequest 上限仍需持续观察。
 
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 

@@ -1,7 +1,7 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现，远程验收、用量聚合、Terminal 与 Preview 待完成。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现。Goose 第二 Runtime spike 已批准但尚未通过产品启用门槛；远程 Files 验收、用量聚合、Terminal 与 Preview 待完成。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
 
@@ -9,7 +9,7 @@ Agent Online 的第一版不是团队协作平台，也不是浏览器内运行 
 
 参考 CCOnline 的是产品体验：真实 Coding Agent、独立 Linux 环境、终端、文件与 preview。它不代表复制第三方代码，或推断其未公开实现。
 
-Pi 是第一版唯一实际注册的 AgentRuntime。架构允许以后接入 Goose、Claude Code 或 Codex CLI，但它们的协议、凭据、许可和事件模型不同，必须逐个实现和验收，不能只靠 Runtime 名称切换。
+Pi 是默认且已验收的 AgentRuntime。Goose 正按 ADR-0004 作为第二 Runtime 做受控 spike；它在同 Project 文件连续性、模型通道、事件、取消、usage 和 TTL 的真实 E2E 全部通过前不会出现在 UI。Claude Code 与 Codex CLI 仍只有保留 ID。
 
 ## 2. 总体结构
 
@@ -22,7 +22,7 @@ flowchart LR
     H --> MG["ModelGateway\n平台 Gemini Key 和 usage"]
     H --> WF["AgentRunWorkflow\n一个 Run 一个 instance"]
     WF --> RC["RunExecutionService / RunCoordinator"]
-    RC --> AR["AgentRuntime\nPi now"]
+    RC --> AR["AgentRuntime\nPi / gated Goose spike"]
     RC --> SR["SandboxRuntime\nfake / E2B / later CF"]
     AR -->|"run-scoped process session"| SR
     SR --> SB["Linux Sandbox\nAgent process + shell + Project files"]
@@ -80,7 +80,7 @@ sequenceDiagram
     participant DB as D1
     participant WF as AgentRunWorkflow
     participant SR as SandboxRuntime
-    participant AG as Pi in Sandbox
+    participant AG as AgentRuntime in Sandbox
     participant MG as ModelGateway
     participant GM as Gemini
 
@@ -102,9 +102,9 @@ sequenceDiagram
     API-->>UI: D1 状态与最终 usage
 ```
 
-浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再通过 SandboxRuntime 的私有进程引用只终止当前 Pi 进程并写入终态；无法精确终止时才停止整个沙箱。
+浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再通过 SandboxRuntime 的私有进程引用只终止当前 Agent 进程并写入终态；无法精确终止时才停止整个沙箱。
 
-当前 SSE 在订阅请求内轮询 D1，只发布 `run.status` 和 `run.completed`。它不传递 raw Pi 输出、工具参数或私有推理；终态后页面重新读取可信的 Message 和 usage。执行所有权和恢复规则见 [ADR-0003](../adr/0003-agent-run-workflow.md)。
+当前 SSE 在订阅请求内轮询 D1，只发布 `run.status` 和 `run.completed`。它不传递 raw Agent 输出、工具参数或私有推理；终态后页面重新读取可信的 Message 和 usage。执行所有权和恢复规则见 [ADR-0003](../adr/0003-agent-run-workflow.md)。
 
 ## 6. API 状态
 
