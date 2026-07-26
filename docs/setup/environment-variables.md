@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、ModelGateway、E2B 与 Workflow 配置均已由代码读取
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B 与 Workflow 配置均已完成远程验收；受控只读 Files 不新增环境变量。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -43,7 +43,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | 变量 | 推荐开发值 | 说明 |
 | --- | --- | --- |
 | `RUNTIME_PROVIDER` | 本地 UI 开发用 `fake`；真实链路用 `e2b` | 选择已安装的 `SandboxRuntime` Adapter；默认 `fake`。 |
-| `DEFAULT_MODEL_ID` | `gemini-2.5-flash` | ModelGateway 的服务端默认模型。 |
+| `DEFAULT_MODEL_ID` | `gemini-3.6-flash` | ModelGateway 的服务端默认模型。 |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久后由 Workflow 停止当前沙箱。 |
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
 | `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-runtime:<build-id>` | E2B Pi template 的不可变 build reference；构建方式见 [真实链路 Spike](../testing/e2b-pi-gemini-spike.md)。 |
@@ -57,7 +57,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | --- | --- | --- | --- |
 | `ACCESS_MODE` | 未设置即 `open` | `allowlist` | 控制哪些邮箱能注册、登录和继续访问产品 API。 |
 | `ACCESS_ALLOWED_EMAILS` | 不需要 | 必填 Secret | 逗号分隔的邮箱；会 trim 并转小写比较。allowlist 模式缺失或为空时服务端拒绝启动受保护路径。 |
-| `RUNS_ENABLED` | 未设置即 `true` | 首次部署 `false` | 新建 AgentRun 的服务端总开关。关闭时不创建 Message、Lease 或 AgentRun。 |
+| `RUNS_ENABLED` | 未设置即 `true` | 当前 `true` | 新建 AgentRun 的服务端总开关。Preview 首次锁定部署使用 `false`；关闭时不创建 Message、Lease 或 AgentRun。 |
 
 `ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
 

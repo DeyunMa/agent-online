@@ -15,11 +15,15 @@ describe("Run-authorized ModelGateway", () => {
       capabilitySecret: secret,
       fetchImplementation: async () =>
         Response.json({
-          candidates: [{ content: { parts: [{ text: "done" }] } }],
-          usageMetadata: {
-            candidatesTokenCount: 4,
-            promptTokenCount: 9,
-            totalTokenCount: 13,
+          choices: [{
+            finish_reason: "stop",
+            index: 0,
+            message: { content: "done", role: "assistant" },
+          }],
+          usage: {
+            completion_tokens: 4,
+            prompt_tokens: 9,
+            total_tokens: 13,
           },
         }),
       geminiApiKey: "test-gemini-key",
@@ -107,7 +111,7 @@ function createCompletionRequest(token: string) {
     body: JSON.stringify({
       messages: [{ content: "hello", role: "user" }],
       model: "gemini-2.5-flash",
-      stream: true,
+      stream: false,
     }),
     headers: {
       authorization: `Bearer ${token}`,

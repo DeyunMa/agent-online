@@ -1,7 +1,8 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：代码与本地 dry-run 已就绪；远程 D1、Secret、迁移和 Worker 尚未创建或写入。
-> 关联：[环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
+> 状态：2026-07-26 已完成锁定部署、真实 Pi AgentRun happy path、远程取消、deadline 和 10 分钟空闲回收。
+> D2 代表性验收已完成；D3 能力仍应逐项部署和验收，不能因 Preview 可用而提前开放。
+> 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
 
@@ -34,13 +35,15 @@ pnpm deploy:preview:dry-run
 
 ## 3. 创建远程资源
 
-以下操作会读取或修改 Cloudflare 账号，执行前必须得到明确授权。
+以下操作会读取或修改 Cloudflare 账号，执行前必须得到明确授权。当前 Preview 已完成这些步骤；保留本节作为重建和审计依据。
 
 1. 确认 Wrangler 当前身份和目标 Account：
 
 ```sh
 pnpm wrangler whoami
 ```
+
+本机存在其他 Account 的 Cloudflare 环境变量，实际 Preview 命令必须使用[资源台账](./cloudflare-preview-resources.md)中的 Account guard。
 
 2. 创建独立 Preview D1：
 
@@ -110,4 +113,6 @@ pnpm deploy:preview
 - D1 中只出现产品状态和聚合 usage，不出现 Provider Key、raw transcript 或 Project 文件。
 - Cloudflare Workflow 免费层的真实限制有实测结论。
 
-完成以上条件后，D2 才算通过远程环境验收。文件、终端、Preview 和 Changes API 仍属于 D3，不因 Worker 已部署而提前开放。
+完成以上条件后，D2 才算通过完整远程环境验收。文件、终端、Preview 和 Changes API 仍属于 D3，不因 Worker 已部署而提前开放。
+
+当前已完成 owner 注册、Project 创建、同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。第 5 项已验证：10 分钟空闲 TTL 后 Workflow 返回 `detached=true, stopped=true`，D1 Lease 变为 `stopped` 并清空 Provider 引用。未单独点击手动 Stop；自动回收已验证同一停止路径，Project 测试文件按 V1 设计允许丢失。

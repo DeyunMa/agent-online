@@ -14,121 +14,377 @@ export type ModelGatewayUsage = {
 
 export type ModelGatewayOptions = {
   authorize(request: Request): Promise<ModelGatewayCapability | null>;
+  endpointPath?: string;
   fetchImplementation?: typeof fetch;
   geminiApiKey: string;
   modelApiBaseUrl?: string;
-  endpointPath?: string;
-  onUsage?(usage: ModelGatewayUsage, capability: ModelGatewayCapability): Promise<void> | void;
-};
-
-type OpenAiMessage = {
-  content: string;
-  role: "assistant" | "developer" | "system" | "user";
+  onUsage?(
+    usage: ModelGatewayUsage,
+    capability: ModelGatewayCapability,
+  ): Promise<void> | void;
 };
 
 type OpenAiCompletionRequest = {
-  messages: OpenAiMessage[];
+  messages: Array<Record<string, unknown>>;
   model: string;
+  parallelToolCalls?: boolean;
   stream: boolean;
+  toolChoice?: unknown;
+  tools?: Array<Record<string, unknown>>;
 };
 
-const defaultModelApiBaseUrl = "https://generativelanguage.googleapis.com";
 const defaultEndpointPath = "/v1/chat/completions";
+const defaultModelApiBaseUrl = "https://generativelanguage.googleapis.com";
 
 /**
- * Translates the narrow OpenAI Chat Completions subset used by the Pi spike
- * into Gemini GenerateContent. Authentication and Run authorization stay
- * outside this adapter so D2 can replace the spike bearer token with a signed
- * Run-scoped capability without changing the protocol translation.
+ * Proxies the narrow OpenAI Chat Completions surface used by Pi to Gemini's
+ * compatibility endpoint. The gateway replaces the sandbox capability with
+ * the platform key, binds each request to one Run/model, caps output, and
+ * records usage before returning the buffered upstream response.
  */
-export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions) {
+export function createOpenAiCompatibleModelGateway(
+  options: ModelGatewayOptions,
+) {
   if (!options.geminiApiKey) {
     throw new Error("GEMINI_API_KEY is required for the ModelGateway");
   }
 
-  const fetchImplementation = options.fetchImplementation ?? fetch;
-  const modelApiBaseUrl = (options.modelApiBaseUrl ?? defaultModelApiBaseUrl).replace(/\/$/, "");
   const endpointPath = options.endpointPath ?? defaultEndpointPath;
+  const fetchImplementation = options.fetchImplementation ?? fetch;
+  const modelApiBaseUrl = (
+    options.modelApiBaseUrl ?? defaultModelApiBaseUrl
+  ).replace(/\/$/, "");
 
-  return async function handleOpenAiChatCompletion(request: Request): Promise<Response> {
+  return async function handleOpenAiChatCompletion(
+    request: Request,
+  ): Promise<Response> {
     const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== endpointPath) {
-      return gatewayError(404, "not_found", "The requested ModelGateway endpoint does not exist.");
+      return gatewayError(
+        404,
+        "not_found",
+        "The requested ModelGateway endpoint does not exist.",
+      );
     }
 
     let capability: ModelGatewayCapability | null;
     try {
       capability = await options.authorize(request);
     } catch (_error) {
-      return gatewayError(500, "authorization_error", "ModelGateway authorization could not be evaluated.");
+      return gatewayError(
+        500,
+        "authorization_error",
+        "ModelGateway authorization could not be evaluated.",
+      );
     }
 
     if (!capability) {
-      return gatewayError(401, "invalid_api_key", "The ModelGateway capability is invalid or expired.");
+      return gatewayError(
+        401,
+        "invalid_api_key",
+        "The ModelGateway capability is invalid or expired.",
+      );
     }
 
     const parsed = await parseOpenAiCompletionRequest(request);
     if (!parsed) {
-      return gatewayError(400, "invalid_request_error", "The completion request is not supported by this ModelGateway.");
+      return gatewayError(
+        400,
+        "invalid_request_error",
+        "The completion request is not supported by this ModelGateway.",
+      );
     }
 
     if (parsed.model !== capability.modelId) {
-      return gatewayError(403, "model_not_allowed", "The requested model is not allowed by this capability.");
+      return gatewayError(
+        403,
+        "model_not_allowed",
+        "The requested model is not allowed by this capability.",
+      );
     }
 
-    const geminiRequest = toGeminiRequest(parsed.messages, capability.maxOutputTokens);
-    if (!geminiRequest) {
-      return gatewayError(400, "invalid_request_error", "The completion messages are not supported by this ModelGateway.");
+    const upstreamRequest = toUpstreamRequest(
+      parsed,
+      capability.maxOutputTokens,
+    );
+    if (!upstreamRequest) {
+      return gatewayError(
+        400,
+        "invalid_request_error",
+        "The completion request exceeds the Run limits.",
+      );
     }
 
     let upstreamResponse: Response;
     try {
       upstreamResponse = await fetchImplementation(
-        `${modelApiBaseUrl}/v1beta/models/${encodeURIComponent(capability.modelId)}:generateContent`,
+        `${modelApiBaseUrl}/v1beta/openai/chat/completions`,
         {
-          body: JSON.stringify(geminiRequest),
+          body: JSON.stringify(upstreamRequest),
           headers: {
-            accept: "application/json",
+            accept: parsed.stream
+              ? "text/event-stream"
+              : "application/json",
+            authorization: `Bearer ${options.geminiApiKey}`,
             "content-type": "application/json",
-            "x-goog-api-key": options.geminiApiKey,
           },
           method: "POST",
         },
       );
     } catch (_error) {
-      return gatewayError(502, "model_unavailable", "The upstream model request failed.");
+      return gatewayError(
+        502,
+        "model_unavailable",
+        "The upstream model request failed.",
+      );
     }
 
     if (!upstreamResponse.ok) {
-      return gatewayError(502, "model_unavailable", "The upstream model request was rejected.");
+      console.error("ModelGateway upstream request rejected", {
+        ...await readUpstreamErrorDiagnostic(upstreamResponse),
+        ...summarizeToolProtocol(upstreamRequest.messages),
+        runId: capability.runId,
+      });
+      return gatewayError(
+        502,
+        "model_unavailable",
+        "The upstream model request was rejected.",
+      );
     }
 
-    let upstreamPayload: unknown;
+    let upstreamBody: string;
     try {
-      upstreamPayload = await upstreamResponse.json();
+      upstreamBody = await upstreamResponse.text();
     } catch (_error) {
-      return gatewayError(502, "invalid_model_response", "The upstream model response was invalid.");
+      return gatewayError(
+        502,
+        "invalid_model_response",
+        "The upstream model response was invalid.",
+      );
     }
 
-    const assistantText = getGeminiAssistantText(upstreamPayload);
-    if (assistantText === null) {
-      return gatewayError(502, "invalid_model_response", "The upstream model response did not contain assistant text.");
+    const responseBody = parsed.stream
+      ? normalizeStreamingToolProtocol(upstreamBody)
+      : upstreamBody;
+    const usage = readOpenAiUsage(responseBody, parsed.stream);
+    if (!usage) {
+      return gatewayError(
+        502,
+        "invalid_model_response",
+        "The upstream model response did not contain usage.",
+      );
     }
 
-    const usage = getGeminiUsage(upstreamPayload);
     try {
       await options.onUsage?.(usage, capability);
     } catch (_error) {
-      return gatewayError(500, "usage_recording_failed", "The ModelGateway could not record usage.");
+      return gatewayError(
+        500,
+        "usage_recording_failed",
+        "The ModelGateway could not record usage.",
+      );
     }
 
-    return parsed.stream
-      ? streamingCompletionResponse(capability.modelId, assistantText, usage)
-      : completionResponse(capability.modelId, assistantText, usage);
+    return new Response(responseBody, {
+      headers: {
+        "cache-control": "no-store",
+        "content-type":
+          upstreamResponse.headers.get("content-type") ??
+          (parsed.stream
+            ? "text/event-stream; charset=utf-8"
+            : "application/json; charset=utf-8"),
+      },
+      status: upstreamResponse.status,
+    });
   };
 }
 
-async function parseOpenAiCompletionRequest(request: Request): Promise<OpenAiCompletionRequest | null> {
+async function readUpstreamErrorDiagnostic(response: Response) {
+  const diagnostic: {
+    errorCategory: string;
+    upstreamErrorCode?: number | string;
+    upstreamErrorStatus?: string;
+    upstreamHttpStatus: number;
+  } = {
+    errorCategory: "other",
+    upstreamHttpStatus: response.status,
+  };
+
+  try {
+    const payload: unknown = await response.json();
+    if (!isRecord(payload) || !isRecord(payload.error)) {
+      return diagnostic;
+    }
+
+    if (
+      typeof payload.error.code === "number" ||
+      typeof payload.error.code === "string"
+    ) {
+      diagnostic.upstreamErrorCode = payload.error.code;
+    }
+    if (typeof payload.error.status === "string") {
+      diagnostic.upstreamErrorStatus = payload.error.status;
+    }
+    if (typeof payload.error.message === "string") {
+      diagnostic.errorCategory = categorizeUpstreamError(
+        payload.error.message,
+      );
+    }
+  } catch (_error) {
+    // The public response stays generic even when the upstream error is not JSON.
+  }
+
+  return diagnostic;
+}
+
+function categorizeUpstreamError(message: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("thought_signature")) {
+    return "thought_signature";
+  }
+  if (
+    normalized.includes("resource_exhausted") ||
+    normalized.includes("rate limit") ||
+    normalized.includes("quota")
+  ) {
+    return "rate_limited";
+  }
+  if (
+    normalized.includes("context window") ||
+    normalized.includes("token limit")
+  ) {
+    return "context_limit";
+  }
+  if (normalized.includes("model") && normalized.includes("not found")) {
+    return "model_not_found";
+  }
+
+  return "other";
+}
+
+function summarizeToolProtocol(messages: Array<Record<string, unknown>>) {
+  let assistantToolCalls = 0;
+  let signedAssistantToolCalls = 0;
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || !Array.isArray(message.tool_calls)) {
+      continue;
+    }
+
+    for (const toolCall of message.tool_calls) {
+      if (!isRecord(toolCall)) {
+        continue;
+      }
+
+      assistantToolCalls += 1;
+      if (readGoogleThoughtSignature(toolCall)) {
+        signedAssistantToolCalls += 1;
+      }
+    }
+  }
+
+  return {
+    assistantToolCalls,
+    messageCount: messages.length,
+    messageRoles: messages.map((message) => message.role),
+    signedAssistantToolCalls,
+  };
+}
+
+function normalizeStreamingToolProtocol(body: string) {
+  const choicesWithToolCalls = new Set<number>();
+
+  return body
+    .split(/\r?\n/)
+    .map((line) => {
+      if (!line.startsWith("data:")) {
+        return line;
+      }
+
+      const data = line.slice("data:".length).trim();
+      if (!data || data === "[DONE]") {
+        return line;
+      }
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(data);
+      } catch (_error) {
+        return line;
+      }
+      if (!isRecord(payload) || !Array.isArray(payload.choices)) {
+        return line;
+      }
+
+      let changed = false;
+      for (const rawChoice of payload.choices) {
+        if (!isRecord(rawChoice)) {
+          continue;
+        }
+
+        const index =
+          typeof rawChoice.index === "number" &&
+          Number.isSafeInteger(rawChoice.index)
+            ? rawChoice.index
+            : 0;
+        if (
+          isRecord(rawChoice.delta) &&
+          Array.isArray(rawChoice.delta.tool_calls) &&
+          rawChoice.delta.tool_calls.length > 0
+        ) {
+          choicesWithToolCalls.add(index);
+          const reasoningDetails = Array.isArray(
+            rawChoice.delta.reasoning_details,
+          )
+            ? [...rawChoice.delta.reasoning_details]
+            : [];
+          for (const rawToolCall of rawChoice.delta.tool_calls) {
+            if (!isRecord(rawToolCall) || typeof rawToolCall.id !== "string") {
+              continue;
+            }
+
+            const signature = readGoogleThoughtSignature(rawToolCall);
+            if (
+              !signature ||
+              reasoningDetails.some(
+                (detail) =>
+                  isRecord(detail) &&
+                  detail.type === "reasoning.encrypted" &&
+                  detail.id === rawToolCall.id,
+              )
+            ) {
+              continue;
+            }
+
+            reasoningDetails.push({
+              data: signature,
+              id: rawToolCall.id,
+              type: "reasoning.encrypted",
+            });
+            changed = true;
+          }
+          if (reasoningDetails.length > 0) {
+            rawChoice.delta.reasoning_details = reasoningDetails;
+          }
+        }
+
+        if (
+          choicesWithToolCalls.has(index) &&
+          rawChoice.finish_reason === "stop"
+        ) {
+          rawChoice.finish_reason = "tool_calls";
+          changed = true;
+        }
+      }
+
+      return changed ? `data: ${JSON.stringify(payload)}` : line;
+    })
+    .join("\n");
+}
+
+async function parseOpenAiCompletionRequest(
+  request: Request,
+): Promise<OpenAiCompletionRequest | null> {
   let payload: unknown;
   try {
     payload = await request.json();
@@ -136,184 +392,257 @@ async function parseOpenAiCompletionRequest(request: Request): Promise<OpenAiCom
     return null;
   }
 
-  if (!isRecord(payload) || typeof payload.model !== "string" || !Array.isArray(payload.messages)) {
+  if (
+    !isRecord(payload) ||
+    typeof payload.model !== "string" ||
+    !Array.isArray(payload.messages) ||
+    payload.messages.length === 0 ||
+    payload.messages.length > 256
+  ) {
     return null;
   }
 
-  if (payload.tools !== undefined && (!Array.isArray(payload.tools) || payload.tools.length > 0)) {
+  if (
+    (payload.stream !== undefined &&
+      typeof payload.stream !== "boolean") ||
+    (payload.n !== undefined && payload.n !== 1)
+  ) {
     return null;
   }
 
-  const messages: OpenAiMessage[] = [];
+  const messages: Array<Record<string, unknown>> = [];
   for (const rawMessage of payload.messages) {
-    if (!isRecord(rawMessage) || !isOpenAiRole(rawMessage.role)) {
+    if (
+      !isRecord(rawMessage) ||
+      !isOpenAiRole(rawMessage.role) ||
+      !isOpenAiContent(rawMessage.content)
+    ) {
       return null;
     }
 
-    const content = getOpenAiTextContent(rawMessage.content);
-    if (content === null) {
+    if (
+      rawMessage.tool_calls !== undefined &&
+      !Array.isArray(rawMessage.tool_calls)
+    ) {
       return null;
     }
 
-    messages.push({ content, role: rawMessage.role });
+    if (
+      rawMessage.role === "tool" &&
+      typeof rawMessage.tool_call_id !== "string"
+    ) {
+      return null;
+    }
+
+    messages.push(rawMessage);
   }
 
-  return messages.length > 0
-    ? { messages, model: payload.model, stream: payload.stream === true }
-    : null;
-}
+  let tools: Array<Record<string, unknown>> | undefined;
+  if (payload.tools !== undefined) {
+    if (
+      !Array.isArray(payload.tools) ||
+      payload.tools.length > 128 ||
+      payload.tools.some((tool) => !isRecord(tool))
+    ) {
+      return null;
+    }
+    tools = payload.tools;
+  }
 
-function toGeminiRequest(messages: OpenAiMessage[], maxOutputTokens: number) {
-  if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1) {
+  if (
+    payload.tool_choice !== undefined &&
+    typeof payload.tool_choice !== "string" &&
+    !isRecord(payload.tool_choice)
+  ) {
     return null;
   }
 
-  const contents: Array<{ parts: Array<{ text: string }>; role: "model" | "user" }> = [];
-  const systemParts: Array<{ text: string }> = [];
-
-  for (const message of messages) {
-    if (message.role === "system" || message.role === "developer") {
-      systemParts.push({ text: message.content });
-      continue;
-    }
-
-    contents.push({
-      parts: [{ text: message.content }],
-      role: message.role === "assistant" ? "model" : "user",
-    });
-  }
-
-  if (contents.length === 0) {
+  if (
+    payload.parallel_tool_calls !== undefined &&
+    typeof payload.parallel_tool_calls !== "boolean"
+  ) {
     return null;
   }
 
   return {
-    ...(systemParts.length > 0 ? { systemInstruction: { parts: systemParts } } : {}),
-    contents,
-    generationConfig: { maxOutputTokens },
+    messages,
+    model: payload.model,
+    ...(typeof payload.parallel_tool_calls === "boolean"
+      ? { parallelToolCalls: payload.parallel_tool_calls }
+      : {}),
+    stream: payload.stream === true,
+    ...(payload.tool_choice !== undefined
+      ? { toolChoice: payload.tool_choice }
+      : {}),
+    ...(tools ? { tools } : {}),
   };
 }
 
-function getOpenAiTextContent(content: unknown): string | null {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (!Array.isArray(content)) {
+function toUpstreamRequest(
+  request: OpenAiCompletionRequest,
+  maxOutputTokens: number,
+) {
+  if (
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 1 ||
+    maxOutputTokens > 65_536
+  ) {
     return null;
   }
 
-  const textParts: string[] = [];
-  for (const part of content) {
-    if (!isRecord(part) || part.type !== "text" || typeof part.text !== "string") {
-      return null;
+  return {
+    max_tokens: maxOutputTokens,
+    messages: toGeminiOpenAiMessages(request.messages),
+    model: request.model,
+    ...(request.parallelToolCalls !== undefined
+      ? { parallel_tool_calls: request.parallelToolCalls }
+      : {}),
+    stream: request.stream,
+    ...(request.stream
+      ? { stream_options: { include_usage: true } }
+      : {}),
+    ...(request.toolChoice !== undefined
+      ? { tool_choice: request.toolChoice }
+      : {}),
+    ...(request.tools ? { tools: request.tools } : {}),
+  };
+}
+
+function toGeminiOpenAiMessages(
+  messages: Array<Record<string, unknown>>,
+) {
+  return messages.map((message) => {
+    if (message.role !== "assistant") {
+      return message;
     }
 
-    textParts.push(part.text);
-  }
+    const {
+      reasoning_details: rawReasoningDetails,
+      ...forwardedMessage
+    } = message;
+    if (!Array.isArray(message.tool_calls)) {
+      return forwardedMessage;
+    }
 
-  return textParts.join("");
+    const signatures = new Map<string, string>();
+    if (Array.isArray(rawReasoningDetails)) {
+      for (const detail of rawReasoningDetails) {
+        if (
+          isRecord(detail) &&
+          detail.type === "reasoning.encrypted" &&
+          typeof detail.id === "string" &&
+          typeof detail.data === "string" &&
+          detail.data
+        ) {
+          signatures.set(detail.id, detail.data);
+        }
+      }
+    }
+
+    return {
+      ...forwardedMessage,
+      tool_calls: message.tool_calls.map((rawToolCall) => {
+        if (!isRecord(rawToolCall) || typeof rawToolCall.id !== "string") {
+          return rawToolCall;
+        }
+
+        const signature = signatures.get(rawToolCall.id);
+        if (!signature) {
+          return rawToolCall;
+        }
+
+        const extraContent = isRecord(rawToolCall.extra_content)
+          ? rawToolCall.extra_content
+          : {};
+        const google = isRecord(extraContent.google)
+          ? extraContent.google
+          : {};
+        return {
+          ...rawToolCall,
+          extra_content: {
+            ...extraContent,
+            google: {
+              ...google,
+              thought_signature: signature,
+            },
+          },
+        };
+      }),
+    };
+  });
 }
 
-function getGeminiAssistantText(payload: unknown): string | null {
-  if (!isRecord(payload) || !Array.isArray(payload.candidates) || !isRecord(payload.candidates[0])) {
+function readGoogleThoughtSignature(toolCall: Record<string, unknown>) {
+  if (
+    !isRecord(toolCall.extra_content) ||
+    !isRecord(toolCall.extra_content.google)
+  ) {
     return null;
   }
 
-  const content = payload.candidates[0].content;
-  if (!isRecord(content) || !Array.isArray(content.parts)) {
+  const signature = toolCall.extra_content.google.thought_signature;
+  return typeof signature === "string" && signature ? signature : null;
+}
+
+function readOpenAiUsage(
+  body: string,
+  streaming: boolean,
+): ModelGatewayUsage | null {
+  if (!streaming) {
+    try {
+      return toModelGatewayUsage(JSON.parse(body));
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  let usage: ModelGatewayUsage | null = null;
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) {
+      continue;
+    }
+
+    const data = line.slice("data:".length).trim();
+    if (!data || data === "[DONE]") {
+      continue;
+    }
+
+    try {
+      usage = toModelGatewayUsage(JSON.parse(data)) ?? usage;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  return usage;
+}
+
+function toModelGatewayUsage(payload: unknown): ModelGatewayUsage | null {
+  if (!isRecord(payload) || !isRecord(payload.usage)) {
     return null;
   }
 
-  const textParts = content.parts.flatMap((part) => (isRecord(part) && typeof part.text === "string" ? [part.text] : []));
-  return textParts.length > 0 ? textParts.join("") : null;
-}
-
-function getGeminiUsage(payload: unknown): ModelGatewayUsage {
-  const usageMetadata = isRecord(payload) && isRecord(payload.usageMetadata) ? payload.usageMetadata : {};
-  const inputTokens = getNonNegativeInteger(usageMetadata.promptTokenCount);
-  const outputTokens = getNonNegativeInteger(usageMetadata.candidatesTokenCount);
-  const totalTokens = getNonNegativeInteger(usageMetadata.totalTokenCount) || inputTokens + outputTokens;
+  const inputTokens = readNonNegativeInteger(
+    payload.usage.prompt_tokens,
+  );
+  const outputTokens = readNonNegativeInteger(
+    payload.usage.completion_tokens,
+  );
+  const totalTokens = readNonNegativeInteger(payload.usage.total_tokens);
+  if (
+    inputTokens === null ||
+    outputTokens === null ||
+    totalTokens === null ||
+    totalTokens < inputTokens + outputTokens
+  ) {
+    return null;
+  }
 
   return {
     inputTokens,
     modelRequestCount: 1,
     outputTokens,
     totalTokens,
-  };
-}
-
-function completionResponse(model: string, assistantText: string, usage: ModelGatewayUsage) {
-  return Response.json(
-    {
-      choices: [
-        {
-          finish_reason: "stop",
-          index: 0,
-          message: { content: assistantText, role: "assistant" },
-        },
-      ],
-      created: Math.floor(Date.now() / 1_000),
-      id: `chatcmpl-${crypto.randomUUID()}`,
-      model,
-      object: "chat.completion",
-      usage: toOpenAiUsage(usage),
-    },
-    {
-      headers: { "cache-control": "no-store" },
-    },
-  );
-}
-
-function streamingCompletionResponse(model: string, assistantText: string, usage: ModelGatewayUsage) {
-  const created = Math.floor(Date.now() / 1_000);
-  const id = `chatcmpl-${crypto.randomUUID()}`;
-  const chunks = [
-    {
-      choices: [{ delta: { role: "assistant" }, finish_reason: null, index: 0 }],
-      created,
-      id,
-      model,
-      object: "chat.completion.chunk",
-    },
-    {
-      choices: [{ delta: { content: assistantText }, finish_reason: null, index: 0 }],
-      created,
-      id,
-      model,
-      object: "chat.completion.chunk",
-    },
-    {
-      choices: [{ delta: {}, finish_reason: "stop", index: 0 }],
-      created,
-      id,
-      model,
-      object: "chat.completion.chunk",
-    },
-    {
-      choices: [],
-      created,
-      id,
-      model,
-      object: "chat.completion.chunk",
-      usage: toOpenAiUsage(usage),
-    },
-  ];
-
-  const body = `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("")}data: [DONE]\n\n`;
-  return new Response(body, {
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "text/event-stream; charset=utf-8",
-    },
-  });
-}
-
-function toOpenAiUsage(usage: ModelGatewayUsage) {
-  return {
-    completion_tokens: usage.outputTokens,
-    prompt_tokens: usage.inputTokens,
-    total_tokens: usage.totalTokens,
   };
 }
 
@@ -327,12 +656,31 @@ function gatewayError(status: number, code: string, message: string) {
   );
 }
 
-function getNonNegativeInteger(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+function isOpenAiContent(value: unknown) {
+  return (
+    value === undefined ||
+    value === null ||
+    typeof value === "string" ||
+    Array.isArray(value)
+  );
 }
 
-function isOpenAiRole(value: unknown): value is OpenAiMessage["role"] {
-  return value === "assistant" || value === "developer" || value === "system" || value === "user";
+function isOpenAiRole(value: unknown) {
+  return (
+    value === "assistant" ||
+    value === "developer" ||
+    value === "system" ||
+    value === "tool" ||
+    value === "user"
+  );
+}
+
+function readNonNegativeInteger(value: unknown) {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0
+    ? Math.floor(value)
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

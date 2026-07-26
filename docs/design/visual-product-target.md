@@ -1,6 +1,7 @@
 # 视觉与产品目标
 
 > 状态：已确认的产品方向基准。效果图约束后续界面和功能组织，但不代表图中所有能力已经实现。
+> 当前进度：D2 已远程验收；D3 正从受控只读 Files 开始。
 > 关联：[视觉基准图](./assets/agent-online-visual-target.png) · [系统总览](../architecture/01-system-overview.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ![Agent Online 视觉基准](./assets/agent-online-visual-target.png)
@@ -55,7 +56,7 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 ## 5. 当前实现优先级
 
 1. 维持已确认的三栏 Project 控制台，并保持所有 loading/empty/error/disabled 状态真实。
-2. 远程部署验证 Cloudflare Workflow 免费层是否能稳定承载典型 Pi Run。
-3. 在同一权限模型上增加文件、终端和 preview，不让浏览器接触内部端口或任意命令入口。
+2. 先启用受控只读 Files：目录、文本读取和真实无沙箱/过期/错误状态。
+3. 再实现用量聚合、Terminal 和 Preview，不让浏览器接触 Provider ID、内部端口或未受控命令入口。
 
 视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、布局跳动和无语义的大面积绿色。

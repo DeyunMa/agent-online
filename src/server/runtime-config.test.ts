@@ -10,7 +10,7 @@ import type { AppBindings } from "./env";
 describe("runtime config", () => {
   it("keeps local development on fake unless E2B is selected explicitly", () => {
     expect(getInstalledSandboxRuntimeId(binding())).toBe("fake");
-    expect(getDefaultModelId(binding())).toBe("gemini-2.5-flash");
+    expect(getDefaultModelId(binding())).toBe("gemini-3.6-flash");
   });
 
   it("builds a bounded E2B execution configuration without requiring another public URL", () => {

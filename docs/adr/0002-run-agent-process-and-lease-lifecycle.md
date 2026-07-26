@@ -195,6 +195,8 @@ sequenceDiagram
 7. 未登录或非所有者不能读取、订阅、取消或创建该 Project 的 Run。
 8. Worker 配置、迁移和类型中不存在 V1 R2 Binding、WorkspaceRevision 或恢复路径。
 
-## 实施边界
+## 实施结果
 
-下一轮先按本 ADR 重建 D1 迁移、领域合同和 fake runtime 测试，再实现认证后的 Project CRUD、Message、单 Lease/单活动 Run、SSE 和基础用量。随后单独纵切接入 Gemini ModelGateway 与 E2B + Pi。Sentry 只在真实 Worker/沙箱路径出现后作为可选错误观测接入，不成为 V1 运行前提。
+截至 2026-07-26，本 ADR 的 D1 迁移、领域合同、fake runtime、认证 Project、Message、单 Lease/单活动 Run、SSE、基础用量、Gemini ModelGateway 与 E2B + Pi 均已实现。远程 Preview 还验证了连续 Run 文件复用、取消、deadline，以及停止后不恢复文件的空闲 TTL 路径。
+
+后续受控 Files、Terminal 和 Preview 继续复用本 ADR 的 Project 授权与单 Lease 边界。Sentry 仍只是可选错误观测，不成为运行前提。

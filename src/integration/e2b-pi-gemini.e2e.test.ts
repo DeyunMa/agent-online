@@ -14,7 +14,7 @@ import {
   type ModelGatewayUsage,
 } from "../server/model-gateway";
 
-const modelId = "gemini-2.5-flash";
+const modelId = "gemini-3.6-flash";
 const piPackageVersion = "0.82.0";
 const nodeRuntimeVersion = "24.16.0";
 const testMarker = "AGENT_ONLINE_E2E_OK";
@@ -114,13 +114,21 @@ realE2E("E2B + Pi + Gemini ModelGateway spike", () => {
       const execution = await runSandboxCommand(
         sandbox,
         "Pi model request",
-        "pi --no-session --no-tools --no-extensions --no-skills --no-context-files --provider agent-online-spike --model gemini-2.5-flash --print 'Reply with exactly AGENT_ONLINE_E2E_OK and nothing else.'",
+        "pi --no-session --no-extensions --no-skills --no-context-files --provider agent-online-spike --model gemini-3.6-flash --print 'Create /workspace/agent-online-e2e.txt containing exactly AGENT_ONLINE_E2E_OK, verify the file, then reply with exactly AGENT_ONLINE_E2E_OK.'",
         { cwd: "/workspace", timeoutMs: 120_000 },
         redactOutput,
       );
 
       expect(execution.exitCode).toBe(0);
       expect(execution.stdout).toContain(testMarker);
+      const fileProbe = await runSandboxCommand(
+        sandbox,
+        "Pi tool result verification",
+        `test "$(cat /workspace/agent-online-e2e.txt)" = "${testMarker}"`,
+        { cwd: "/workspace", timeoutMs: 30_000 },
+        redactOutput,
+      );
+      expect(fileProbe.exitCode).toBe(0);
       expect(usage.length).toBeGreaterThan(0);
       expect(usage.reduce((total, entry) => total + entry.modelRequestCount, 0)).toBeGreaterThan(0);
       expect(usage.reduce((total, entry) => total + entry.totalTokens, 0)).toBeGreaterThan(0);

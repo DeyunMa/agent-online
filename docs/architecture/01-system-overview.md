@@ -1,6 +1,7 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2 真实执行纵切已在本地实现；远程 Workflow 与受控文件/终端/preview 待验收
+> 状态：D2 真实执行 happy path、取消、deadline 与空闲 TTL 已通过远程 Preview；受控文件/终端/preview 待实现
+> 当前实施顺序：受控只读 Files -> 用量聚合 -> Terminal -> Preview。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界

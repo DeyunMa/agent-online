@@ -20,7 +20,7 @@ GEMINI_API_KEY=
 
 # Runtime configuration. Fake is the default when omitted.
 # RUNTIME_PROVIDER=e2b
-# DEFAULT_MODEL_ID=gemini-2.5-flash
+# DEFAULT_MODEL_ID=gemini-3.6-flash
 # RUNTIME_IDLE_TTL_SECONDS=600
 # MAX_RUN_WALL_SECONDS=1800
 

@@ -145,7 +145,7 @@ describe("RunCoordinator", () => {
     const managedRun = await coordinator.start(startInput(fixture));
 
     await expect(managedRun.completion).resolves.toMatchObject({
-      failureReason: "Agent run startup failed",
+      failureReason: "Agent run startup failed at start_agent",
       status: "failed",
     });
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("failed");

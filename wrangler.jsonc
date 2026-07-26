@@ -32,21 +32,35 @@
         "not_found_handling": "single-page-application",
         "run_worker_first": ["/api/*"]
       },
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "invocation_logs": true,
+          "persist": true
+        },
+        "traces": {
+          "enabled": false,
+          "head_sampling_rate": 0,
+          "persist": false
+        }
+      },
       "vars": {
         "ACCESS_MODE": "allowlist",
-        "BETTER_AUTH_URL": "https://agent-online-preview.replace-me.workers.dev",
-        "DEFAULT_MODEL_ID": "gemini-2.5-flash",
-        "E2B_TEMPLATE_ID": "replace-with-exact-e2b-template-build-id",
+        "BETTER_AUTH_URL": "https://agent-online-preview.mdy1145141.workers.dev",
+        "DEFAULT_MODEL_ID": "gemini-3.6-flash",
+        "E2B_TEMPLATE_ID": "agent-online-pi-runtime:885fa807-3bd8-4cae-9532-afa0d6c71986",
         "MAX_RUN_WALL_SECONDS": "1800",
         "RUNTIME_IDLE_TTL_SECONDS": "600",
         "RUNTIME_PROVIDER": "e2b",
-        "RUNS_ENABLED": "false"
+        "RUNS_ENABLED": "true"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "agent-online-preview-db",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "f5b3193a-298b-4a61-a07b-24f5fc26c28e",
           "migrations_dir": "./migrations"
         }
       ],

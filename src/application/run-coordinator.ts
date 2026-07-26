@@ -89,22 +89,27 @@ class ManagedRun implements CoordinatedAgentRun {
 
   async start() {
     let claimed = false;
+    let startupStage = "claim_run";
 
     try {
       await this.transition("queued", "starting", { startedAt: this.timestamp() });
       claimed = true;
 
+      startupStage = "resolve_agent_runtime";
       this.agentRuntime = this.dependencies.getAgentRuntime(this.currentRun.agentRuntimeId);
       if (this.agentRuntime.id !== this.currentRun.agentRuntimeId) {
         throw new Error("Registered AgentRuntime does not match AgentRun runtime");
       }
 
+      startupStage = "resolve_sandbox_runtime";
       this.sandboxRuntime = this.dependencies.getSandboxRuntime(this.currentLease.runtimeId);
       if (this.sandboxRuntime.kind !== this.currentRun.sandboxRuntimeId) {
         throw new Error("Registered SandboxRuntime does not match AgentRun runtime");
       }
 
+      startupStage = "mark_lease_starting";
       await this.updateLease("starting");
+      startupStage = "ensure_sandbox";
       this.sandboxHandle = await this.sandboxRuntime.ensureLease({
         providerRef: this.currentLease.providerRef,
         projectId: this.currentRun.projectId,
@@ -115,8 +120,10 @@ class ManagedRun implements CoordinatedAgentRun {
         throw new Error("SandboxRuntime returned a handle for a different runtime");
       }
 
+      startupStage = "mark_lease_ready";
       this.providerRef = this.sandboxHandle.id;
       await this.updateLease("ready");
+      startupStage = "start_agent";
       this.execution = await this.agentRuntime.start({
         files: {
           write: (path, content) => this.sandboxRuntime!.writeFile(this.sandboxHandle!, path, content),
@@ -132,6 +139,7 @@ class ManagedRun implements CoordinatedAgentRun {
         sandboxLeaseId: this.currentLease.id,
         workingDirectory: this.input.workingDirectory,
       });
+      startupStage = "persist_process_ref";
       const runWithProcessRef = await this.dependencies.agentRunRepository.setProviderProcessRef(
         this.currentRun.id,
         this.execution.providerProcessRef,
@@ -141,7 +149,9 @@ class ManagedRun implements CoordinatedAgentRun {
       }
       this.currentRun = runWithProcessRef;
 
+      startupStage = "mark_lease_busy";
       await this.updateLease("busy");
+      startupStage = "mark_run_running";
       await this.transition("starting", "running");
       void this.consumeEvents();
     } catch (error) {
@@ -149,7 +159,9 @@ class ManagedRun implements CoordinatedAgentRun {
         throw error;
       }
 
-      await this.failSafely("Agent run startup failed");
+      await this.failSafely(
+        `Agent run startup failed at ${startupStage}`,
+      );
     }
   }
 

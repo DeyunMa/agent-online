@@ -1,6 +1,7 @@
 # Agent Online 领域术语
 
-> 状态：D2 真实执行纵切与私有 Preview 护栏已在本地实现；远程 Cloudflare Workflow 验证和受控文件/终端/preview 仍待完成。
+> 状态：D2 已完成私有 Cloudflare Preview 的真实 Pi AgentRun happy path、取消、deadline 和空闲 TTL；受控文件/终端/preview 仍待完成。
+> 当前实施顺序：受控只读 Files -> 用量聚合 -> Terminal -> Preview。
 
 ## 产品定义
 
@@ -50,7 +51,7 @@ erDiagram
 9. Pi 的模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
 10. `AgentRun` 终态写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
 11. 真实执行 owner 是 [ADR-0003](./docs/adr/0003-agent-run-workflow.md) 中每个 Run 一个的 `AgentRunWorkflow`；Workflow 重试不能再次启动已非 `queued` 的 Run。
-12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED=false` 时，创建 Run 必须在任何 Message、Lease 或 AgentRun 写入前失败。
+12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED` 是紧急停止新执行的服务端开关，设为 `false` 时必须在任何 Message、Lease 或 AgentRun 写入前失败。
 
 ## 有意不建模的内容
 

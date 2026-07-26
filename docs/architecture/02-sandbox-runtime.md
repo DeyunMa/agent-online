@@ -1,6 +1,7 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 生命周期已实现；受控文件/终端/preview 待实现。
+> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；受控文件/终端/preview 待实现。
+> 当前下一步：在不创建新沙箱、不公开 Provider ID 的前提下增加只读 Files 合同。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -129,7 +130,7 @@ stateDiagram-v2
 
 - 每用户并发上限和基础 usage 管理视图。
 - 经授权的文件、终端与 preview 网关；停止后不恢复任何 Project 文件。
-- Cloudflare 远程环境对 Workflow Free 10ms step CPU 上限的真实验证。
+- Cloudflare 远程环境中更复杂任务对 Workflow Free CPU 和 subrequest 上限的持续验证。
 
 执行协调设计见 [ADR-0003](../adr/0003-agent-run-workflow.md)。在受控 API 完成前，不得向浏览器开放 Provider ID、内部端口或任意 shell 命令。
 

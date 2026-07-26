@@ -69,11 +69,13 @@ describe("piRuntime", () => {
       command: "pi",
       env: {
         AGENT_ONLINE_GATEWAY_TOKEN: "run-capability",
-        PI_CODING_AGENT_DIR: "/tmp",
+        PI_CODING_AGENT_DIR: "/tmp/agent-online-pi/run_1",
       },
     });
     expect(context.fileWrites).toHaveLength(1);
-    expect(context.fileWrites[0]?.path).toBe("/tmp/models.json");
+    expect(context.fileWrites[0]?.path).toBe(
+      "/tmp/agent-online-pi/run_1/models.json",
+    );
     expect(context.fileWrites[0]?.content).toContain("https://agent-online.test/api/model-gateway/v1");
     expect(context.fileWrites[0]?.content).toContain("$AGENT_ONLINE_GATEWAY_TOKEN");
     expect(context.fileWrites[0]?.content).not.toContain("run-capability");

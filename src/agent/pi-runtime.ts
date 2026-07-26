@@ -7,8 +7,7 @@ import type {
 import type { SandboxProcessEvent, SandboxProcessSession } from "../runtime/contract";
 
 const modelProviderId = "agent-online";
-const piConfigDirectory = "/tmp";
-const piModelsPath = `${piConfigDirectory}/models.json`;
+const piConfigRoot = "/tmp/agent-online-pi";
 
 export const piRuntime: AgentRuntime = {
   capabilities: {
@@ -21,9 +20,13 @@ export const piRuntime: AgentRuntime = {
   id: "pi",
 
   async start(context, input): Promise<AgentExecution> {
+    const piConfigDirectory = getPiConfigDirectory(input.agentRunId);
     const modelConfiguration = input.modelAccess ? createModelConfiguration(input.modelAccess) : null;
     if (modelConfiguration) {
-      await context.files.write(piModelsPath, JSON.stringify(modelConfiguration));
+      await context.files.write(
+        `${piConfigDirectory}/models.json`,
+        JSON.stringify(modelConfiguration),
+      );
     }
 
     const session = await context.processes.start({
@@ -215,6 +218,16 @@ function createPiArguments(input: AgentRunInput) {
   }
 
   return args;
+}
+
+function getPiConfigDirectory(agentRunId: string) {
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(agentRunId)
+  ) {
+    throw new Error("AgentRun ID is not safe for a Pi config path");
+  }
+
+  return `${piConfigRoot}/${agentRunId}`;
 }
 
 function createModelConfiguration(modelAccess: NonNullable<AgentRunInput["modelAccess"]>) {

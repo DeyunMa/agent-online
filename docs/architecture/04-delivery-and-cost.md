@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2 真实执行代码与本地 E2E 已完成；远程 Workflow 免费层验收和 D3 受控能力待完成
+> 状态：D2 真实执行 happy path、取消、deadline 与空闲 TTL 已通过远程 Preview；D3 受控能力待完成
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -34,7 +34,9 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1 已完成。D2 已实现 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关；真实 E2B + Pi + Gemini spike 已通过。D2 剩余门槛是部署到 Cloudflare 私有 Preview 环境验证 Workflows Free 的 CPU/subrequest 限额。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。远端已验证沙箱工具调用、同 Project 文件复用、多次模型请求、最终回复、D1 usage、取消只终止当前 Pi 进程、8 秒测试 deadline 的 `timed_out` 收敛，以及 10 分钟空闲 TTL 后 `detached=true, stopped=true` 的沙箱回收。更复杂任务下的 Workflows Free CPU/subrequest 限额仍需持续观察，但不阻塞代表性 D2 纵切完成。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
+
+D3 固定按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> Changes”的顺序推进。前一个纵切必须完成服务端授权、Provider 信息隐藏、错误状态、测试和 UI 验收，才启用下一个能力。
 
 ## 3. 当前与未来 Runtime 的边界
 
@@ -55,7 +57,9 @@ flowchart LR
 5. 出现 Provider 错误或异常用量时，维护者可用服务端 `RUNS_ENABLED` 总开关暂停新 Run；admin 用量视图和精细配额以后再设计。
 6. 早期真实沙箱通过部署邮箱 allowlist 只对自己或受邀测试账号开放；开源不等于开放匿名计算资源。
 7. 每个新 AgentRuntime 独立评估镜像体积、冷启动、模型请求路径、凭据持有方式和出网能力，不能沿用 Pi 的成本假设。
-8. Cloudflare Workflows Free 每 step 只有 10ms CPU、每 instance 最多 50 个外部 subrequest；预览环境必须验证典型 Pi Run，并在超限时停止公开注册。
+8. Cloudflare Workflows Free 当前每次调用的 CPU 边界为 10ms、每 instance 最多 50 个外部 subrequest；预览环境必须持续验证典型 Pi Run，并在超限时停止公开注册。
+
+截至 2026-07-26，当前 Cloudflare Worker、Static Assets、D1、Workflows 和 Workers Logs 均可使用 Workers Free 额度。E2B Hobby 虽无月费，但沙箱计算按秒计费，只有一次性 $100 credits；因此当前系统不是“所有外部算力永久免费”。未来切换 Cloudflare Sandbox/Containers 需要 Workers Paid，最低平台费用不再为 $0。完整口径见 [D2 阶段基线](../status/2026-07-26-d2-baseline.md)。
 
 ## 5. 支付不是延后实现项，而是范围外
 

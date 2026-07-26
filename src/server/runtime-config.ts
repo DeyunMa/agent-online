@@ -2,7 +2,7 @@ import type { RuntimeKind } from "../runtime/contract";
 import { modelGatewayEndpointPath } from "./model-gateway-service";
 import type { AppBindings } from "./env";
 
-export const defaultPlatformModelId = "gemini-2.5-flash";
+export const defaultPlatformModelId = "gemini-3.6-flash";
 export const defaultWorkingDirectory = "/workspace";
 export const defaultModelMaxOutputTokens = 4_096;
 

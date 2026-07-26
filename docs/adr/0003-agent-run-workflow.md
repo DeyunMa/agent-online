@@ -143,10 +143,14 @@ Gemini Key 只存在于 Worker Secret。Workflow 为每个 Run 签发绑定 `pro
 ## 代价与风险
 
 - Cloudflare Workflows 成为 D1、Assets 之外的第三个 Cloudflare Binding。
-- Workflows 可用于 Workers Free，但免费层每个 step 的 CPU 上限是 10ms。远程 Pi 输出解析是否稳定落在这个上限内必须通过真实预览部署验证；本地测试和生产构建不能证明这一点。
+- Workflows 可用于 Workers Free，但免费层当前每次调用的 CPU 边界为 10ms。代表性远程 Pi Run 已通过真实 Preview；复杂任务是否稳定仍不能只由本地测试和生产构建证明。
 - 免费层每个 Workflow instance 的外部 subrequest 上限为 50。当前一次 AgentRun 的平台调用应远低于该值，但复杂 Agent 行为仍需观测。
 - Workflow 不是 Pi session 恢复系统。执行所有者丢失时当前 Run 会中断，必要时沙箱也会停止。
 - 不新增 R2、队列、DO storage、Run 事件表或沙箱历史。
+
+## 实施结果
+
+截至 2026-07-26，本 ADR 已在私有 Cloudflare Preview 完成代表性验收：正常 Run、真实 usage、跨请求取消、8 秒测试 deadline、恢复后的 1830 秒步骤 timeout，以及 10 分钟空闲 TTL 均按 D1 事实收敛。最终清理返回 `detached=true, stopped=true`，Lease 清除 Provider 引用。复杂任务下的 Free CPU 和 subrequest 上限仍需持续观察，但不阻塞 D2 完成。
 
 ## 验收条件
 

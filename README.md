@@ -1,7 +1,8 @@
 # Agent Online
 
-> 状态：D2 真实执行纵切与私有 Preview 护栏已在本地实现（2026-07-26）
-> 当前代码包含认证、Project、Run/Message、E2B、Pi RPC、Gemini ModelGateway、Workflow 执行所有权、取消、deadline、空闲 TTL、聚合 usage、部署邮箱白名单和 Run 总开关；远程 Cloudflare 预览验证及文件/终端/preview 尚未完成。
+> 状态：D2 真实执行纵切已部署到私有 Cloudflare Preview（2026-07-26）
+> 当前 Preview 已完成 Worker、Assets、D1、Workflow、加密 Secret、邮箱白名单，以及真实 Pi AgentRun 的 happy path、取消、deadline 和空闲 TTL；受控文件、终端、preview 尚未完成。
+> 下一阶段：D3 先实现受控只读 Files，再依次实现用量聚合、Terminal 和 Preview。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -28,7 +29,9 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 
-远程 Cloudflare Workflows 免费层的 10ms step CPU 上限仍需预览部署验证。受控文件浏览、终端、preview、changes 和用户用量页属于后续纵切，UI 在对应 API 完成前必须保持禁用或不展示。
+远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run，也验证了长任务取消只终止当前 Pi 进程、沙箱可继续复用，并用临时 8 秒配置验证了 `timed_out` 收敛。10 分钟空闲 TTL 到期后，Workflow 已原子脱离并停止 E2B 沙箱，D1 清除了 Provider 引用。手动 Stop UI 和更复杂任务下的 Workflows 免费层限额仍需单独验收。受控文件浏览、终端、preview、changes 和用户用量页属于后续纵切，UI 在对应 API 完成前必须保持禁用或不展示。
+
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 
@@ -62,7 +65,9 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [外部依赖与待补充项](./docs/setup/external-dependencies.md) | 代码之外的账号、Secret、远程资源和用户待确认事项。 |
 | [本地开发](./docs/setup/local-development.md) | 单 Worker 工程结构、模块边界和本地启动方式。 |
 | [Cloudflare 私有 Preview 部署](./docs/setup/preview-deployment.md) | Preview 白名单、Run 开关、D1/Secret/迁移和分阶段验收步骤。 |
+| [Cloudflare Preview 资源台账](./docs/setup/cloudflare-preview-resources.md) | 已创建资源、Dashboard 查看路径、变量/Secret 名称、日志与运维命令。 |
 | [E2B + Pi + Gemini Spike](./docs/testing/e2b-pi-gemini-spike.md) | 显式启用的真实 Provider 可行性验证，不等同于 D2 产品实现。 |
+| [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序
