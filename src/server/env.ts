@@ -15,6 +15,18 @@ export type AgentRunWorkflowPayload =
       kind: "terminal-expiry";
       projectId: string;
       terminalSessionId: string;
+    }
+  | {
+      expectedLeaseUpdatedAt: string;
+      kind: "preview-idle-cleanup";
+      previewSessionId: string;
+      projectId: string;
+    }
+  | {
+      expiresAt: string;
+      kind: "preview-expiry";
+      previewSessionId: string;
+      projectId: string;
     };
 
 export interface AppBindings {

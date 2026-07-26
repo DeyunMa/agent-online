@@ -7,6 +7,7 @@ import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
+import { createPreviewApi } from "./preview-api";
 import { getInstalledSandboxRuntimeId } from "./runtime-config";
 import { createUsageApi } from "./usage-api";
 import { createTerminalApi } from "./terminal-api";
@@ -37,6 +38,7 @@ app.get("/api/capabilities", (c) => {
     agentRuntimeIds: [...policy.publicRuntimeIds],
     defaultAgentRuntimeId,
     runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
+    previewEnabled: sandboxRuntimeId === "e2b",
     terminalEnabled: sandboxRuntimeId === "e2b",
   });
 });
@@ -48,6 +50,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.ra
 app.route("/api", createProjectApi());
 app.route("/api", createUsageApi());
 app.route("/api", createTerminalApi());
+app.route("/api", createPreviewApi());
 
 app.notFound((c) => c.json({ error: "not_found", requestId: c.get("requestId") }, 404));
 

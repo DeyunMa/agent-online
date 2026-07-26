@@ -9,6 +9,7 @@ import type {
   PlatformCapabilitiesResponse,
   ProjectDirectoryResponse,
   ProjectFileResponse,
+  ProjectPreviewResponse,
   ProjectResponse,
   UserUsageResponse,
 } from "../shared/api";
@@ -122,12 +123,14 @@ function messageForApiError(error: ApiErrorResponse["error"]) {
       return "未找到请求的项目或执行记录。";
     case "path_not_found":
       return "文件路径已不存在，请刷新目录后重试。";
+    case "preview_unavailable":
+      return "项目 Preview 暂时不可用，请确认项目根目录已安装 Vite 后重试。";
     case "project_busy":
       return "该项目已有正在执行的任务。";
     case "runs_disabled":
       return "Agent Run 当前已由维护者暂停。";
     case "sandbox_unavailable":
-      return "项目沙箱未启动或已停止。运行一次 Agent 后即可查看文件。";
+      return "项目沙箱未启动或已停止。运行一次 Agent 后再重试。";
     case "file_too_large":
       return "该文件超过在线预览大小限制。";
     case "unsupported_file":
@@ -216,6 +219,26 @@ export const browserApi = {
 
   readProjectFile(projectId: string, path: string) {
     return requestJson<ProjectFileResponse>(projectFilesPath(projectId, path, true));
+  },
+
+  getProjectPreview(projectId: string) {
+    return requestJson<ProjectPreviewResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/preview`,
+    );
+  },
+
+  startProjectPreview(projectId: string) {
+    return requestJson<ProjectPreviewResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/preview/start`,
+      { method: "POST" },
+    );
+  },
+
+  stopProjectPreview(projectId: string) {
+    return requestJson<ProjectPreviewResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/preview/stop`,
+      { method: "POST" },
+    );
   },
 
   stopProjectSandbox(projectId: string) {

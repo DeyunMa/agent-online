@@ -21,7 +21,7 @@ export type AgentRunExecutionInput = {
   runId: string;
 };
 
-export type TerminalIdleCleanupInput = {
+export type ActivityIdleCleanupInput = {
   expectedLeaseUpdatedAt: string;
   projectId: string;
 };
@@ -216,8 +216,8 @@ export class RunExecutionService {
     }
   }
 
-  async stopSandboxAfterTerminalIdle(
-    input: TerminalIdleCleanupInput,
+  async stopSandboxAfterActivityIdle(
+    input: ActivityIdleCleanupInput,
   ): Promise<IdleSandboxStopResult> {
     const activeRun =
       await this.dependencies.agentRuns.findActiveByProjectId(

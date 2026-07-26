@@ -1,4 +1,6 @@
 import { RunExecutionService } from "../application/run-execution";
+import { defaultPreviewSessionDurationMs } from "../application/project-preview";
+import { defaultTerminalSessionDurationMs } from "../application/project-terminal";
 import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import type { RuntimeKind } from "../runtime/contract";
 import type { AppBindings } from "./env";
@@ -23,11 +25,16 @@ export type E2BRunExecution = {
 export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
   const config = getE2BExecutionConfig(env);
   const agentRuntimePolicy = getAgentRuntimePolicy(env, "e2b");
+  const longestActivityMs = Math.max(
+    config.runTimeoutMs,
+    defaultPreviewSessionDurationMs,
+    defaultTerminalSessionDurationMs,
+  );
   const runtime = new E2BSandboxRuntime({
     apiKey: config.apiKey,
     processTimeoutMs: config.runTimeoutMs + 15_000,
     sandboxTimeoutMs:
-      config.runTimeoutMs + config.idleTtlMs + 60_000,
+      longestActivityMs + config.idleTtlMs + 60_000,
     templateId: config.templateId,
   });
   const capabilityCodec = createRunCapabilityCodec({

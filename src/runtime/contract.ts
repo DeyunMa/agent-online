@@ -24,6 +24,7 @@ export type ProcessTerminationReason = "completed" | "cancelled" | "timed_out" |
 export type SandboxStopReason = "idle" | "manual" | "failed";
 export type SandboxFilesystemScope = "lease" | "runtime-instance";
 export type TerminalCloseReason = "client_closed" | "expired" | "failed";
+export type PreviewStopReason = "client_stopped" | "expired" | "failed";
 
 export type SandboxFileEntry = {
   kind: "directory" | "file" | "symlink";
@@ -43,6 +44,13 @@ export class SandboxUnavailableError extends Error {
   constructor(message = "Sandbox is unavailable") {
     super(message);
     this.name = "SandboxUnavailableError";
+  }
+}
+
+export class SandboxPreviewUnavailableError extends Error {
+  constructor(message = "Sandbox preview is unavailable") {
+    super(message);
+    this.name = "SandboxPreviewUnavailableError";
   }
 }
 
@@ -109,6 +117,43 @@ export interface SandboxTerminalRuntime {
     handle: RuntimeHandle,
     providerProcessRef: string,
     reason: TerminalCloseReason,
+  ): Promise<void>;
+}
+
+export type SandboxPreviewStartInput = {
+  contentBasePath: string;
+  port: number;
+  preset: "vite-v1";
+  processTimeoutMs: number;
+  startupTimeoutMs: number;
+};
+
+export type SandboxPreviewRequest = {
+  headers: Readonly<Record<string, string>>;
+  method: "GET" | "HEAD";
+  pathAndQuery: string;
+};
+
+export interface SandboxPreviewRuntime {
+  readonly kind: RuntimeKind;
+  fetchPreview(
+    handle: RuntimeHandle,
+    port: number,
+    request: SandboxPreviewRequest,
+  ): Promise<Response>;
+  isPreviewRunning(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    port: number,
+  ): Promise<boolean>;
+  startPreview(
+    handle: RuntimeHandle,
+    input: SandboxPreviewStartInput,
+  ): Promise<{ providerProcessRef: string }>;
+  terminatePreview(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    reason: PreviewStopReason,
   ): Promise<void>;
 }
 

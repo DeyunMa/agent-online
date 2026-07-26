@@ -1,6 +1,7 @@
 import type { RuntimeHandle, RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import type {
   AgentRunRepository,
+  PreviewSessionRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
   TerminalSessionRepository,
@@ -17,6 +18,10 @@ export type ProjectSandboxServiceDependencies = {
   agentRuns: AgentRunRepository;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   now(): Date;
+  previewSessions: Pick<
+    PreviewSessionRepository,
+    "findByProjectId"
+  >;
   sandboxLeases: SandboxLeaseRepository;
   terminalSessions: Pick<
     TerminalSessionRepository,
@@ -48,6 +53,9 @@ export class ProjectSandboxService {
       return { kind: "project_busy" };
     }
     if (await this.dependencies.terminalSessions.findByProjectId(projectId)) {
+      return { kind: "project_busy" };
+    }
+    if (await this.dependencies.previewSessions.findByProjectId(projectId)) {
       return { kind: "project_busy" };
     }
 
@@ -91,6 +99,9 @@ export class ProjectSandboxService {
       return { kind: "project_busy" };
     }
     if (await this.dependencies.terminalSessions.findByProjectId(projectId)) {
+      return { kind: "project_busy" };
+    }
+    if (await this.dependencies.previewSessions.findByProjectId(projectId)) {
       return { kind: "project_busy" };
     }
 

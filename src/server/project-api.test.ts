@@ -470,6 +470,9 @@ function createFixture(
     setProviderProcessRef: async () => null,
     setProviderSandboxRef: async () => null,
   } satisfies TerminalSessionRepository;
+  const previewSessions = {
+    findByProjectId: async () => null,
+  };
   const services: ServerServices = {
     agentRuns,
     createAgentRuns,
@@ -484,10 +487,12 @@ function createFixture(
       terminalSessions,
       workingDirectory: "/workspace",
     }),
+    projectPreviews: {} as ServerServices["projectPreviews"],
     projectSandboxes: new ProjectSandboxService({
       agentRuns,
       getSandboxRuntime: () => sandboxRuntime,
       now: () => new Date(now),
+      previewSessions,
       sandboxLeases,
       terminalSessions,
     }),

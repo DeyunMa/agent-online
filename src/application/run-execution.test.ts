@@ -182,7 +182,7 @@ describe("RunExecutionService", () => {
     await expect(
       current
         .createService(blockingAgent())
-        .stopSandboxAfterTerminalIdle({
+        .stopSandboxAfterActivityIdle({
           expectedLeaseUpdatedAt:
             "2026-07-25T00:10:00.000Z",
           projectId: "project_1",
@@ -191,7 +191,7 @@ describe("RunExecutionService", () => {
     await expect(
       stale
         .createService(blockingAgent())
-        .stopSandboxAfterTerminalIdle({
+        .stopSandboxAfterActivityIdle({
           expectedLeaseUpdatedAt:
             "2026-07-25T00:10:00.000Z",
           projectId: "project_1",

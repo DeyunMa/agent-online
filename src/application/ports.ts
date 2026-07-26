@@ -71,6 +71,19 @@ export type TerminalSessionRecord = {
   updatedAt: string;
 };
 
+export type PreviewSessionRecord = {
+  createdAt: string;
+  expiresAt: string;
+  id: string;
+  port: number;
+  projectId: string;
+  providerProcessRef: string | null;
+  providerSandboxRef: string;
+  sandboxLeaseId: string;
+  status: "running" | "starting";
+  updatedAt: string;
+};
+
 export interface ProjectRepository {
   create(input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string }): Promise<ProjectRecord>;
   deleteOwned(projectId: string, userId: string): Promise<boolean>;
@@ -196,6 +209,38 @@ export interface TerminalSessionRepository {
   markLeaseFailedKeepingSession(input: {
     expectedProviderSandboxRef: string;
     now: string;
+    sessionId: string;
+  }): Promise<boolean>;
+}
+
+export type ClaimPreviewSessionResult =
+  | { kind: "claimed"; session: PreviewSessionRecord }
+  | { kind: "project_busy" };
+
+export interface PreviewSessionRepository {
+  /**
+   * Atomically reserves Preview startup against an unchanged live Lease while
+   * no AgentRun, Terminal, or other Preview startup is active.
+   */
+  claim(input: {
+    expectedLeaseProviderRef: string;
+    expectedLeaseUpdatedAt: string;
+    expiresAt: string;
+    id: string;
+    now: string;
+    port: number;
+    projectId: string;
+    sandboxLeaseId: string;
+  }): Promise<ClaimPreviewSessionResult>;
+  findById(sessionId: string): Promise<PreviewSessionRecord | null>;
+  findByProjectId(projectId: string): Promise<PreviewSessionRecord | null>;
+  markRunning(
+    sessionId: string,
+    providerProcessRef: string,
+    now: string,
+  ): Promise<PreviewSessionRecord | null>;
+  release(input: {
+    expectedProviderSandboxRef: string;
     sessionId: string;
   }): Promise<boolean>;
 }

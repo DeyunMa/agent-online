@@ -11,6 +11,7 @@ import {
   type AgentRunExecutionStarter,
 } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
+import { ProjectPreviewService } from "../application/project-preview";
 import {
   ProjectSandboxService,
   type StopProjectSandboxResult,
@@ -30,10 +31,15 @@ import type {
 import {
   D1AgentRunRepository,
   D1MessageRepository,
+  D1PreviewSessionRepository,
   D1ProjectRepository,
   D1SandboxLeaseRepository,
   D1TerminalSessionRepository,
 } from "./persistence/d1-repositories";
+import {
+  createPreviewCapabilityCodec,
+  previewContentBasePath,
+} from "./preview-capability";
 import {
   defaultWorkingDirectory,
   getDefaultModelId,
@@ -58,6 +64,7 @@ export type ServerServices = {
   enabledAgentRuntimeIds: readonly AgentRuntimeId[];
   messages: MessageRepository;
   projectFiles: ProjectFilesService;
+  projectPreviews: ProjectPreviewService;
   projectSandboxes: ProjectSandboxController;
   projectTerminals: ProjectTerminalService;
   projects: ProjectRepository;
@@ -70,6 +77,7 @@ export function createServerServices(env: AppBindings): ServerServices {
   const agentRuns = new D1AgentRunRepository(env.DB);
   const messages = new D1MessageRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
+  const previewSessions = new D1PreviewSessionRepository(env.DB);
   const terminalSessions = new D1TerminalSessionRepository(env.DB);
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
   const agentRuntimePolicy = getAgentRuntimePolicy(env, sandboxRuntimeId);
@@ -132,10 +140,32 @@ export function createServerServices(env: AppBindings): ServerServices {
       terminalSessions,
       workingDirectory: defaultWorkingDirectory,
     }),
+    projectPreviews: new ProjectPreviewService({
+      agentRuns,
+      clock: { now: () => new Date() },
+      createContentBasePath: (input) =>
+        createPreviewContentBasePath(env, input),
+      createId: () => crypto.randomUUID(),
+      getSandboxRuntime: getTerminalRuntime,
+      previewSessions,
+      sandboxLeases,
+      sandboxRuntimeId,
+      scheduleExpiry:
+        sandboxRuntimeId === "e2b"
+          ? (input) => schedulePreviewExpiry(env, input)
+          : async () => undefined,
+      scheduleIdleCleanup:
+        sandboxRuntimeId === "e2b"
+          ? (input) =>
+              schedulePreviewIdleCleanupBestEffort(env, input)
+          : async () => undefined,
+      terminalSessions,
+    }),
     projectSandboxes: new ProjectSandboxService({
       agentRuns,
       getSandboxRuntime,
       now: () => new Date(),
+      previewSessions,
       sandboxLeases,
       terminalSessions,
     }),
@@ -163,6 +193,37 @@ export function createServerServices(env: AppBindings): ServerServices {
     sandboxRuntimeId,
     sandboxLeases,
   };
+}
+
+export function createProjectPreviewService(env: AppBindings) {
+  const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
+  const previewSessions = new D1PreviewSessionRepository(env.DB);
+  const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
+  const runtime =
+    sandboxRuntimeId === "e2b"
+      ? createE2BRunExecution(env).runtime
+      : null;
+
+  return new ProjectPreviewService({
+    agentRuns: new D1AgentRunRepository(env.DB),
+    clock: { now: () => new Date() },
+    createContentBasePath: (input) =>
+      createPreviewContentBasePath(env, input),
+    createId: () => crypto.randomUUID(),
+    getSandboxRuntime(id) {
+      if (id !== "e2b" || runtime?.kind !== id) {
+        return null;
+      }
+      return runtime;
+    },
+    previewSessions,
+    sandboxLeases,
+    sandboxRuntimeId,
+    scheduleExpiry: (input) => schedulePreviewExpiry(env, input),
+    scheduleIdleCleanup: (input) =>
+      schedulePreviewIdleCleanupBestEffort(env, input),
+    terminalSessions: new D1TerminalSessionRepository(env.DB),
+  });
 }
 
 export function createProjectTerminalService(env: AppBindings) {
@@ -359,10 +420,78 @@ async function scheduleTerminalExpiry(
   });
 }
 
+async function schedulePreviewIdleCleanupBestEffort(
+  env: AppBindings,
+  input: {
+    expectedLeaseUpdatedAt: string;
+    previewSessionId: string;
+    projectId: string;
+  },
+) {
+  try {
+    await createWorkflowInstance(env, {
+      id: `preview-idle-${input.previewSessionId}`,
+      payload: {
+        expectedLeaseUpdatedAt: input.expectedLeaseUpdatedAt,
+        kind: "preview-idle-cleanup",
+        previewSessionId: input.previewSessionId,
+        projectId: input.projectId,
+      },
+    });
+  } catch {
+    // E2B's own sandbox timeout remains the final cleanup bound.
+  }
+}
+
+async function schedulePreviewExpiry(
+  env: AppBindings,
+  input: {
+    expiresAt: string;
+    previewSessionId: string;
+    projectId: string;
+  },
+) {
+  await createWorkflowInstance(env, {
+    id: `preview-expiry-${input.previewSessionId}`,
+    payload: {
+      expiresAt: input.expiresAt,
+      kind: "preview-expiry",
+      previewSessionId: input.previewSessionId,
+      projectId: input.projectId,
+    },
+  });
+}
+
 function requireRuntime(runtime: SandboxRuntime, id: RuntimeKind) {
   if (runtime.kind !== id) {
     throw new Error(`Sandbox runtime is not installed: ${id}`);
   }
 
   return runtime;
+}
+
+async function createPreviewContentBasePath(
+  env: AppBindings,
+  input: {
+    expiresAt: string;
+    issuedAt: string;
+    previewSessionId: string;
+    projectId: string;
+  },
+) {
+  if (!env.BETTER_AUTH_SECRET) {
+    throw new Error("BETTER_AUTH_SECRET is required");
+  }
+  const issuedAt = new Date(input.issuedAt);
+  const token = await createPreviewCapabilityCodec({
+    now: () => issuedAt,
+    secret: env.BETTER_AUTH_SECRET,
+  }).issue({
+    expiresAt: new Date(input.expiresAt),
+    issuedAt,
+    previewSessionId: input.previewSessionId,
+    projectId: input.projectId,
+  });
+
+  return previewContentBasePath(input.projectId, token);
 }

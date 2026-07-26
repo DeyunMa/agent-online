@@ -7,7 +7,10 @@ import { NonRetryableError } from "cloudflare:workflows";
 
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
-import { createProjectTerminalService } from "./services";
+import {
+  createProjectPreviewService,
+  createProjectTerminalService,
+} from "./services";
 
 export class AgentRunWorkflow extends WorkflowEntrypoint<
   AppBindings,
@@ -19,6 +22,60 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
   ) {
     const payload = validatePayload(event.payload);
     const { config, service } = createE2BRunExecution(this.env);
+
+    if (payload.kind === "preview-expiry") {
+      await step.sleepUntil(
+        "wait for preview session expiry",
+        new Date(payload.expiresAt),
+      );
+      const cleanup = await step.do(
+        "expire preview session",
+        {
+          retries: {
+            backoff: "constant",
+            delay: "2 seconds",
+            limit: 2,
+          },
+        },
+        () =>
+          createProjectPreviewService(this.env).expire(
+            payload.projectId,
+            payload.previewSessionId,
+          ),
+      );
+      return {
+        ...cleanup,
+        previewSessionId: payload.previewSessionId,
+      };
+    }
+
+    if (payload.kind === "preview-idle-cleanup") {
+      await step.sleep(
+        "wait for preview sandbox idle timeout",
+        `${Math.ceil(config.idleTtlMs / 1_000)} seconds`,
+      );
+      const cleanup = await step.do(
+        "stop preview idle sandbox",
+        {
+          retries: {
+            backoff: "constant",
+            delay: "2 seconds",
+            limit: 1,
+          },
+        },
+        () =>
+          service.stopSandboxAfterActivityIdle({
+            expectedLeaseUpdatedAt: payload.expectedLeaseUpdatedAt,
+            projectId: payload.projectId,
+          }),
+      );
+
+      return {
+        detached: cleanup.detached,
+        previewSessionId: payload.previewSessionId,
+        stopped: cleanup.stopped,
+      };
+    }
 
     if (payload.kind === "terminal-expiry") {
       await step.sleepUntil(
@@ -61,7 +118,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
           },
         },
         () =>
-          service.stopSandboxAfterTerminalIdle({
+          service.stopSandboxAfterActivityIdle({
             expectedLeaseUpdatedAt:
               payload.expectedLeaseUpdatedAt,
             projectId: payload.projectId,
@@ -130,6 +187,32 @@ function validatePayload(
     ) {
       throw new NonRetryableError(
         "Terminal idle Workflow payload is invalid",
+      );
+    }
+    return { ...value };
+  }
+
+  if (value.kind === "preview-idle-cleanup") {
+    if (
+      !isIdentifier(value.projectId) ||
+      !isIdentifier(value.previewSessionId) ||
+      !isTimestamp(value.expectedLeaseUpdatedAt)
+    ) {
+      throw new NonRetryableError(
+        "Preview idle Workflow payload is invalid",
+      );
+    }
+    return { ...value };
+  }
+
+  if (value.kind === "preview-expiry") {
+    if (
+      !isIdentifier(value.projectId) ||
+      !isIdentifier(value.previewSessionId) ||
+      !isTimestamp(value.expiresAt)
+    ) {
+      throw new NonRetryableError(
+        "Preview expiry Workflow payload is invalid",
       );
     }
     return { ...value };

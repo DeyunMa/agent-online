@@ -79,6 +79,24 @@ describe("ProjectSandboxService", () => {
     expect(stop).not.toHaveBeenCalled();
   });
 
+  it("does not detach a sandbox while Project Preview is active", async () => {
+    const lease = createLease();
+    const sandboxLeases = createSandboxLeases(lease);
+    const stop = vi.fn(async () => undefined);
+    const service = createService({
+      activeRun: null,
+      previewActive: true,
+      sandboxLeases,
+      stop,
+    });
+
+    await expect(service.stop(lease.projectId)).resolves.toEqual({
+      kind: "project_busy",
+    });
+    expect(sandboxLeases.claimForManualStop).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
   it("keeps the Lease detached when the provider stop request fails", async () => {
     const lease = createLease();
     const sandboxLeases = createSandboxLeases(lease);
@@ -108,6 +126,7 @@ function createService(input: {
     claimForManualStop: ReturnType<typeof vi.fn>;
   };
   stop: ReturnType<typeof vi.fn>;
+  previewActive?: boolean;
   terminalActive?: boolean;
 }) {
   const agentRuns = {
@@ -122,6 +141,11 @@ function createService(input: {
     agentRuns,
     getSandboxRuntime: () => runtime,
     now: () => now,
+    previewSessions: {
+      findByProjectId: vi.fn(async () =>
+        input.previewActive ? ({} as never) : null,
+      ),
+    },
     sandboxLeases: input.sandboxLeases,
     terminalSessions: {
       findByProjectId: vi.fn(async () =>

@@ -20,6 +20,9 @@ import type {
   SandboxFileEntry,
   SandboxProcessEvent,
   SandboxProcessSession,
+  SandboxPreviewRequest,
+  SandboxPreviewRuntime,
+  SandboxPreviewStartInput,
   SandboxRuntime,
   SandboxStopReason,
   SandboxTerminalEvent,
@@ -27,13 +30,18 @@ import type {
   SandboxTerminalSession,
   SandboxTerminalSize,
   TerminalCloseReason,
+  PreviewStopReason,
 } from "./contract";
 import {
   SandboxPathNotFoundError,
+  SandboxPreviewUnavailableError,
   SandboxUnavailableError,
 } from "./contract";
 
-type E2BCommandHandle = Pick<CommandHandle, "kill" | "pid" | "sendStdin" | "wait">;
+type E2BCommandHandle = Pick<
+  CommandHandle,
+  "disconnect" | "kill" | "pid" | "sendStdin" | "wait"
+>;
 
 type E2BPty = {
   create(options: {
@@ -51,6 +59,7 @@ type E2BPty = {
 type E2BSandbox = {
   commands: {
     kill(pid: number): Promise<boolean>;
+    list(): Promise<Array<{ pid: number }>>;
     run(command: string, options: CommandStartOpts & { background: true }): Promise<E2BCommandHandle>;
   };
   files: {
@@ -58,10 +67,12 @@ type E2BSandbox = {
     read(path: string, options: { format: "bytes" }): Promise<Uint8Array>;
     write(path: string, content: string): Promise<unknown>;
   };
+  getHost(port: number): string;
   kill(): Promise<boolean>;
   pty: E2BPty;
   sandboxId: string;
   setTimeout(timeoutMs: number): Promise<void>;
+  trafficAccessToken?: string;
 };
 
 export type E2BSandboxClient = {
@@ -83,6 +94,8 @@ export type E2BSandboxRuntimeOptions = {
 const defaultSandboxTimeoutMs = 30 * 60 * 1_000;
 const defaultProcessTimeoutMs = 30 * 60 * 1_000;
 const defaultTerminalTimeoutMs = 30 * 60 * 1_000;
+const previewPort = 3000;
+const previewWorkingDirectory = "/workspace";
 export const defaultTerminalOutputLimitBytes = 8 * 1_024 * 1_024;
 export const defaultTerminalPendingOutputBytes = 256 * 1_024;
 
@@ -92,7 +105,10 @@ const defaultClient: E2BSandboxClient = {
 };
 
 export class E2BSandboxRuntime
-  implements SandboxRuntime, SandboxTerminalRuntime
+  implements
+    SandboxPreviewRuntime,
+    SandboxRuntime,
+    SandboxTerminalRuntime
 {
   readonly filesystemScope = "lease" as const;
   readonly kind = "e2b" as const;
@@ -145,6 +161,10 @@ export class E2BSandboxRuntime
         app: "agent-online",
         projectId: input.projectId,
         sandboxLeaseId: input.sandboxLeaseId,
+      },
+      network: {
+        allowPublicTraffic: false,
+        maskRequestHost: "localhost:${PORT}",
       },
       timeoutMs: this.sandboxTimeoutMs,
     });
@@ -302,6 +322,116 @@ export class E2BSandboxRuntime
     const sandbox = await this.attachSandbox(handle);
     const processId = parseProviderProcessRef(providerProcessRef, "terminal");
     await sandbox.pty.kill(processId);
+  }
+
+  async startPreview(
+    handle: RuntimeHandle,
+    input: SandboxPreviewStartInput,
+  ) {
+    assertPreviewStartInput(input);
+    const preset = vitePreviewPreset(input.contentBasePath);
+    let sandbox = await this.attachSandbox(handle);
+    if (!sandbox.trafficAccessToken) {
+      sandbox = await this.client.connect(handle.id, {
+        apiKey: this.options.apiKey,
+      });
+      this.sandboxes.set(sandbox.sandboxId, sandbox);
+    }
+    requireTrafficAccessToken(sandbox);
+
+    const process = await sandbox.commands.run(
+      toShellCommand(preset),
+      {
+        background: true,
+        cwd: preset.cwd,
+        envs: { ...preset.env },
+        timeoutMs: input.processTimeoutMs,
+      },
+    );
+
+    try {
+      await waitForPreviewReady(
+        sandbox,
+        process.pid,
+        input.port,
+        input.contentBasePath,
+        input.startupTimeoutMs,
+      );
+      await process.disconnect();
+    } catch (error) {
+      await sandbox.commands.kill(process.pid).catch(() => false);
+      throw error;
+    }
+
+    return { providerProcessRef: String(process.pid) };
+  }
+
+  async isPreviewRunning(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    _port: number,
+  ) {
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      const processId = parseProviderProcessRef(
+        providerProcessRef,
+        "preview",
+      );
+      const processes = await sandbox.commands.list();
+      return processes.some((process) => process.pid === processId);
+    } catch (error) {
+      if (error instanceof SandboxNotFoundError) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async terminatePreview(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    _reason: PreviewStopReason,
+  ) {
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      const processId = parseProviderProcessRef(
+        providerProcessRef,
+        "preview",
+      );
+      await sandbox.commands.kill(processId);
+    } catch (error) {
+      if (!(error instanceof SandboxNotFoundError)) {
+        throw error;
+      }
+    }
+  }
+
+  async fetchPreview(
+    handle: RuntimeHandle,
+    port: number,
+    request: SandboxPreviewRequest,
+  ) {
+    assertPreviewRequest(port, request);
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      const trafficAccessToken = requireTrafficAccessToken(sandbox);
+      const headers = new Headers(request.headers);
+      headers.set("e2b-traffic-access-token", trafficAccessToken);
+
+      return fetch(
+        `https://${sandbox.getHost(port)}${request.pathAndQuery}`,
+        {
+          headers,
+          method: request.method,
+          redirect: "manual",
+        },
+      );
+    } catch (error) {
+      if (error instanceof SandboxNotFoundError) {
+        throw new SandboxUnavailableError();
+      }
+      throw error;
+    }
   }
 
   async writeFile(handle: RuntimeHandle, path: string, content: string) {
@@ -596,7 +726,9 @@ function terminalEventSize(event: SandboxTerminalEvent) {
   return event.type === "terminal.output" ? event.chunk.byteLength : 0;
 }
 
-function toShellCommand(command: SandboxCommand) {
+function toShellCommand(
+  command: Pick<SandboxCommand, "args" | "command">,
+) {
   return [command.command, ...command.args].map(quoteShellArgument).join(" ");
 }
 
@@ -610,12 +742,132 @@ function assertRuntimeHandle(handle: RuntimeHandle, kind: "e2b") {
   }
 }
 
-function parseProviderProcessRef(value: string, kind: "process" | "terminal") {
+function parseProviderProcessRef(
+  value: string,
+  kind: "preview" | "process" | "terminal",
+) {
   const processId = Number(value);
   if (!Number.isSafeInteger(processId) || processId < 1) {
     throw new Error(`E2B ${kind} reference is invalid`);
   }
   return processId;
+}
+
+function assertPreviewStartInput(input: SandboxPreviewStartInput) {
+  if (
+    input.port !== previewPort ||
+    input.preset !== "vite-v1" ||
+    !isSafePreviewBasePath(input.contentBasePath)
+  ) {
+    throw new Error("E2B Preview preset is invalid");
+  }
+  requirePositiveTimeout(input.processTimeoutMs);
+  requirePositiveTimeout(input.startupTimeoutMs);
+}
+
+function vitePreviewPreset(contentBasePath: string) {
+  return {
+    args: [
+      "--host",
+      "0.0.0.0",
+      "--port",
+      String(previewPort),
+      "--strictPort",
+      "--base",
+      contentBasePath,
+    ],
+    command: "./node_modules/.bin/vite",
+    cwd: previewWorkingDirectory,
+    env: {
+      BROWSER: "none",
+      HOST: "0.0.0.0",
+      PORT: String(previewPort),
+    },
+  };
+}
+
+function isSafePreviewBasePath(value: string) {
+  return (
+    value.startsWith("/api/projects/") &&
+    value.includes("/preview/content/") &&
+    value.endsWith("/") &&
+    value.length <= 2_048 &&
+    !/[\r\n\u0000?#]/.test(value) &&
+    !value.split("/").some((segment) => segment === "..")
+  );
+}
+
+function assertPreviewRequest(
+  port: number,
+  request: SandboxPreviewRequest,
+) {
+  if (
+    port !== 3000 ||
+    (request.method !== "GET" && request.method !== "HEAD") ||
+    !request.pathAndQuery.startsWith("/") ||
+    request.pathAndQuery.length > 4_096 ||
+    /[\r\n\u0000]/.test(request.pathAndQuery)
+  ) {
+    throw new Error("E2B Preview request is invalid");
+  }
+}
+
+function requireTrafficAccessToken(sandbox: E2BSandbox) {
+  if (!sandbox.trafficAccessToken) {
+    throw new Error("E2B Preview traffic access token is unavailable");
+  }
+  return sandbox.trafficAccessToken;
+}
+
+async function waitForPreviewReady(
+  sandbox: E2BSandbox,
+  processId: number,
+  port: number,
+  contentBasePath: string,
+  timeoutMs: number,
+) {
+  const deadline = Date.now() + timeoutMs;
+  const trafficAccessToken = requireTrafficAccessToken(sandbox);
+
+  while (Date.now() < deadline) {
+    const processes = await sandbox.commands.list();
+    if (!processes.some((process) => process.pid === processId)) {
+      throw new SandboxPreviewUnavailableError(
+        "Preview process exited before the port became ready",
+      );
+    }
+
+    try {
+      const response = await fetch(
+        `https://${sandbox.getHost(port)}${contentBasePath}`,
+        {
+          headers: {
+            "e2b-traffic-access-token": trafficAccessToken,
+          },
+          redirect: "manual",
+          signal: AbortSignal.timeout(2_000),
+        },
+      );
+      await response.body?.cancel();
+      if (![502, 503, 504].includes(response.status)) {
+        return;
+      }
+    } catch {
+      // Port startup is polled until the bounded deadline.
+    }
+
+    await sleep(500);
+  }
+
+  throw new SandboxPreviewUnavailableError(
+    "Preview port did not become ready before the startup deadline",
+  );
+}
+
+function sleep(durationMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function requirePositiveTimeout(value: number) {

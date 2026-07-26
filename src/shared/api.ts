@@ -13,7 +13,14 @@ export type PlatformCapabilitiesResponse = {
   agentRuntimeIds: AgentRuntimeId[];
   defaultAgentRuntimeId: AgentRuntimeId;
   runCreationEnabled: boolean;
+  previewEnabled: boolean;
   terminalEnabled: boolean;
+};
+
+export type ProjectPreviewResponse = {
+  contentUrl: string | null;
+  expiresAt: string | null;
+  status: "running" | "starting" | "stopped";
 };
 
 export type SandboxLeaseResponse = {
@@ -127,6 +134,7 @@ export type ApiErrorResponse = {
     | "internal_error"
     | "not_found"
     | "path_not_found"
+    | "preview_unavailable"
     | "project_busy"
     | "runs_disabled"
     | "sandbox_unavailable"

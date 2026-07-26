@@ -39,6 +39,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamOutput, setStreamOutput] = useState("");
   const [streamError, setStreamError] = useState<BrowserApiError | null>(null);
+  const [previewActive, setPreviewActive] = useState(false);
+  const [previewStarting, setPreviewStarting] = useState(false);
   const [terminalActive, setTerminalActive] = useState(false);
   const [view, setView] = useState<ProjectConsoleView>("conversation");
 
@@ -132,6 +134,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     setActiveRunId(null);
     setStreamOutput("");
     setStreamError(null);
+    setPreviewActive(false);
+    setPreviewStarting(false);
     setTerminalActive(false);
     setView("conversation");
   }, [projectId]);
@@ -256,6 +260,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             disabled={
               activeRunIsBlocking ||
               runCreationUnavailable ||
+              previewStarting ||
               terminalActive
             }
             onClick={() => composerRef.current?.focus()}
@@ -343,6 +348,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
               createRun.isPending ||
               activeRunIsBlocking ||
               runCreationUnavailable ||
+              previewStarting ||
               terminalActive
             }
             error={createRun.error}
@@ -356,6 +362,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           hasActiveRun={activeRunIsBlocking}
           isStopping={stopSandbox.isPending}
           onStopSandbox={() => stopSandbox.mutate()}
+          onPreviewActivityChange={setPreviewActive}
+          onPreviewStartingChange={setPreviewStarting}
           onTerminalActivityChange={(active) => {
             setTerminalActive(active);
             if (!active) {
@@ -365,6 +373,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             }
           }}
           project={project.data}
+          previewActive={previewActive}
+          previewEnabled={
+            platformCapabilities.data?.previewEnabled === true
+          }
+          previewStarting={previewStarting}
           run={currentRun}
           stopError={stopSandbox.error}
           terminalActive={terminalActive}

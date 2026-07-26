@@ -18,15 +18,21 @@ import {
 } from "../presentation";
 import { ErrorState } from "./ui-states";
 import { ProjectFiles } from "./project-files";
+import { ProjectPreview } from "./project-preview";
 import { ProjectTerminal } from "./project-terminal";
 
-type InspectorView = "files" | "overview" | "terminal";
+type InspectorView = "files" | "overview" | "preview" | "terminal";
 
 export function ProjectInspector({
   hasActiveRun,
   isStopping,
   onStopSandbox,
+  onPreviewActivityChange,
+  onPreviewStartingChange,
   onTerminalActivityChange,
+  previewActive,
+  previewEnabled,
+  previewStarting,
   project,
   run,
   stopError,
@@ -36,7 +42,12 @@ export function ProjectInspector({
   hasActiveRun: boolean;
   isStopping: boolean;
   onStopSandbox: () => void;
+  onPreviewActivityChange(active: boolean): void;
+  onPreviewStartingChange(starting: boolean): void;
   onTerminalActivityChange(active: boolean): void;
+  previewActive: boolean;
+  previewEnabled: boolean;
+  previewStarting: boolean;
   project: ProjectResponse;
   run: AgentRunResponse | undefined;
   stopError: Error | null;
@@ -49,11 +60,17 @@ export function ProjectInspector({
       setView("overview");
     }
   }, [terminalEnabled, view]);
+  useEffect(() => {
+    if (!previewEnabled && view === "preview") {
+      setView("overview");
+    }
+  }, [previewEnabled, view]);
   const lease = project.sandboxLease;
   const canStop =
     lease !== null &&
     lease.status !== "stopped" &&
     !hasActiveRun &&
+    !previewActive &&
     !terminalActive &&
     !isStopping;
 
@@ -99,7 +116,19 @@ export function ProjectInspector({
         ) : (
           <DisabledInspectorTab label="Terminal" />
         )}
-        <DisabledInspectorTab label="Preview" />
+        {previewEnabled ? (
+          <button
+            aria-selected={view === "preview"}
+            className={`inspector-tab ${view === "preview" ? "inspector-tab-active" : ""}`}
+            onClick={() => setView("preview")}
+            role="tab"
+            type="button"
+          >
+            Preview
+          </button>
+        ) : (
+          <DisabledInspectorTab label="Preview" />
+        )}
       </div>
 
       {view === "overview" ? (
@@ -159,9 +188,21 @@ export function ProjectInspector({
       {terminalEnabled ? (
         <ProjectTerminal
           active={view === "terminal"}
-          hasActiveRun={hasActiveRun}
+          hasActiveRun={hasActiveRun || previewStarting}
           onActivityChange={onTerminalActivityChange}
           projectId={project.id}
+        />
+      ) : null}
+      {previewEnabled ? (
+        <ProjectPreview
+          active={view === "preview"}
+          onActivityChange={onPreviewActivityChange}
+          onStartingChange={onPreviewStartingChange}
+          projectBusy={hasActiveRun || terminalActive}
+          projectId={project.id}
+          sandboxAvailable={
+            lease !== null && isActiveSandboxLease(lease.status)
+          }
         />
       ) : null}
     </aside>

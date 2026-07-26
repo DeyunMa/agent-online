@@ -5,8 +5,9 @@ import {
   type SandboxConnectOpts,
   type SandboxOpts,
 } from "e2b";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { SandboxUnavailableError } from "./contract";
 import { E2BSandboxRuntime, type E2BSandboxClient } from "./e2b-runtime";
 
 describe("E2BSandboxRuntime", () => {
@@ -36,6 +37,10 @@ describe("E2BSandboxRuntime", () => {
     expect(client.created).toMatchObject({
       options: {
         metadata: { app: "agent-online", projectId: "project-1", sandboxLeaseId: "lease-1" },
+        network: {
+          allowPublicTraffic: false,
+          maskRequestHost: "localhost:${PORT}",
+        },
         timeoutMs: 1_000,
       },
       templateId: "template-1",
@@ -136,6 +141,68 @@ describe("E2BSandboxRuntime", () => {
         type: "terminal.exited",
       },
     ]);
+  });
+
+  it("starts and proxies only the private fixed Vite Preview preset", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async (_input, _init) =>
+        new Response("<h1>Preview</h1>", {
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const sandbox = new FakeE2BSandbox("sandbox-existing");
+      const runtime = createRuntime(new FakeE2BClient(sandbox));
+      const handle = await runtime.ensureLease({
+        projectId: "project-1",
+        providerRef: "sandbox-existing",
+        sandboxLeaseId: "lease-1",
+      });
+
+      const contentBasePath =
+        "/api/projects/project-1/preview/content/capability/";
+      const started = await runtime.startPreview(handle, {
+        contentBasePath,
+        port: 3000,
+        preset: "vite-v1",
+        processTimeoutMs: 1_815_000,
+        startupTimeoutMs: 2_000,
+      });
+      const response = await runtime.fetchPreview(handle, 3000, {
+        headers: { accept: "text/html" },
+        method: "GET",
+        pathAndQuery: `${contentBasePath}assets/app.js?v=1`,
+      });
+
+      expect(started).toEqual({ providerProcessRef: "42" });
+      expect(sandbox.command).toBe(
+        "'./node_modules/.bin/vite' '--host' '0.0.0.0' '--port' '3000' '--strictPort' '--base' '/api/projects/project-1/preview/content/capability/'",
+      );
+      expect(sandbox.commandOptions).toMatchObject({
+        background: true,
+        cwd: "/workspace",
+        envs: {
+          BROWSER: "none",
+          HOST: "0.0.0.0",
+          PORT: "3000",
+        },
+        timeoutMs: 1_815_000,
+      });
+      expect(sandbox.process.disconnected).toBe(true);
+      expect(response.status).toBe(200);
+      const proxyCall = fetchMock.mock.calls.at(-1);
+      expect(proxyCall?.[0]).toBe(
+        "https://3000-sandbox-existing.example.test/api/projects/project-1/preview/content/capability/assets/app.js?v=1",
+      );
+      expect(
+        new Headers(proxyCall?.[1]?.headers).get(
+          "e2b-traffic-access-token",
+        ),
+      ).toBe("traffic-token");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("terminates a persisted PTY reference through the terminal capability", async () => {
@@ -247,6 +314,33 @@ describe("E2BSandboxRuntime", () => {
     expect(handle).toEqual({ id: "sandbox-new", kind: "e2b", sandboxLeaseId: "lease-1" });
     expect(client.created?.templateId).toBe("template-1");
   });
+
+  it("converges Preview operations when the recorded sandbox has expired", async () => {
+    const client = new FakeE2BClient(
+      new FakeE2BSandbox("sandbox-expired"),
+    );
+    client.connectError = new SandboxNotFoundError("expired");
+    const runtime = createRuntime(client);
+    const handle = {
+      id: "sandbox-expired",
+      kind: "e2b" as const,
+      sandboxLeaseId: "lease-1",
+    };
+
+    await expect(
+      runtime.isPreviewRunning(handle, "42", 3000),
+    ).resolves.toBe(false);
+    await expect(
+      runtime.terminatePreview(handle, "42", "expired"),
+    ).resolves.toBeUndefined();
+    await expect(
+      runtime.fetchPreview(handle, 3000, {
+        headers: {},
+        method: "GET",
+        pathAndQuery: "/api/projects/project-1/preview/content/token/",
+      }),
+    ).rejects.toBeInstanceOf(SandboxUnavailableError);
+  });
 });
 
 class FakeE2BClient implements E2BSandboxClient {
@@ -316,6 +410,7 @@ class FakeE2BSandbox {
       this.killedProcessIds.push(processId);
       return this.processKillResult;
     },
+    list: async () => [{ pid: this.process.pid }],
     run: async (command: string, options: CommandStartOpts & { background: true }) => {
       this.command = command;
       this.commandOptions = options;
@@ -347,6 +442,12 @@ class FakeE2BSandbox {
 
   constructor(readonly sandboxId: string) {}
 
+  getHost(port: number) {
+    return `${port}-${this.sandboxId}.example.test`;
+  }
+
+  readonly trafficAccessToken = "traffic-token";
+
   async kill() {
     this.killed = true;
     return true;
@@ -358,8 +459,13 @@ class FakeE2BSandbox {
 }
 
 class FakeE2BCommandHandle {
+  disconnected = false;
   readonly pid = 42;
   readonly stdin: string[] = [];
+
+  async disconnect() {
+    this.disconnected = true;
+  }
 
   async kill() {
     return true;

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   D1AgentRunRepository,
   D1MessageRepository,
+  D1PreviewSessionRepository,
   D1ProjectRepository,
   D1SandboxLeaseRepository,
   D1TerminalSessionRepository,
@@ -252,6 +253,9 @@ describe("D1 persistence adapters", () => {
     expect(db.prepared[0]?.query).toContain(
       "FROM terminal_sessions",
     );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM preview_sessions",
+    );
     expect(db.prepared[0]?.bindings).toEqual([
       "2026-07-25T00:13:00.000Z",
       "lease-1",
@@ -279,6 +283,9 @@ describe("D1 persistence adapters", () => {
     );
     expect(db.prepared[0]?.query).toContain(
       "FROM terminal_sessions",
+    );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM preview_sessions",
     );
     expect(db.prepared[0]?.bindings).toEqual([
       "2026-07-25T00:13:00.000Z",
@@ -310,12 +317,53 @@ describe("D1 persistence adapters", () => {
     expect(db.prepared[0]?.query).toContain(
       "FROM terminal_sessions",
     );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM preview_sessions",
+    );
     expect(db.prepared[0]?.bindings).toEqual([
       "2026-07-25T00:04:00.000Z",
       "lease-1",
       "provider-private-sandbox",
       "2026-07-25T00:03:00.000Z",
     ]);
+  });
+
+  it("clears stale Preview ownership when a whole-sandbox failure marks the Lease stopped", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([
+      result(),
+      result([], 0),
+      result([
+        {
+          created_at: "2026-07-25T00:00:00.000Z",
+          id: "lease-1",
+          project_id: "project-1",
+          provider_ref: null,
+          sandbox_runtime_id: "e2b",
+          status: "stopped",
+          updated_at: "2026-07-25T00:04:00.000Z",
+        },
+      ]),
+    ]);
+
+    const lease = await new D1SandboxLeaseRepository(
+      db.asBinding(),
+    ).updateState({
+      leaseId: "lease-1",
+      providerRef: null,
+      status: "stopped",
+      updatedAt: "2026-07-25T00:04:00.000Z",
+    });
+
+    expect(lease).toMatchObject({
+      id: "lease-1",
+      providerRef: null,
+      status: "stopped",
+    });
+    expect(db.batches[0]?.[1]?.query).toContain(
+      "DELETE FROM preview_sessions",
+    );
+    expect(db.batches[0]?.[1]?.bindings).toEqual(["lease-1"]);
   });
 
   it("atomically claims one ephemeral Terminal against an unchanged Lease", async () => {
@@ -363,6 +411,9 @@ describe("D1 persistence adapters", () => {
     expect(db.batches[0]?.[0]?.query).not.toContain(
       "ON CONFLICT(project_id) DO UPDATE",
     );
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "status = 'starting'",
+    );
   });
 
   it("returns project_busy when the atomic Terminal claim changes no row", async () => {
@@ -406,6 +457,86 @@ describe("D1 persistence adapters", () => {
     ]);
     expect(db.batches[0]?.[1]?.query).toContain(
       "DELETE FROM terminal_sessions",
+    );
+  });
+
+  it("atomically claims and maps one fixed-port Preview session", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([
+      result(),
+      result([
+        {
+          created_at: "2026-07-25T00:30:00.000Z",
+          expires_at: "2026-07-25T01:00:00.000Z",
+          id: "preview-new",
+          port: 3000,
+          project_id: "project-1",
+          provider_process_ref: null,
+          provider_sandbox_ref: "sandbox-1",
+          sandbox_lease_id: "lease-1",
+          status: "starting",
+          updated_at: "2026-07-25T00:30:00.000Z",
+        },
+      ]),
+    ]);
+
+    const claimed = await new D1PreviewSessionRepository(
+      db.asBinding(),
+    ).claim({
+      expectedLeaseProviderRef: "sandbox-1",
+      expectedLeaseUpdatedAt: "2026-07-25T00:29:00.000Z",
+      expiresAt: "2026-07-25T01:00:00.000Z",
+      id: "preview-new",
+      now: "2026-07-25T00:30:00.000Z",
+      port: 3000,
+      projectId: "project-1",
+      sandboxLeaseId: "lease-1",
+    });
+
+    expect(claimed).toEqual({
+      kind: "claimed",
+      session: {
+        createdAt: "2026-07-25T00:30:00.000Z",
+        expiresAt: "2026-07-25T01:00:00.000Z",
+        id: "preview-new",
+        port: 3000,
+        projectId: "project-1",
+        providerProcessRef: null,
+        providerSandboxRef: "sandbox-1",
+        sandboxLeaseId: "lease-1",
+        status: "starting",
+        updatedAt: "2026-07-25T00:30:00.000Z",
+      },
+    });
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "sandbox_leases.status IN ('idle', 'ready')",
+    );
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "FROM agent_runs",
+    );
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "FROM terminal_sessions",
+    );
+  });
+
+  it("clears a matching Preview row when Terminal fallback stops the whole sandbox", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([result([], 0), result(), result()]);
+
+    const released = await new D1TerminalSessionRepository(
+      db.asBinding(),
+    ).releaseAndMarkLeaseStopped({
+      expectedProviderSandboxRef: "sandbox-1",
+      now: "2026-07-25T00:31:00.000Z",
+      sessionId: "terminal-1",
+    });
+
+    expect(released).toBe(true);
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "DELETE FROM preview_sessions",
+    );
+    expect(db.batches[0]?.[1]?.query).toContain(
+      "status = 'stopped'",
     );
   });
 

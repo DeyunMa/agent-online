@@ -22,6 +22,7 @@ describe("Worker API", () => {
     await expect(response.json()).resolves.toEqual({
       agentRuntimeIds: ["pi"],
       defaultAgentRuntimeId: "pi",
+      previewEnabled: false,
       runCreationEnabled: false,
       terminalEnabled: false,
     });
@@ -47,6 +48,7 @@ describe("Worker API", () => {
 
     await expect(spike.json()).resolves.toMatchObject({
       agentRuntimeIds: ["pi"],
+      previewEnabled: true,
       terminalEnabled: true,
     });
     await expect(publicResponse.json()).resolves.toMatchObject({

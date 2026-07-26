@@ -6,6 +6,8 @@ import type {
   CreateQueuedAgentRunResult,
   MessageRecord,
   MessageRepository,
+  PreviewSessionRecord,
+  PreviewSessionRepository,
   ProjectRecord,
   ProjectRepository,
   SandboxLeaseRecord,
@@ -84,6 +86,19 @@ type TerminalSessionRow = {
   provider_process_ref: string | null;
   provider_sandbox_ref: string | null;
   sandbox_lease_id: string;
+  updated_at: string;
+};
+
+type PreviewSessionRow = {
+  created_at: string;
+  expires_at: string;
+  id: string;
+  port: number;
+  project_id: string;
+  provider_process_ref: string | null;
+  provider_sandbox_ref: string;
+  sandbox_lease_id: string;
+  status: PreviewSessionRecord["status"];
   updated_at: string;
 };
 
@@ -167,6 +182,19 @@ const terminalSessionColumns = `
   updated_at
 `;
 
+const previewSessionColumns = `
+  id,
+  project_id,
+  sandbox_lease_id,
+  provider_sandbox_ref,
+  provider_process_ref,
+  status,
+  port,
+  expires_at,
+  created_at,
+  updated_at
+`;
+
 function toProjectRecord(row: ProjectRow): ProjectRecord {
   return {
     createdAt: row.created_at,
@@ -243,6 +271,23 @@ function toTerminalSessionRecord(
   };
 }
 
+function toPreviewSessionRecord(
+  row: PreviewSessionRow,
+): PreviewSessionRecord {
+  return {
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    id: row.id,
+    port: row.port,
+    projectId: row.project_id,
+    providerProcessRef: row.provider_process_ref,
+    providerSandboxRef: row.provider_sandbox_ref,
+    sandboxLeaseId: row.sandbox_lease_id,
+    status: row.status,
+    updatedAt: row.updated_at,
+  };
+}
+
 function toUsageMetrics(row: UsageAggregateRow): UsageMetrics {
   const metrics = {
     inputTokens: row.input_tokens,
@@ -308,6 +353,7 @@ function isActiveAgentRunConflict(error: unknown): boolean {
   const text = errorText(error);
 
   return (
+    text.includes("project_preview_starting") ||
     text.includes("project_terminal_active") ||
     ((text.includes("agent_runs.project_id") ||
       text.includes("agent_runs_one_active_per_project")) &&
@@ -471,6 +517,11 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
             SELECT 1
             FROM terminal_sessions
             WHERE project_id = sandbox_leases.project_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM preview_sessions
+            WHERE project_id = sandbox_leases.project_id
           )`,
       )
       .bind(
@@ -507,6 +558,11 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
           AND NOT EXISTS (
             SELECT 1
             FROM terminal_sessions
+            WHERE project_id = sandbox_leases.project_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM preview_sessions
             WHERE project_id = sandbox_leases.project_id
           )`,
       )
@@ -552,6 +608,11 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
           AND NOT EXISTS (
             SELECT 1
             FROM terminal_sessions
+            WHERE project_id = sandbox_leases.project_id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM preview_sessions
             WHERE project_id = sandbox_leases.project_id
           )`,
       )
@@ -611,7 +672,7 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
     updatedAt: string;
     leaseId: string;
   }): Promise<SandboxLeaseRecord> {
-    const results = await this.db.batch<SandboxLeaseRow>([
+    const statements: D1PreparedStatement[] = [
       this.db
         .prepare(
           `UPDATE sandbox_leases
@@ -619,14 +680,41 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
           WHERE id = ?`,
         )
         .bind(input.providerRef, input.status, input.updatedAt, input.leaseId),
-      this.db.prepare(`SELECT ${sandboxLeaseColumns} FROM sandbox_leases WHERE id = ? LIMIT 1`).bind(input.leaseId),
-    ]);
+    ];
+    if (input.status === "stopped" || input.providerRef === null) {
+      statements.push(
+        this.db
+          .prepare(
+            `DELETE FROM preview_sessions
+            WHERE sandbox_lease_id = ?`,
+          )
+          .bind(input.leaseId),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(
+          `SELECT ${sandboxLeaseColumns}
+          FROM sandbox_leases
+          WHERE id = ?
+          LIMIT 1`,
+        )
+        .bind(input.leaseId),
+    );
+    const results =
+      await this.db.batch<SandboxLeaseRow>(statements);
 
     if (results[0]?.meta.changes !== 1) {
       throw new Error(`Sandbox lease not found: ${input.leaseId}`);
     }
 
-    return toSandboxLeaseRecord(requireBatchRow<SandboxLeaseRow>(results, 1, "update sandbox lease"));
+    return toSandboxLeaseRecord(
+      requireBatchRow<SandboxLeaseRow>(
+        results,
+        results.length - 1,
+        "update sandbox lease",
+      ),
+    );
   }
 }
 
@@ -673,6 +761,12 @@ export class D1TerminalSessionRepository
               SELECT 1
               FROM terminal_sessions
               WHERE project_id = ?
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM preview_sessions
+              WHERE project_id = ?
+                AND status = 'starting'
             )`,
         )
         .bind(
@@ -685,6 +779,7 @@ export class D1TerminalSessionRepository
           input.projectId,
           input.expectedLeaseUpdatedAt,
           input.expectedLeaseProviderRef,
+          input.projectId,
           input.projectId,
           input.projectId,
         ),
@@ -895,6 +990,22 @@ export class D1TerminalSessionRepository
     const results = await this.db.batch([
       this.db
         .prepare(
+          `DELETE FROM preview_sessions
+          WHERE sandbox_lease_id = (
+            SELECT sandbox_lease_id
+            FROM terminal_sessions
+            WHERE id = ?
+              AND provider_sandbox_ref = ?
+          )
+            AND provider_sandbox_ref = ?`,
+        )
+        .bind(
+          input.sessionId,
+          input.expectedProviderSandboxRef,
+          input.expectedProviderSandboxRef,
+        ),
+      this.db
+        .prepare(
           `UPDATE sandbox_leases
           SET provider_ref = NULL, status = 'stopped', updated_at = ?
           WHERE id = (
@@ -933,8 +1044,8 @@ export class D1TerminalSessionRepository
     ]);
 
     return (
-      results[0]?.meta.changes === 1 &&
-      results[1]?.meta.changes === 1
+      results[1]?.meta.changes === 1 &&
+      results[2]?.meta.changes === 1
     );
   }
 
@@ -961,6 +1072,189 @@ export class D1TerminalSessionRepository
         input.expectedProviderSandboxRef,
         input.expectedProviderSandboxRef,
       )
+      .run();
+
+    return result.meta.changes === 1;
+  }
+}
+
+export class D1PreviewSessionRepository
+  implements PreviewSessionRepository
+{
+  constructor(private readonly db: D1Database) {}
+
+  async claim(input: {
+    expectedLeaseProviderRef: string;
+    expectedLeaseUpdatedAt: string;
+    expiresAt: string;
+    id: string;
+    now: string;
+    port: number;
+    projectId: string;
+    sandboxLeaseId: string;
+  }) {
+    const results = await this.db.batch<PreviewSessionRow>([
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO preview_sessions (
+            id,
+            project_id,
+            sandbox_lease_id,
+            provider_sandbox_ref,
+            provider_process_ref,
+            status,
+            port,
+            expires_at,
+            created_at,
+            updated_at
+          )
+          SELECT ?, ?, sandbox_leases.id, sandbox_leases.provider_ref, NULL,
+            'starting', ?, ?, ?, ?
+          FROM sandbox_leases
+          WHERE sandbox_leases.id = ?
+            AND sandbox_leases.project_id = ?
+            AND sandbox_leases.updated_at = ?
+            AND sandbox_leases.provider_ref = ?
+            AND sandbox_leases.status IN ('idle', 'ready')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM agent_runs
+              WHERE project_id = ?
+                AND status IN ('queued', 'starting', 'running', 'cancelling')
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM terminal_sessions
+              WHERE project_id = ?
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM preview_sessions
+              WHERE project_id = ?
+            )`,
+        )
+        .bind(
+          input.id,
+          input.projectId,
+          input.port,
+          input.expiresAt,
+          input.now,
+          input.now,
+          input.sandboxLeaseId,
+          input.projectId,
+          input.expectedLeaseUpdatedAt,
+          input.expectedLeaseProviderRef,
+          input.projectId,
+          input.projectId,
+          input.projectId,
+        ),
+      this.db
+        .prepare(
+          `SELECT ${previewSessionColumns}
+          FROM preview_sessions
+          WHERE id = ?
+          LIMIT 1`,
+        )
+        .bind(input.id),
+    ]);
+
+    if (results[0]?.meta.changes !== 1) {
+      return { kind: "project_busy" } as const;
+    }
+
+    return {
+      kind: "claimed" as const,
+      session: toPreviewSessionRecord(
+        requireBatchRow<PreviewSessionRow>(
+          results,
+          1,
+          "claim Preview session",
+        ),
+      ),
+    };
+  }
+
+  async findById(sessionId: string) {
+    const row = await this.db
+      .prepare(
+        `SELECT ${previewSessionColumns}
+        FROM preview_sessions
+        WHERE id = ?
+        LIMIT 1`,
+      )
+      .bind(sessionId)
+      .first<PreviewSessionRow>();
+
+    return row === null ? null : toPreviewSessionRecord(row);
+  }
+
+  async findByProjectId(projectId: string) {
+    const row = await this.db
+      .prepare(
+        `SELECT ${previewSessionColumns}
+        FROM preview_sessions
+        WHERE project_id = ?
+        LIMIT 1`,
+      )
+      .bind(projectId)
+      .first<PreviewSessionRow>();
+
+    return row === null ? null : toPreviewSessionRecord(row);
+  }
+
+  async markRunning(
+    sessionId: string,
+    providerProcessRef: string,
+    now: string,
+  ) {
+    if (!providerProcessRef || providerProcessRef.length > 512) {
+      throw new Error("Preview provider process reference is invalid");
+    }
+
+    const results = await this.db.batch<PreviewSessionRow>([
+      this.db
+        .prepare(
+          `UPDATE preview_sessions
+          SET provider_process_ref = ?, status = 'running', updated_at = ?
+          WHERE id = ?
+            AND status = 'starting'
+            AND provider_process_ref IS NULL`,
+        )
+        .bind(providerProcessRef, now, sessionId),
+      this.db
+        .prepare(
+          `SELECT ${previewSessionColumns}
+          FROM preview_sessions
+          WHERE id = ?
+          LIMIT 1`,
+        )
+        .bind(sessionId),
+    ]);
+
+    if (results[0]?.meta.changes !== 1) {
+      return null;
+    }
+
+    return toPreviewSessionRecord(
+      requireBatchRow<PreviewSessionRow>(
+        results,
+        1,
+        "mark Preview running",
+      ),
+    );
+  }
+
+  async release(input: {
+    expectedProviderSandboxRef: string;
+    sessionId: string;
+  }) {
+    const result = await this.db
+      .prepare(
+        `DELETE FROM preview_sessions
+        WHERE id = ?
+          AND provider_sandbox_ref = ?`,
+      )
+      .bind(input.sessionId, input.expectedProviderSandboxRef)
       .run();
 
     return result.meta.changes === 1;
