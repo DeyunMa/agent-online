@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2、D3 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。Goose UI 仍关闭；跨 Run 用量聚合、Terminal 与 Preview 待完成。
+> 状态：D2、D3 Files 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。当前用户跨 Run 用量聚合已完成本地验收、待发布 Preview；Goose UI、Terminal 与 Preview 仍关闭。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -123,13 +123,13 @@ sequenceDiagram
 | `/api/projects/:id/agent-runs/:runId/events` | 订阅 D1 轮询出的状态和终态，不公开 raw Agent 输出。 |
 | `/api/projects/:id/agent-runs/:runId/cancel` | 取消当前 Run。 |
 | `/api/projects/:id/sandbox/stop` | 在没有非终态 Run 时原子脱离并停止当前沙箱；不公开 Provider ID。 |
+| `/api/usage` | 认证后按当前 `user_id` 返回全量 AgentRun 总计、Project 和 AgentRuntime 聚合，不返回用户或 Provider 私有字段。 |
 
 以下 API 留待后续 Runtime 或管理能力阶段实现：
 
 | 路径 | 作用 |
 | --- | --- |
 | `/api/projects/:id/sandbox` | 查看应用级 Lease 的公开状态。 |
-| `/api/usage` | 当前用户的 AgentRun 聚合用量。 |
 | `/api/admin/usage` | 仅 `ADMIN_EMAILS` allowlist 使用的基础汇总。 |
 
 所有 API 都以应用级资源 ID 工作。公共 API 不接受或返回 `provider_ref`；`agent_runtime_id` 只能由服务端 registry 和策略白名单解析，不能直接转换为 shell 命令。

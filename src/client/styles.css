@@ -196,6 +196,10 @@ textarea:disabled {
   border-left: 1px solid var(--border);
 }
 
+.icon-button.app-header-usage {
+  display: none;
+}
+
 .account-avatar {
   display: grid;
   flex: 0 0 34px;
@@ -365,6 +369,39 @@ textarea:disabled {
   color: var(--text);
 }
 
+.project-sidebar-footer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.project-sidebar-usage {
+  display: grid;
+  min-height: 38px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.project-sidebar-usage:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.project-sidebar-usage-active {
+  border-color: var(--border);
+  background: #eaeae7;
+  color: var(--text);
+  font-weight: 600;
+}
+
 .project-sidebar-new {
   display: flex;
   height: 44px;
@@ -372,7 +409,7 @@ textarea:disabled {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 12px 14px 14px;
+  margin: 0;
   border: 1px solid var(--border-strong);
   border-radius: 5px;
   background: var(--surface);
@@ -1277,7 +1314,8 @@ textarea:disabled {
 }
 
 .project-index,
-.create-project-page {
+.create-project-page,
+.usage-page {
   height: 100%;
   overflow: auto;
   background: var(--surface);
@@ -1285,6 +1323,185 @@ textarea:disabled {
 
 .project-index {
   padding: 30px clamp(24px, 5vw, 72px);
+}
+
+.usage-page {
+  padding: 30px clamp(24px, 5vw, 72px) 48px;
+}
+
+.usage-page-content {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+}
+
+.usage-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.usage-page-header h1 {
+  font-size: 26px;
+  line-height: 1.2;
+}
+
+.usage-page-header > div > p:last-child,
+.usage-breakdown header p,
+.usage-empty-state span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.usage-refresh {
+  border-color: var(--border);
+}
+
+.usage-report {
+  display: grid;
+  gap: 32px;
+}
+
+.usage-summary {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.35fr) repeat(4, minmax(120px, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.usage-summary-total,
+.usage-summary-metric {
+  display: flex;
+  min-width: 0;
+  min-height: 104px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px;
+}
+
+.usage-summary-total {
+  background: var(--surface-subtle);
+}
+
+.usage-summary-metric {
+  border-left: 1px solid var(--border);
+}
+
+.usage-summary span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.usage-summary strong {
+  overflow-wrap: anywhere;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.usage-summary-total strong {
+  font-size: 27px;
+}
+
+.usage-summary small {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.usage-breakdown {
+  min-width: 0;
+}
+
+.usage-breakdown > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.usage-breakdown h2 {
+  font-size: 15px;
+}
+
+.usage-table-scroll {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.usage-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usage-table th,
+.usage-table td {
+  height: 46px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.usage-table thead th {
+  height: 38px;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.usage-table th:first-child,
+.usage-table td:first-child {
+  width: 34%;
+  text-align: left;
+}
+
+.usage-table tbody th {
+  font-weight: 600;
+}
+
+.usage-table tbody tr:last-child th,
+.usage-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.usage-project-link {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 7px;
+}
+
+.usage-project-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-project-link svg {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+}
+
+.usage-project-link:hover {
+  text-decoration: underline;
+}
+
+.usage-empty-state {
+  min-height: 260px;
+}
+
+.usage-empty-state > div {
+  display: grid;
+  gap: 3px;
+  text-align: center;
 }
 
 .page-command-bar {
@@ -1668,6 +1885,10 @@ textarea:disabled {
     display: none;
   }
 
+  .icon-button.app-header-usage {
+    display: inline-grid;
+  }
+
   .project-sidebar {
     display: none;
   }
@@ -1809,7 +2030,8 @@ textarea:disabled {
   }
 
   .project-index,
-  .create-project-page {
+  .create-project-page,
+  .usage-page {
     min-height: calc(100dvh - var(--header-height));
     height: auto;
     padding: 22px 14px;
@@ -1821,8 +2043,35 @@ textarea:disabled {
   }
 
   .page-command-bar h1,
-  .create-project-page h1 {
+  .create-project-page h1,
+  .usage-page-header h1 {
     font-size: 22px;
+  }
+
+  .usage-page-header {
+    align-items: center;
+  }
+
+  .usage-page-header > div > p:last-child {
+    max-width: 240px;
+  }
+
+  .usage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .usage-summary-total {
+    grid-column: 1 / -1;
+  }
+
+  .usage-summary-metric {
+    min-height: 88px;
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .usage-summary-metric:nth-child(even) {
+    border-right: 1px solid var(--border);
   }
 
   .project-row {

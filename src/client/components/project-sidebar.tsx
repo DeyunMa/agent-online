@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  ChartNoAxesColumn,
   ChevronRight,
   Folder,
   LoaderCircle,
@@ -86,10 +87,23 @@ export function ProjectSidebar() {
         ) : null}
       </div>
 
-      <Link className="project-sidebar-new" to="/projects/new">
-        <Plus aria-hidden="true" size={17} />
-        <span>New project</span>
-      </Link>
+      <div className="project-sidebar-footer">
+        <Link
+          activeProps={{
+            className:
+              "project-sidebar-usage project-sidebar-usage-active",
+          }}
+          className="project-sidebar-usage"
+          to="/usage"
+        >
+          <ChartNoAxesColumn aria-hidden="true" size={16} />
+          <span>Usage</span>
+        </Link>
+        <Link className="project-sidebar-new" to="/projects/new">
+          <Plus aria-hidden="true" size={17} />
+          <span>New project</span>
+        </Link>
+      </div>
     </aside>
   );
 }

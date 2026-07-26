@@ -10,6 +10,7 @@ import type {
   ProjectDirectoryResponse,
   ProjectFileResponse,
   ProjectResponse,
+  UserUsageResponse,
 } from "../shared/api";
 
 export class BrowserApiError extends Error {
@@ -191,6 +192,10 @@ export const browserApi = {
 
   getProject(projectId: string) {
     return requestJson<ProjectResponse>(`/api/projects/${encodeURIComponent(projectId)}`);
+  },
+
+  getUsage() {
+    return requestJson<UserUsageResponse>("/api/usage");
   },
 
   listMessages(projectId: string) {

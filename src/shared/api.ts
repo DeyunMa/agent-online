@@ -48,6 +48,24 @@ export type AgentRunUsageResponse = {
   totalTokens: number;
 };
 
+export type UsageMetricsResponse = AgentRunUsageResponse & {
+  runCount: number;
+};
+
+export type UserUsageResponse = {
+  agentRuntimes: Array<{
+    agentRuntimeId: AgentRuntimeId;
+    usage: UsageMetricsResponse;
+  }>;
+  projects: Array<{
+    projectId: string;
+    projectTitle: string;
+    usage: UsageMetricsResponse;
+  }>;
+  scope: "all_time";
+  totals: UsageMetricsResponse;
+};
+
 export type AgentRunResponse = {
   agentRuntimeId: AgentRuntimeId;
   createdAt: string;

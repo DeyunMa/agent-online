@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；只读 Files 不新增持久化，用户/管理聚合视图待实现。
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；当前用户跨 Run 聚合 API/UI 已完成本地验收、待发布 Preview，维护者视图仍待实现。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -70,7 +70,14 @@ BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的�
 
 ## 5. 用量与管理，不是计费
 
-Project Inspector 可以显示所选 Run 的真实聚合值；fake Runtime 的值仍为零。跨 Run 的用户用量页与内部管理视图尚未实现，是 Files 之后的下一项产品能力；第一版直接聚合 `agent_runs`，不新增 `usage_events`。
+Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token 与模型请求仍为零。认证后的 `GET /api/usage` 与 Usage 页面已经实现，直接按当前 `user_id` 聚合全部现存 `agent_runs`，返回：
+
+- `totals`：Run 数、输入/输出/总 token、模型请求数和沙箱时长；
+- `projects`：按 Project 分组的同一组指标；
+- `agentRuntimes`：按 AgentRuntime 分组的同一组指标；
+- `scope: "all_time"`：当前版本没有日期筛选或时间序列。
+
+聚合不按 Run 状态过滤。取消、失败、超时或仍在执行的 Run 只要已有真实落库用量，就计入当前读数。前端只显示 API 数据，不推算价格；实现没有新增迁移、`usage_events`、外部依赖或环境变量。内部管理视图仍未实现。
 
 `AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
 

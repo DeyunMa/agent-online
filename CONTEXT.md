@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2 与 D3 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择仍关闭；跨 Run 用量聚合、Terminal 和 Preview 待完成。
+> 状态：D2 与 D3 Files 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。当前用户跨 Run 用量聚合已完成本地验收、待发布 Preview；Goose 浏览器选择、Terminal 和 Preview 仍未开放。
 
 ## 产品定义
 
@@ -21,7 +21,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，不能当作跨请求 Project 文件。 |
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
-| `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 真实 Runtime 写 token、模型请求数和沙箱时长；它不是账单流水或套餐。 |
+| `UsageSummary` | `AgentRun` 上的聚合计量字段，以及由这些字段计算出的当前用户汇总。 | 真实 Runtime 写 token、模型请求数和沙箱时长；`GET /api/usage` 只做全量聚合，它不是账单流水或套餐。 |
 
 ## 对应关系
 
@@ -48,7 +48,7 @@ erDiagram
 7. Agent、shell、用户代码和开发服务在低信任沙箱内；Hono 控制平面、D1 和平台 Gemini Key 在沙箱外。
 8. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；两者都不能直接修改 Project/Run 的 D1 事实。
 9. Pi 和任何新增 Runtime 的平台模型调用必须经 `ModelGateway`；沙箱只有受限、短时的调用通道，永远不获得原始 Gemini Key。平台不记录私有推理。
-10. `AgentRun` 终态写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
+10. `AgentRun` 写入实际 token、模型请求数和沙箱时长；`GET /api/usage` 只按已认证 `user_id` 聚合全部现存 Run。失败、取消或超时 Run 的已记录消耗仍计入，它不是价格或账单。
 11. 真实执行 owner 是 [ADR-0003](./docs/adr/0003-agent-run-workflow.md) 中每个 Run 一个的 `AgentRunWorkflow`；Workflow 重试不能再次启动已非 `queued` 的 Run。
 12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED` 是紧急停止新执行的服务端开关，设为 `false` 时必须在任何 Message、Lease 或 AgentRun 写入前失败。
 13. 只读 Files 只附着已有、具有 Lease 级文件连续性的沙箱；不因浏览而创建沙箱。它在无活动 Run 时做尽力一致读取，但不是文件系统事务或严格并发锁。

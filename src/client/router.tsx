@@ -27,6 +27,7 @@ import {
 } from "./components/app-header-slot";
 import { ProjectConsole } from "./components/project-console";
 import { ProjectSidebar } from "./components/project-sidebar";
+import { UsagePage } from "./components/usage-page";
 import { ErrorState, LoadingState } from "./components/ui-states";
 import {
   formatDateTime,
@@ -565,10 +566,16 @@ const projectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectId",
 });
+const usageRoute = createRoute({
+  component: UsagePage,
+  getParentRoute: () => rootRoute,
+  path: "/usage",
+});
 const routeTree = rootRoute.addChildren([
   indexRoute,
   createProjectRoute,
   projectRoute,
+  usageRoute,
 ]);
 
 export const router = createRouter({ routeTree });

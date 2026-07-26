@@ -18,6 +18,7 @@ import {
   projectMessagesQueryKey,
   projectQueryKey,
   platformCapabilitiesQueryKey,
+  userUsageQueryKey,
 } from "../query-keys";
 import { ProjectInspector } from "./project-inspector";
 import {
@@ -372,5 +373,6 @@ async function invalidateProjectState(
     queryClient.invalidateQueries({
       queryKey: projectDetailQueryKey(projectId),
     }),
+    queryClient.invalidateQueries({ queryKey: userUsageQueryKey }),
   ]);
 }

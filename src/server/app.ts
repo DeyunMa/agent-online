@@ -8,6 +8,7 @@ import type { AppEnv } from "./env";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
 import { getInstalledSandboxRuntimeId } from "./runtime-config";
+import { createUsageApi } from "./usage-api";
 
 export const app = new Hono<AppEnv>();
 
@@ -42,6 +43,7 @@ app.post(modelGatewayEndpointPath, (c) => createWorkerModelGateway(c.env)(c.req.
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
 
 app.route("/api", createProjectApi());
+app.route("/api", createUsageApi());
 
 app.notFound((c) => c.json({ error: "not_found", requestId: c.get("requestId") }, 404));
 

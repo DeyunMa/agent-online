@@ -11,6 +11,13 @@ import type {
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "../../application/ports";
+import type {
+  AgentRuntimeUsageSummary,
+  ProjectUsageSummary,
+  UsageMetrics,
+  UserUsageRepository,
+  UserUsageSummary,
+} from "../../application/user-usage";
 import type { AgentRuntimeId } from "../../agent/contract";
 import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
 import type { SandboxLeaseStatus } from "../../domain/sandbox-lease";
@@ -65,6 +72,24 @@ type MessageRow = {
   project_id: string;
   role: "user" | "assistant";
   sequence: number;
+};
+
+type UsageAggregateRow = {
+  input_tokens: number;
+  model_request_count: number;
+  output_tokens: number;
+  run_count: number;
+  sandbox_duration_ms: number;
+  total_tokens: number;
+};
+
+type ProjectUsageRow = UsageAggregateRow & {
+  project_id: string;
+  project_title: string;
+};
+
+type AgentRuntimeUsageRow = UsageAggregateRow & {
+  agent_runtime_id: AgentRuntimeId;
 };
 
 const projectColumns = `
@@ -176,6 +201,42 @@ function toMessageRecord(row: MessageRow): MessageRecord {
     projectId: row.project_id,
     role: row.role,
     sequence: row.sequence,
+  };
+}
+
+function toUsageMetrics(row: UsageAggregateRow): UsageMetrics {
+  const metrics = {
+    inputTokens: row.input_tokens,
+    modelRequestCount: row.model_request_count,
+    outputTokens: row.output_tokens,
+    runCount: row.run_count,
+    sandboxDurationMs: row.sandbox_duration_ms,
+    totalTokens: row.total_tokens,
+  };
+
+  for (const value of Object.values(metrics)) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error("D1 returned invalid user usage");
+    }
+  }
+
+  return metrics;
+}
+
+function toProjectUsageSummary(row: ProjectUsageRow): ProjectUsageSummary {
+  return {
+    projectId: row.project_id,
+    projectTitle: row.project_title,
+    usage: toUsageMetrics(row),
+  };
+}
+
+function toAgentRuntimeUsageSummary(
+  row: AgentRuntimeUsageRow,
+): AgentRuntimeUsageSummary {
+  return {
+    agentRuntimeId: row.agent_runtime_id,
+    usage: toUsageMetrics(row),
   };
 }
 
@@ -787,6 +848,76 @@ export class D1AgentRunRepository implements AgentRunRepository {
     }
 
     return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "update AgentRun usage"));
+  }
+}
+
+export class D1UserUsageRepository implements UserUsageRepository {
+  constructor(private readonly db: D1Database) {}
+
+  async summarizeByUser(userId: string): Promise<UserUsageSummary> {
+    const results = await this.db.batch([
+      this.db
+        .prepare(
+          `SELECT
+            COUNT(*) AS run_count,
+            COALESCE(SUM(input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS output_tokens,
+            COALESCE(SUM(total_tokens), 0) AS total_tokens,
+            COALESCE(SUM(model_request_count), 0) AS model_request_count,
+            COALESCE(SUM(sandbox_duration_ms), 0) AS sandbox_duration_ms
+          FROM agent_runs
+          WHERE user_id = ?`,
+        )
+        .bind(userId),
+      this.db
+        .prepare(
+          `SELECT
+            agent_runs.project_id,
+            projects.title AS project_title,
+            COUNT(*) AS run_count,
+            COALESCE(SUM(agent_runs.input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(agent_runs.output_tokens), 0) AS output_tokens,
+            COALESCE(SUM(agent_runs.total_tokens), 0) AS total_tokens,
+            COALESCE(SUM(agent_runs.model_request_count), 0) AS model_request_count,
+            COALESCE(SUM(agent_runs.sandbox_duration_ms), 0) AS sandbox_duration_ms
+          FROM agent_runs
+          INNER JOIN projects ON projects.id = agent_runs.project_id
+          WHERE agent_runs.user_id = ?
+          GROUP BY agent_runs.project_id, projects.title
+          ORDER BY total_tokens DESC, run_count DESC, projects.title ASC, agent_runs.project_id ASC`,
+        )
+        .bind(userId),
+      this.db
+        .prepare(
+          `SELECT
+            agent_runtime_id,
+            COUNT(*) AS run_count,
+            COALESCE(SUM(input_tokens), 0) AS input_tokens,
+            COALESCE(SUM(output_tokens), 0) AS output_tokens,
+            COALESCE(SUM(total_tokens), 0) AS total_tokens,
+            COALESCE(SUM(model_request_count), 0) AS model_request_count,
+            COALESCE(SUM(sandbox_duration_ms), 0) AS sandbox_duration_ms
+          FROM agent_runs
+          WHERE user_id = ?
+          GROUP BY agent_runtime_id
+          ORDER BY total_tokens DESC, run_count DESC, agent_runtime_id ASC`,
+        )
+        .bind(userId),
+    ]);
+
+    const totals = requireBatchRow<UsageAggregateRow>(
+      results,
+      0,
+      "summarize user usage",
+    );
+    const projects = (results[1]?.results ?? []) as ProjectUsageRow[];
+    const agentRuntimes = (results[2]?.results ?? []) as AgentRuntimeUsageRow[];
+
+    return {
+      agentRuntimes: agentRuntimes.map(toAgentRuntimeUsageSummary),
+      projects: projects.map(toProjectUsageSummary),
+      totals: toUsageMetrics(totals),
+    };
   }
 }
 

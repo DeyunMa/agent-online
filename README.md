@@ -1,7 +1,7 @@
 # Agent Online
 
 > 状态：D2 真实执行纵切和 D3 受控只读 Files 已通过私有 Cloudflare Preview；D4 Goose Runtime 已完成受控远端 spike（2026-07-26）。
-> 当前 Preview 已验证 Pi/Goose 同 Project 切换、真实 usage、取消、deadline、空闲回收、手动停止和 Files；Goose 仍不向浏览器公开。跨 Run 用量聚合、Terminal 和 Preview 尚未完成。
+> 当前用户跨 Run 用量页已完成代码、测试和本地浏览器验收，尚未发布到 Preview。当前 Preview 已验证 Pi/Goose 同 Project 切换、真实 usage、取消、deadline、空闲回收、手动停止和 Files；Goose 仍不向浏览器公开，Terminal 和 Preview 尚未完成。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -28,9 +28,10 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 - Project Inspector 已启用只读 Files：仅附着现有 E2B Lease，限制在 `/workspace`，拒绝路径穿越、`.git`、符号链接、二进制和超大文本；活动 Run 期间不读取文件。
+- 已实现认证后的 `GET /api/usage` 和响应式 Usage 页面，直接按当前 `user_id` 聚合全部 `agent_runs` 的总量、Project 和 AgentRuntime 用量；不新增表、价格或计费对象。
 - Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
 
-远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal、preview、changes、跨 Run 用户用量页和 Goose 选择器仍须保持禁用或不展示。
+远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。当前用户跨 Run 用量页已通过本地空态、Run 后聚合和响应式浏览器验收；Terminal、preview、changes 和 Goose 选择器仍须保持禁用或不展示。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 
@@ -71,6 +72,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [E2B + Pi/Goose + Gemini E2E](./docs/testing/e2b-agent-runtimes-gemini.md) | 组合模板、两种 adapter、同沙箱文件连续性、usage 与取消的真实验证。 |
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |
+| [2026-07-26 D3 Usage 纵切](./docs/status/2026-07-26-d3-usage.md) | 当前用户全量用量聚合、API/UI 合同、本地验收与剩余边界。 |
 | [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
