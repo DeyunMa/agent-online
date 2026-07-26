@@ -50,7 +50,7 @@
         "ACCESS_MODE": "allowlist",
         "BETTER_AUTH_URL": "https://agent-online-preview.mdy1145141.workers.dev",
         "DEFAULT_MODEL_ID": "gemini-3.6-flash",
-        "E2B_TEMPLATE_ID": "agent-online-pi-runtime:885fa807-3bd8-4cae-9532-afa0d6c71986",
+        "E2B_TEMPLATE_ID": "agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8",
         "MAX_RUN_WALL_SECONDS": "1800",
         "RUNTIME_IDLE_TTL_SECONDS": "600",
         "RUNTIME_PROVIDER": "e2b",

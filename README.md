@@ -20,7 +20,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 ## 当前实现
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
-- Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime spike 已按 ADR-0004 获准，但在真实 E2E 通过前保持服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
+- Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime spike 已按 ADR-0004 获准，本地真实 adapter E2E 已通过，但在 Preview 产品链路验收完成前保持服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
@@ -28,6 +28,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 - Project Inspector 已启用只读 Files：仅附着现有 E2B Lease，限制在 `/workspace`，拒绝路径穿越、`.git`、符号链接、二进制和超大文本；活动 Run 期间不读取文件。
+- Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板和 adapter 级 `Pi -> Goose -> Pi`、usage、Key 隔离、取消/沙箱复用 E2E 已通过。Preview 的 D1/Workflow/TTL 与浏览器选择尚未验收，因此默认仍是 Pi-only 产品能力。
 
 远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run，也验证了长任务取消只终止当前 Pi 进程、沙箱可继续复用，并用临时 8 秒配置验证了 `timed_out` 收敛。10 分钟空闲 TTL 到期后，Workflow 已原子脱离并停止 E2B 沙箱，D1 清除了 Provider 引用。Files 已完成本地 API、测试和浏览器验收，但尚未部署到远程 Preview。Terminal、preview、changes 和用户用量页仍须保持禁用或不展示。
 
@@ -67,9 +68,10 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [本地开发](./docs/setup/local-development.md) | 单 Worker 工程结构、模块边界和本地启动方式。 |
 | [Cloudflare 私有 Preview 部署](./docs/setup/preview-deployment.md) | Preview 白名单、Run 开关、D1/Secret/迁移和分阶段验收步骤。 |
 | [Cloudflare Preview 资源台账](./docs/setup/cloudflare-preview-resources.md) | 已创建资源、Dashboard 查看路径、变量/Secret 名称、日志与运维命令。 |
-| [E2B + Pi + Gemini Spike](./docs/testing/e2b-pi-gemini-spike.md) | 显式启用的真实 Provider 可行性验证，不等同于 D2 产品实现。 |
+| [E2B + Pi/Goose + Gemini E2E](./docs/testing/e2b-agent-runtimes-gemini.md) | 组合模板、两种 adapter、同沙箱文件连续性、usage 与取消的真实验证。 |
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |
+| [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

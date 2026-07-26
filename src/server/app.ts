@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 
+import { defaultAgentRuntimeId } from "../agent/registry";
+import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import { createAuth } from "./auth";
 import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
+import { getInstalledSandboxRuntimeId } from "./runtime-config";
 
 export const app = new Hono<AppEnv>();
 
@@ -22,11 +25,17 @@ app.get("/api/health", (c) =>
   }),
 );
 
-app.get("/api/capabilities", (c) =>
-  c.json({
+app.get("/api/capabilities", (c) => {
+  const policy = getAgentRuntimePolicy(
+    c.env,
+    getInstalledSandboxRuntimeId(c.env),
+  );
+  return c.json({
+    agentRuntimeIds: [...policy.publicRuntimeIds],
+    defaultAgentRuntimeId,
     runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
-  }),
-);
+  });
+});
 
 app.post(modelGatewayEndpointPath, (c) => createWorkerModelGateway(c.env)(c.req.raw));
 

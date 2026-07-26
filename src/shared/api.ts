@@ -10,6 +10,8 @@ export type HealthResponse = {
 };
 
 export type PlatformCapabilitiesResponse = {
+  agentRuntimeIds: AgentRuntimeId[];
+  defaultAgentRuntimeId: AgentRuntimeId;
   runCreationEnabled: boolean;
 };
 
@@ -66,6 +68,7 @@ export type CreateProjectRequest = {
 };
 
 export type CreateAgentRunRequest = {
+  agentRuntimeId?: AgentRuntimeId;
   content: string;
 };
 
@@ -99,6 +102,7 @@ export type AgentRunStreamEvent =
 
 export type ApiErrorResponse = {
   error:
+    | "agent_runtime_unavailable"
     | "forbidden"
     | "file_too_large"
     | "internal_error"

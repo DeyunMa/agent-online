@@ -33,6 +33,7 @@ const createProjectSchema = z.object({
 });
 
 const createAgentRunSchema = z.object({
+  agentRuntimeId: z.enum(["pi", "goose"]).optional(),
   content: z.string().trim().min(1).max(64_000),
 });
 
@@ -212,6 +213,11 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     if (!dependencies.getDeploymentPolicy(c.env).runsEnabled) {
       return runsDisabled(c);
     }
+    const agentRuntimeId =
+      input.agentRuntimeId ?? project.defaultAgentRuntimeId;
+    if (!services.enabledAgentRuntimeIds.includes(agentRuntimeId)) {
+      return agentRuntimeUnavailable(c);
+    }
 
     const now = dependencies.now().toISOString();
     const sandboxLease = await services.sandboxLeases.getOrCreate({
@@ -225,7 +231,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
     const created = await services.agentRuns.createQueuedWithInput({
       agentRunId: dependencies.createId(),
-      agentRuntimeId: project.defaultAgentRuntimeId,
+      agentRuntimeId,
       content: input.content,
       inputMessageId: dependencies.createId(),
       modelId: services.defaultModelId,
@@ -496,6 +502,10 @@ function notFound(c: AppContext) {
 
 function projectBusy(c: AppContext) {
   return apiError(c, "project_busy", 409);
+}
+
+function agentRuntimeUnavailable(c: AppContext) {
+  return apiError(c, "agent_runtime_unavailable", 409);
 }
 
 function runsDisabled(c: AppContext) {

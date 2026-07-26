@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B 与 Workflow 配置均已完成远程验收；受控只读 Files 不新增环境变量。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B 与 Workflow 配置均已完成 Pi 远程验收；Pi/Goose 组合模板和 adapter E2E 已通过，Goose 产品启用仍待 Preview 验收。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -29,7 +29,7 @@
 
 | 变量 | 何时需要 | 用途 |
 | --- | --- | --- |
-| `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi + Gemini Spike](../testing/e2b-pi-gemini-spike.md) 时。 | 只供服务端创建和管理沙箱。 |
+| `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi/Goose + Gemini E2E](../testing/e2b-agent-runtimes-gemini.md) 时。 | 只供服务端创建和管理沙箱。 |
 | `E2B_TEMPLATE_ID` | `RUNTIME_PROVIDER=e2b` 或运行真实 spike 时。 | 非敏感的精确 E2B build reference；只由服务端创建沙箱时读取。 |
 | `ADMIN_EMAILS` | 接入内部用量页面时。 | 逗号分隔的维护者邮箱 allowlist，不是部署登录白名单或用户角色系统。 |
 | `SENTRY_DSN` | 安装 Sentry SDK 后。 | 可选 Worker 错误监控的项目 DSN；它不是 Gemini/E2B 那类服务端凭据，当前脚手架不读取它。 |
@@ -46,10 +46,13 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` | ModelGateway 的服务端默认模型。 |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久后由 Workflow 停止当前沙箱。 |
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
-| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-runtime:<build-id>` | E2B Pi template 的不可变 build reference；构建方式见 [真实链路 Spike](../testing/e2b-pi-gemini-spike.md)。 |
+| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference；构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
+| `GOOSE_RUNTIME_MODE` | 不设置或 `disabled` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose 但不向 UI 公布；`public` 才公开选择。只有 E2B 支持 Goose。 |
 
-当前默认 AgentRuntime 固定为 `pi`，而不是对外环境变量。第二个适配器完成能力和安全验收后，再设计部署级默认值。
+当前默认 AgentRuntime 固定为 `pi`，不是环境变量。`GOOSE_RUNTIME_MODE` 只控制第二 adapter 的执行与公开门槛，不改变 Project 默认值。
+`spike` 不构成用户权限边界：已通过现有认证和部署访问策略的调用者仍可手工提交
+`agentRuntimeId=goose`。它只能在邮箱 allowlist 保护的私有 Preview 中短时启用。
 
 ## 5. 部署访问与执行开关
 
@@ -61,7 +64,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 
 `ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
 
-浏览器通过 `/api/capabilities` 只读取 `runCreationEnabled`，不会得到白名单、Secret 或其他部署配置。前端禁用只是交互反馈，服务端创建 Run API 才是强制边界。
+浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。前端禁用只是交互反馈，服务端创建 Run API 才是强制边界。
 
 ## 6. Cloudflare Binding，不是环境变量
 
@@ -101,7 +104,7 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 - Google OAuth Client ID / Secret 或其他第三方登录变量。
 - SMTP、Resend、邮件验证和密码找回变量。
 - `CREDENTIAL_ENCRYPTION_KEY`，直到明确开始实现 BYOK 写入。
-- Goose、Claude Code 或 Codex CLI 的凭据。它们没有适配器和单独安全设计前不接入应用。
+- Goose 不需要独立模型 Key，它只能使用现有短时 ModelGateway capability。Claude Code 或 Codex CLI 的凭据仍不需要。
 
 ## 9. 外部依据
 

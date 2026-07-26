@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现。Goose 第二 Runtime spike 已批准但尚未通过产品启用门槛；远程 Files 验收、用量聚合、Terminal 与 Preview 待完成。
+> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现。Goose adapter、组合模板与本地真实 E2E 已通过，但 Preview 产品启用门槛尚未完成；远程 Files 验收、用量聚合、Terminal 与 Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界

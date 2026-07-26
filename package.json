@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "build:e2b-pi-template": "node templates/e2b/build-pi-runtime-template.mjs",
-    "test:e2e:e2b-pi": "RUN_E2E=1 vitest run --config vitest.config.ts src/integration/e2b-pi-gemini.e2e.test.ts",
+    "build:e2b-agent-template": "node templates/e2b/build-pi-goose-runtime-template.mjs",
+    "test:e2e:e2b-agent-runtimes": "RUN_E2E=1 vitest run --config vitest.config.ts src/integration/e2b-agent-runtimes-gemini.e2e.test.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "cf-typegen": "wrangler types"
   },

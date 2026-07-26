@@ -1,4 +1,4 @@
-import { getAgentRuntime } from "../agent/registry";
+import type { AgentRuntime, AgentRuntimeId } from "../agent/contract";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -21,6 +21,7 @@ import { isTerminalAgentRun } from "../domain/agent-run";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import { createE2BRunExecution } from "./e2b-run-execution";
+import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import type { AppBindings } from "./env";
 import {
   D1AgentRunRepository,
@@ -52,6 +53,7 @@ export interface ProjectSandboxController {
 export type ServerServices = {
   agentRuns: AgentRunRepository;
   defaultModelId: string;
+  enabledAgentRuntimeIds: readonly AgentRuntimeId[];
   messages: MessageRepository;
   projectFiles: ProjectFilesService;
   projectSandboxes: ProjectSandboxController;
@@ -66,6 +68,7 @@ export function createServerServices(env: AppBindings): ServerServices {
   const messages = new D1MessageRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
+  const agentRuntimePolicy = getAgentRuntimePolicy(env, sandboxRuntimeId);
   const fakeRuntime =
     sandboxRuntimeId === "fake"
       ? new FakeSandboxRuntime({ completionDelayMs: 8_000 })
@@ -90,12 +93,14 @@ export function createServerServices(env: AppBindings): ServerServices {
           messages,
           sandboxLeases,
           getSandboxRuntime("fake"),
+          agentRuntimePolicy.resolve,
         )
       : createWorkflowDispatcher(env);
 
   return {
     agentRuns,
     defaultModelId: getDefaultModelId(env),
+    enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
     messages,
     projectFiles: new ProjectFilesService({
       agentRuns,
@@ -121,6 +126,7 @@ function createInlineFakeDispatcher(
   messages: MessageRepository,
   sandboxLeases: SandboxLeaseRepository,
   runtime: SandboxRuntime,
+  getAgentRuntime: (id: AgentRuntimeId) => AgentRuntime,
 ): RunExecutionDispatcher {
   const coordinator = new RunCoordinator({
     agentRunRepository: agentRuns,

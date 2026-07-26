@@ -301,7 +301,7 @@ describe("D1 persistence adapters", () => {
       ]),
       result([
         {
-          agent_runtime_id: "pi",
+          agent_runtime_id: "goose",
           created_at: "2026-07-25T00:00:00.000Z",
           failure_reason: null,
           finished_at: null,
@@ -325,7 +325,7 @@ describe("D1 persistence adapters", () => {
 
     const created = await new D1AgentRunRepository(db.asBinding()).createQueuedWithInput({
       agentRunId: "run-1",
-      agentRuntimeId: "pi",
+      agentRuntimeId: "goose",
       content: "Build a demo",
       inputMessageId: "message-1",
       modelId: "gemini-2.5-flash",
@@ -339,7 +339,12 @@ describe("D1 persistence adapters", () => {
     expect(created).toMatchObject({
       inputMessage: { agentRunId: null, id: "message-1", sequence: 0 },
       kind: "created",
-      run: { id: "run-1", status: "queued", usage: { totalTokens: 0 } },
+      run: {
+        agentRuntimeId: "goose",
+        id: "run-1",
+        status: "queued",
+        usage: { totalTokens: 0 },
+      },
     });
     expect(db.batches).toHaveLength(1);
     expect(db.batches[0]).toHaveLength(4);

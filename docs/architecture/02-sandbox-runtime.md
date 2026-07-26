@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；只读 Files 已完成本地实现；Goose 独立 adapter 与组合模板处于门控 spike。
+> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；只读 Files 已完成本地实现；Goose 独立 adapter、组合模板和本地真实 E2E 已通过，Preview 产品路径仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -14,7 +14,7 @@
 | `SandboxRuntime` | 取得当前沙箱、启动通用进程、读写 stdin、读取进程事件、终止进程、受控文件 IO 与停止沙箱。 | Pi 协议、D1、Message、模型调用。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
-Pi 是默认且已验收的 AgentRuntime。Goose 已获准作为独立 adapter 实施，但在 ADR-0004 的真实 E2E 全部通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
+Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已实现并通过组合模板真实 E2E，但在 ADR-0004 的 Preview Workflow 与浏览器验收全部通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
 
 ## 2. 当前代码合同
 
@@ -139,7 +139,7 @@ stateDiagram-v2
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
 | Pi | 默认且已验收；支持 fake 控制面与真实 E2B 执行。 | 当前执行路径；选择 UI 随第二 Runtime 一起设计。 |
-| Goose | ADR-0004 门控 spike；独立 adapter 与组合模板待真实 E2E。 | 验收前不可以。 |
+| Goose | 独立 adapter、组合模板、ModelGateway、文件连续性与取消的本地真实 E2E 已通过；Preview Workflow/TTL 待验收。 | 验收前不可以。 |
 | Claude Code | 仅预留 Runtime ID。 | 不可以。 |
 | Codex CLI | 仅预留 Runtime ID。 | 不可以。 |
 

@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及真实 AgentRun、取消、deadline 和空闲 TTL 已配置并验证。本文只记录变量名和状态，不记录任何真实凭据值。
+> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi AgentRun、取消、deadline 和空闲 TTL 已配置并验证。Pi/Goose 组合模板和本地真实 adapter E2E 已通过，Preview Goose 产品路径尚未部署。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -11,7 +11,7 @@
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
 | Gemini API | `GEMINI_API_KEY` | D2 Worker ModelGateway 和真实 E2E。 | 已由本地 `.dev.vars` 提供。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱。 | 已由本地 `.dev.vars` 提供。 |
-| E2B Pi Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi 和 `/workspace` 的项目模板。 | 项目模板已构建；本地引用只保存在 `.dev.vars`。 |
+| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose 和 `/workspace` 的组合模板。 | 精确 build 已构建并完成 adapter E2E；Preview 当前部署仍使用旧 Pi-only build。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
 
@@ -60,7 +60,7 @@
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |
 | 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有独立 `SandboxRuntime` Adapter、能力声明和 E2E。 |
-| 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | 已有独立 `AgentRuntime` Adapter、事件映射、取消和安全验收。 |
+| 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | Goose adapter、组合模板、事件、ModelGateway 和取消 E2E 已通过；D1/Workflow/TTL/浏览器 Preview 验收仍待完成。 |
 
 ## 5. 当前明确不需要
 
@@ -68,7 +68,7 @@
 - Stripe、价格、套餐、订阅、充值、发票或支付 Webhook。
 - Google OAuth Client ID/Secret 或其他第三方登录配置。
 - SMTP、Resend、邮箱验证和密码找回服务。
-- Goose、Claude Code 或 Codex CLI 凭据。
+- Goose 独立模型凭据；它复用短时 ModelGateway capability。Claude Code 或 Codex CLI 凭据也不需要。
 - 把 Cloudflare Account ID/API Token 当作 Worker 运行时 Secret。
 
 每次新增外部依赖时，先更新本表的用途、数据边界、是否敏感、谁负责提供和删除方式，再修改代码或远程资源。

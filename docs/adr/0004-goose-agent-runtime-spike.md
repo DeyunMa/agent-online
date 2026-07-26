@@ -70,6 +70,7 @@ goose run
   --max-turns <bounded>
   --provider agent_online
   --model <server-selected-model>
+  --quiet
   --output-format stream-json
   --instructions <run-private-prompt-file>
 ```
@@ -117,12 +118,25 @@ Goose 只有全部通过后才能加入 UI：
 - 组合模板镜像更大，冷启动和 E2B 存储/构建时间需要重新测量。
 - Goose 的 CLI JSON schema、provider 配置和 headless 行为可能随版本变化，因此必须固定版本并为 parser 建立契约测试。
 - `GOOSE_MODE=auto` 允许 Agent 在低信任沙箱内执行开发工具；它不提升到 Worker、D1 或 Provider 控制面。
+- Run capability 是 Agent 调用 ModelGateway 所需的短时、限 Run 凭据，因此会存在于 Agent 进程环境，且 Agent 工具可能继承它。它不是原始 Gemini Key；公开启用前仍要复核工具继承、精确 token 输出脱敏和过期后的失效行为。
 - Pi 与 Goose 对 prompt、工具和最终文本的事件粒度不同，统一事件只承诺产品需要的最小交集。
 - 本 ADR 不批准 Claude Code、Codex CLI、任意 MCP 扩展、BYOK 或公开任意命令执行。
 
 ## 回滚
 
 关闭 Goose allowlist 并从 registry 的可用集合移除即可恢复 Pi-only 产品行为，不需要迁移 D1。已写入历史 `AgentRun.agent_runtime_id = 'goose'` 的记录仍可只读展示；个人开发阶段也允许清理本地/Preview 测试数据。
+
+## 当前实施结果
+
+截至 2026-07-26，Goose adapter、`GOOSE_RUNTIME_MODE` 服务端门控、Pi + Goose
+组合模板和 adapter 级真实 E2E 已完成。真实测试证明同一 E2B sandbox 中
+Pi 创建文件、Goose 修改、Pi 再验证，以及 Goose 精确取消后沙箱继续复用；
+两种 Runtime 都只通过短时 ModelGateway capability 调用 Gemini，provider
+配置不含 token 值。
+
+Cloudflare Preview 的真实 Goose Run、D1 最终事实、Workflow deadline/恢复、
+空闲 TTL 和浏览器选择仍未验收。因此本 ADR 的“实现 spike”部分成立，
+“产品启用”门槛仍未满足；默认模式继续是 `disabled`。
 
 ## 参考
 

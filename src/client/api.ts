@@ -111,6 +111,8 @@ function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
 
 function messageForApiError(error: ApiErrorResponse["error"]) {
   switch (error) {
+    case "agent_runtime_unavailable":
+      return "所选 Agent 当前不可用，请选择其他 Agent。";
     case "unauthorized":
       return "登录状态已失效，请重新登录。";
     case "forbidden":

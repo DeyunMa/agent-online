@@ -20,7 +20,35 @@ describe("Worker API", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
+      agentRuntimeIds: ["pi"],
+      defaultAgentRuntimeId: "pi",
       runCreationEnabled: false,
+    });
+  });
+
+  it("keeps Goose private in spike mode and publishes it only in public E2B mode", async () => {
+    const spike = await app.request(
+      "http://agent-online.test/api/capabilities",
+      undefined,
+      {
+        GOOSE_RUNTIME_MODE: "spike",
+        RUNTIME_PROVIDER: "e2b",
+      } as AppBindings,
+    );
+    const publicResponse = await app.request(
+      "http://agent-online.test/api/capabilities",
+      undefined,
+      {
+        GOOSE_RUNTIME_MODE: "public",
+        RUNTIME_PROVIDER: "e2b",
+      } as AppBindings,
+    );
+
+    await expect(spike.json()).resolves.toMatchObject({
+      agentRuntimeIds: ["pi"],
+    });
+    await expect(publicResponse.json()).resolves.toMatchObject({
+      agentRuntimeIds: ["pi", "goose"],
     });
   });
 });

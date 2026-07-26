@@ -82,6 +82,14 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun 和聚合
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
+截至 2026-07-26，本表记录的是当前已部署 Preview。仓库已将下一次部署候选
+`E2B_TEMPLATE_ID` 更新为经过本地真实 E2E 的
+`agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8`，
+但尚未执行 Cloudflare 部署；`GOOSE_RUNTIME_MODE` 也尚未在 Preview 启用。
+旧 Pi-only Provider sandbox 不会随 Worker 配置原地升级。组合模板上线后的
+Goose 验收必须使用新 Project，或先从 Project Inspector 停止旧 sandbox，
+让下一次 Run 按新的精确模板重建。
+
 ## 6. 加密 Secret
 
 以下 Secret 已在 Worker Settings 中以加密类型保存，Dashboard 不再显示其值：

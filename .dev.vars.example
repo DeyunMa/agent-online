@@ -15,8 +15,11 @@ GEMINI_API_KEY=
 # Add only when the real E2B runtime adapter is enabled.
 # E2B_API_KEY=
 
-# Non-secret exact E2B template build reference, such as agent-online-pi-runtime:<build-id>.
+# Non-secret exact E2B template build reference, such as agent-online-pi-goose-runtime:<build-id>.
 # E2B_TEMPLATE_ID=
+
+# Optional Goose product gate: disabled (default), spike (API/E2E only), or public (UI capability).
+# GOOSE_RUNTIME_MODE=disabled
 
 # Runtime configuration. Fake is the default when omitted.
 # RUNTIME_PROVIDER=e2b

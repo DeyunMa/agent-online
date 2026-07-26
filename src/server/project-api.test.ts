@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
+import type { AgentRuntimeId } from "../agent/contract";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -263,6 +264,74 @@ describe("Project API", () => {
     await expect(secondResponse.json()).resolves.toMatchObject({ error: "project_busy" });
   });
 
+  it("persists an explicitly selected enabled AgentRuntime", async () => {
+    const fixture = createFixture(testUser, {
+      enabledAgentRuntimeIds: ["pi", "goose"],
+    });
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({
+          agentRuntimeId: "goose",
+          content: "Inspect this project",
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toMatchObject({
+      agentRuntimeId: "goose",
+      status: "queued",
+    });
+    expect(fixture.coordinator.starts[0]?.agentRun.agentRuntimeId).toBe(
+      "goose",
+    );
+  });
+
+  it("rejects a gated AgentRuntime before creating product state", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({
+          agentRuntimeId: "goose",
+          content: "Inspect this project",
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "agent_runtime_unavailable",
+    });
+    expect(fixture.agentRuns.records.size).toBe(0);
+    expect(fixture.messages.records).toHaveLength(0);
+    await expect(
+      fixture.sandboxLeases.findByProjectId("project_1"),
+    ).resolves.toBeNull();
+    expect(fixture.coordinator.starts).toHaveLength(0);
+  });
+
   it("rejects new Runs before creating product state when Runs are paused", async () => {
     const fixture = createFixture(testUser, { runsEnabled: false });
     await fixture.projects.create({
@@ -364,7 +433,10 @@ describe("Project API", () => {
 
 function createFixture(
   user: typeof testUser | null,
-  options: { runsEnabled?: boolean } = {},
+  options: {
+    enabledAgentRuntimeIds?: readonly AgentRuntimeId[];
+    runsEnabled?: boolean;
+  } = {},
 ) {
   const projects = new InMemoryProjectRepository();
   const messages = new InMemoryMessageRepository();
@@ -375,6 +447,7 @@ function createFixture(
   const services: ServerServices = {
     agentRuns,
     defaultModelId: "gemini-3.6-flash",
+    enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
     messages,
     projectFiles: new ProjectFilesService({
       agentRuns,

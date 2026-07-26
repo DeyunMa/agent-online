@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2 已通过远程 Preview；D3 只读 Files 已完成本地实现。D4 Goose spike 已批准但仍受真实 E2E 门控；远程 Files 验收和其余受控能力待完成
+> 状态：D2 已通过远程 Preview；D3 只读 Files 已完成本地实现。D4 Goose adapter/组合模板本地真实 E2E 已通过，但 Preview 产品验收仍受门控；远程 Files 验收和其余受控能力待完成
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -35,7 +35,7 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和桌面/移动 UI 验收；尚未部署远程 Preview。D4 提前启动 Goose 最小 spike，用于验证 Runtime 抽象；Goose 尚未成为可用产品能力。Terminal、preview 和 changes 当前仍禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和桌面/移动 UI 验收；尚未部署远程 Preview。D4 已完成 Goose adapter、服务端门控、组合模板和 adapter 级真实 E2E；Preview 的 D1/Workflow/TTL/浏览器门槛尚未完成，Goose 仍不是公开产品能力。Terminal、preview 和 changes 当前仍禁用。
 
 D3 原计划按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> Changes”推进。Files 本地纵切已完成；在启用 Terminal/Preview 前还需完成 Runtime 能力接口和 Hono/use-case 边界的小范围加固。
 

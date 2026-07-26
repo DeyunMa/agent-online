@@ -1,8 +1,8 @@
-import { getAgentRuntime } from "../agent/registry";
 import { RunExecutionService } from "../application/run-execution";
 import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import type { RuntimeKind } from "../runtime/contract";
 import type { AppBindings } from "./env";
+import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import {
   D1AgentRunRepository,
   D1MessageRepository,
@@ -22,6 +22,7 @@ export type E2BRunExecution = {
 
 export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
   const config = getE2BExecutionConfig(env);
+  const agentRuntimePolicy = getAgentRuntimePolicy(env, "e2b");
   const runtime = new E2BSandboxRuntime({
     apiKey: config.apiKey,
     processTimeoutMs: config.runTimeoutMs + 15_000,
@@ -40,7 +41,7 @@ export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
       agentRuns: new D1AgentRunRepository(env.DB),
       clock: { now: () => new Date() },
       createId: () => crypto.randomUUID(),
-      getAgentRuntime,
+      getAgentRuntime: agentRuntimePolicy.resolve,
       getSandboxRuntime(id: RuntimeKind) {
         if (id !== runtime.kind) {
           throw new Error(`Sandbox runtime is not installed: ${id}`);
