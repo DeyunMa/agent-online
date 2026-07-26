@@ -1,7 +1,7 @@
 # Agent Online
 
 > 状态：D2 真实执行纵切和 D3 受控只读 Files 已通过私有 Cloudflare Preview；D4 Goose Runtime 已完成受控远端 spike（2026-07-26）。
-> 当前用户跨 Run 用量页已完成代码、测试和本地浏览器验收，尚未发布到 Preview。当前 Preview 已验证 Pi/Goose 同 Project 切换、真实 usage、取消、deadline、空闲回收、手动停止和 Files；Goose 仍不向浏览器公开，Terminal 和 Preview 尚未完成。
+> 当前用户跨 Run Usage 与受控 Terminal 已完成代码、测试和本地构建验收，尚待发布到 Preview。当前 Preview 已验证 Pi/Goose 同 Project 切换、真实 usage、取消、deadline、空闲回收、手动停止和 Files；Goose 仍不向浏览器公开，Preview 端口代理尚未完成。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -13,7 +13,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - `User -> Project -> SandboxLease` 是资源关系。一个 Project 只有一个逻辑沙箱记录，并在同一时刻最多对应一个真实 Provider 沙箱。
 - `Project` 是用户看见的代码项目和对话容器，不单独建 Session 表。真实沙箱停止、过期或故障后，Project 文件可以丢失；第一版不恢复它们。
 - `AgentRun` 是一次短生命周期的 Agent 执行，通常对应一个用户回合。一个 Project 同时最多一个非终态 `AgentRun`；多个连续 Run 可以复用仍存活的沙箱文件系统。
-- `SandboxRuntime` 按生命周期、进程和文件能力提供窄接口；`AgentRuntime` 管理 Pi 等 Agent 协议；两者是可替换代码边界，不是额外微服务。
+- `SandboxRuntime` 按生命周期、进程、文件和终端能力提供窄接口；`AgentRuntime` 管理 Pi 等 Agent 协议；两者是可替换代码边界，不是额外微服务。
 - Agent 在沙箱内运行，Hono Worker 在沙箱外负责鉴权、D1、Run 编排、事件脱敏和 `ModelGateway`。Gemini Key 永远不进入浏览器或沙箱。
 - D1 是唯一的 V1 持久化存储，保存认证、Project 元数据、用户可见消息、AgentRun 状态和聚合用量。R2 不属于 V1。
 
@@ -29,9 +29,10 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 - Project Inspector 已启用只读 Files：仅附着现有 E2B Lease，限制在 `/workspace`，拒绝路径穿越、`.git`、符号链接、二进制和超大文本；活动 Run 期间不读取文件。
 - 已实现认证后的 `GET /api/usage` 和响应式 Usage 页面，直接按当前 `user_id` 聚合全部 `agent_runs` 的总量、Project 和 AgentRuntime 用量；不新增表、价格或计费对象。
+- Project Inspector 已启用受控 Terminal：登录用户通过同源 Worker WebSocket 使用当前 E2B `/workspace` PTY；D1 只保存当前硬互斥和私有 sandbox/PTY reference，不保存滚屏。Terminal 与 AgentRun 互斥，30 分钟 expiry 与关闭后的 10 分钟 idle 回收都由 Workflow 持久调度。
 - Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
 
-远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。当前用户跨 Run 用量页已通过本地空态、Run 后聚合和响应式浏览器验收；Terminal、preview、changes 和 Goose 选择器仍须保持禁用或不展示。
+远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。当前用户 Usage 与 Terminal 已通过本地测试和构建门禁；Terminal 的真实远端 PTY、互斥、文件连续性与移动端验收将在本次 Preview 发布后记录。Preview、Changes 和 Goose 选择器仍须保持禁用或不展示。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 
@@ -59,6 +60,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [ADR-0002](./docs/adr/0002-run-agent-process-and-lease-lifecycle.md) | 已接受的轻量 V1 数据、运行和沙箱边界。 |
 | [ADR-0003](./docs/adr/0003-agent-run-workflow.md) | 每个 AgentRun 一个 Workflow 的执行、取消、TTL 和恢复边界。 |
 | [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) | Goose 独立 adapter、组合模板、模型通道与产品启用门槛。 |
+| [ADR-0005](./docs/adr/0005-controlled-project-terminal.md) | Project Terminal 的 PTY capability、同源 WebSocket、D1 互斥和回收。 |
 | [系统总览](./docs/architecture/01-system-overview.md) | 单 Worker 请求流与浏览器、Worker、Agent、沙箱之间的数据路径。 |
 | [沙箱与 Agent 运行时](./docs/architecture/02-sandbox-runtime.md) | `SandboxLease` 生命周期、`SandboxRuntime` 与 `AgentRuntime` 的合同。 |
 | [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与可选观测。 |
@@ -73,6 +75,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |
 | [2026-07-26 D3 Usage 纵切](./docs/status/2026-07-26-d3-usage.md) | 当前用户全量用量聚合、API/UI 合同、本地验收与剩余边界。 |
+| [2026-07-26 D3 Terminal 纵切](./docs/status/2026-07-26-d3-terminal.md) | 受控 PTY、同源 WebSocket、临时 D1 占用、UI 和验收记录。 |
 | [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 

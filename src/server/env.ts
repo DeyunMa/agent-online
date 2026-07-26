@@ -1,8 +1,21 @@
-export type AgentRunWorkflowPayload = {
-  kind: "execute" | "idle-cleanup";
-  projectId: string;
-  runId: string;
-};
+export type AgentRunWorkflowPayload =
+  | {
+      kind: "execute" | "idle-cleanup";
+      projectId: string;
+      runId: string;
+    }
+  | {
+      expectedLeaseUpdatedAt: string;
+      kind: "terminal-idle-cleanup";
+      projectId: string;
+      terminalSessionId: string;
+    }
+  | {
+      expiresAt: string;
+      kind: "terminal-expiry";
+      projectId: string;
+      terminalSessionId: string;
+    };
 
 export interface AppBindings {
   ACCESS_ALLOWED_EMAILS?: string;

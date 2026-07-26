@@ -15,18 +15,24 @@ import {
   ProjectSandboxService,
   type StopProjectSandboxResult,
 } from "../application/project-sandbox";
+import { ProjectTerminalService } from "../application/project-terminal";
 import { RunCoordinator } from "../application/run-coordinator";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import { createE2BRunExecution } from "./e2b-run-execution";
 import { getAgentRuntimePolicy } from "./agent-runtime-policy";
-import type { AppBindings } from "./env";
+import type {
+  AgentRunWorkflowPayload,
+  AppBindings,
+} from "./env";
 import {
   D1AgentRunRepository,
   D1MessageRepository,
   D1ProjectRepository,
   D1SandboxLeaseRepository,
+  D1TerminalSessionRepository,
 } from "./persistence/d1-repositories";
 import {
   defaultWorkingDirectory,
@@ -53,6 +59,7 @@ export type ServerServices = {
   messages: MessageRepository;
   projectFiles: ProjectFilesService;
   projectSandboxes: ProjectSandboxController;
+  projectTerminals: ProjectTerminalService;
   projects: ProjectRepository;
   runExecutions: RunExecutionDispatcher;
   sandboxRuntimeId: InstalledSandboxRuntimeId;
@@ -63,13 +70,14 @@ export function createServerServices(env: AppBindings): ServerServices {
   const agentRuns = new D1AgentRunRepository(env.DB);
   const messages = new D1MessageRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
+  const terminalSessions = new D1TerminalSessionRepository(env.DB);
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
   const agentRuntimePolicy = getAgentRuntimePolicy(env, sandboxRuntimeId);
   const fakeRuntime =
     sandboxRuntimeId === "fake"
       ? new FakeSandboxRuntime({ completionDelayMs: 8_000 })
       : null;
-  let e2bRuntime: SandboxRuntime | null = null;
+  let e2bRuntime: E2BSandboxRuntime | null = null;
   const getSandboxRuntime = (id: RuntimeKind) => {
     if (id !== sandboxRuntimeId) {
       throw new Error(`Sandbox runtime is not installed: ${id}`);
@@ -81,6 +89,14 @@ export function createServerServices(env: AppBindings): ServerServices {
 
     e2bRuntime ??= createE2BRunExecution(env).runtime;
     return requireRuntime(e2bRuntime, id);
+  };
+  const getTerminalRuntime = (id: RuntimeKind) => {
+    if (id !== sandboxRuntimeId || id !== "e2b") {
+      return null;
+    }
+
+    e2bRuntime ??= createE2BRunExecution(env).runtime;
+    return e2bRuntime;
   };
   const runExecutions =
     sandboxRuntimeId === "fake"
@@ -111,7 +127,9 @@ export function createServerServices(env: AppBindings): ServerServices {
     projectFiles: new ProjectFilesService({
       agentRuns,
       getSandboxRuntime,
+      now: () => new Date(),
       sandboxLeases,
+      terminalSessions,
       workingDirectory: defaultWorkingDirectory,
     }),
     projectSandboxes: new ProjectSandboxService({
@@ -119,12 +137,61 @@ export function createServerServices(env: AppBindings): ServerServices {
       getSandboxRuntime,
       now: () => new Date(),
       sandboxLeases,
+      terminalSessions,
+    }),
+    projectTerminals: new ProjectTerminalService({
+      agentRuns,
+      clock: { now: () => new Date() },
+      createId: () => crypto.randomUUID(),
+      getSandboxRuntime: getTerminalRuntime,
+      sandboxLeases,
+      sandboxRuntimeId,
+      scheduleIdleCleanup:
+        sandboxRuntimeId === "e2b"
+          ? (input) =>
+              scheduleTerminalIdleCleanupBestEffort(env, input)
+          : async () => undefined,
+      scheduleExpiry:
+        sandboxRuntimeId === "e2b"
+          ? (input) => scheduleTerminalExpiry(env, input)
+          : async () => undefined,
+      terminalSessions,
+      workingDirectory: defaultWorkingDirectory,
     }),
     projects: new D1ProjectRepository(env.DB),
     runExecutions,
     sandboxRuntimeId,
     sandboxLeases,
   };
+}
+
+export function createProjectTerminalService(env: AppBindings) {
+  const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
+  const terminalSessions = new D1TerminalSessionRepository(env.DB);
+  const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
+  const runtime =
+    sandboxRuntimeId === "e2b"
+      ? createE2BRunExecution(env).runtime
+      : null;
+
+  return new ProjectTerminalService({
+    agentRuns: new D1AgentRunRepository(env.DB),
+    clock: { now: () => new Date() },
+    createId: () => crypto.randomUUID(),
+    getSandboxRuntime(id) {
+      if (id !== "e2b" || runtime?.kind !== id) {
+        return null;
+      }
+      return runtime;
+    },
+    sandboxLeases,
+    sandboxRuntimeId,
+    scheduleExpiry: (input) => scheduleTerminalExpiry(env, input),
+    scheduleIdleCleanup: (input) =>
+      scheduleTerminalIdleCleanupBestEffort(env, input),
+    terminalSessions,
+    workingDirectory: defaultWorkingDirectory,
+  });
 }
 
 function createInlineFakeDispatcher(
@@ -185,9 +252,11 @@ function createWorkflowDispatcher(
       getE2BExecutionConfig(env);
       await createWorkflowInstance(env, {
         id: input.agentRun.id,
-        kind: "execute",
-        projectId: input.agentRun.projectId,
-        runId: input.agentRun.id,
+        payload: {
+          kind: "execute",
+          projectId: input.agentRun.projectId,
+          runId: input.agentRun.id,
+        },
       });
       return { completion: null };
     },
@@ -198,18 +267,12 @@ async function createWorkflowInstance(
   env: AppBindings,
   input: {
     id: string;
-    kind: "execute" | "idle-cleanup";
-    projectId: string;
-    runId: string;
+    payload: AgentRunWorkflowPayload;
   },
 ) {
   await env.AGENT_RUN_WORKFLOW.create({
     id: input.id,
-    params: {
-      kind: input.kind,
-      projectId: input.projectId,
-      runId: input.runId,
-    },
+    params: input.payload,
     retention: {
       errorRetention: "1 day",
       successRetention: "1 day",
@@ -243,13 +306,57 @@ async function scheduleIdleCleanupBestEffort(
   try {
     await createWorkflowInstance(env, {
       id: `idle-${runId}`,
-      kind: "idle-cleanup",
-      projectId,
-      runId,
+      payload: {
+        kind: "idle-cleanup",
+        projectId,
+        runId,
+      },
     });
   } catch (_error) {
     // E2B's own timeout remains the final cleanup bound.
   }
+}
+
+async function scheduleTerminalIdleCleanupBestEffort(
+  env: AppBindings,
+  input: {
+    expectedLeaseUpdatedAt: string;
+    projectId: string;
+    terminalSessionId: string;
+  },
+) {
+  try {
+    await createWorkflowInstance(env, {
+      id: `terminal-idle-${input.terminalSessionId}`,
+      payload: {
+        expectedLeaseUpdatedAt: input.expectedLeaseUpdatedAt,
+        kind: "terminal-idle-cleanup",
+        projectId: input.projectId,
+        terminalSessionId: input.terminalSessionId,
+      },
+    });
+  } catch {
+    // E2B's own sandbox timeout remains the final cleanup bound.
+  }
+}
+
+async function scheduleTerminalExpiry(
+  env: AppBindings,
+  input: {
+    expiresAt: string;
+    projectId: string;
+    terminalSessionId: string;
+  },
+) {
+  await createWorkflowInstance(env, {
+    id: `terminal-expiry-${input.terminalSessionId}`,
+    payload: {
+      expiresAt: input.expiresAt,
+      kind: "terminal-expiry",
+      projectId: input.projectId,
+      terminalSessionId: input.terminalSessionId,
+    },
+  });
 }
 
 function requireRuntime(runtime: SandboxRuntime, id: RuntimeKind) {

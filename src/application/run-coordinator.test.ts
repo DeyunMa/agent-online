@@ -464,6 +464,28 @@ class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
 
   constructor(readonly lease: SandboxLeaseRecord) {}
 
+  async claimIdleAfterActivityForStop(
+    input: Parameters<
+      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
+    >[0],
+  ) {
+    if (
+      this.lease.id !== input.leaseId ||
+      this.lease.status !== "idle" ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(this.lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
+
   async claimForManualStop(
     input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
   ) {

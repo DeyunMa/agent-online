@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2 与 D3 Files 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。当前用户跨 Run 用量聚合已完成本地验收、待发布 Preview；Goose 浏览器选择、Terminal 和 Preview 仍未开放。
+> 状态：D2 与 D3 Files 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。当前用户跨 Run Usage 与受控 Terminal 已完成本地实现和测试、待发布 Preview；Goose 浏览器选择和 Preview 仍未开放。
 
 ## 产品定义
 
@@ -18,7 +18,8 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `SandboxLease` | 应用为 Project 保留的唯一逻辑沙箱记录。 | 不是供应商真实 sandbox ID；同一时刻映射到 0 或 1 个真实沙箱，不保留实例历史。 |
 | `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
 | `AgentRunWorkflow` | 每个 AgentRun 一个的 Cloudflare Workflow 执行所有者。 | 只接收 Project/Run 应用 ID；D1 仍是产品事实，不保存 raw transcript。 |
-| `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，不能当作跨请求 Project 文件。 |
+| `TerminalSession` | 一个 Project 当前临时 PTY 的 D1 互斥记录。 | 关闭即删除；不保存终端输入、输出、滚屏或审计历史，浏览器看不到私有 PID。 |
+| `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件和终端等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，也不提供真实 Terminal。 |
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | `AgentRun` 上的聚合计量字段，以及由这些字段计算出的当前用户汇总。 | 真实 Runtime 写 token、模型请求数和沙箱时长；`GET /api/usage` 只做全量聚合，它不是账单流水或套餐。 |
@@ -31,7 +32,9 @@ erDiagram
     PROJECT ||--o{ MESSAGE : contains
     PROJECT ||--|| SANDBOX_LEASE : has
     PROJECT ||--o{ AGENT_RUN : executes
+    PROJECT ||--o| TERMINAL_SESSION : temporarily_owns
     SANDBOX_LEASE ||--o{ AGENT_RUN : serves
+    SANDBOX_LEASE ||--o| TERMINAL_SESSION : serves
     AGENT_RUN ||--o{ MESSAGE : produces_visible_output
 ```
 
@@ -43,7 +46,7 @@ erDiagram
 2. 一个 `SandboxLease` 只服务一个 Project，且 `sandbox_leases.project_id` 唯一；一个 Project 同时最多一个真实 Provider 沙箱。
 3. 多个连续 `AgentRun` 可复用仍存活的沙箱；一条消息不是一个沙箱生命周期。
 4. 沙箱停止、过期或故障时，当前 Project 文件允许丢失。第一版不写 R2 快照、不恢复文件，也不记录沙箱历史。
-5. 同一 Project 最多一个非终态 `AgentRun`。新请求必须得到明确冲突或等待 UI 重试，不能并发修改同一 Project 文件。
+5. 同一 Project 最多一个非终态 `AgentRun` 或一条 `TerminalSession` 硬锁，两者互斥。`expires_at` 只触发 durable cleanup，不能自动解锁；新请求必须得到明确冲突或等待 UI 重试，不能并发修改同一 Project 文件。
 6. 浏览器可见的是应用生成的 `sandboxLeaseId`、状态和受控能力；`provider_ref`、内部端口、E2B sandbox ID 和 Container ID 均为服务端私有数据。
 7. Agent、shell、用户代码和开发服务在低信任沙箱内；Hono 控制平面、D1 和平台 Gemini Key 在沙箱外。
 8. `SandboxRuntime` 只管理沙箱和通用进程，`AgentRuntime` 只管理 Agent 协议；两者都不能直接修改 Project/Run 的 D1 事实。
@@ -52,6 +55,7 @@ erDiagram
 11. 真实执行 owner 是 [ADR-0003](./docs/adr/0003-agent-run-workflow.md) 中每个 Run 一个的 `AgentRunWorkflow`；Workflow 重试不能再次启动已非 `queued` 的 Run。
 12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED` 是紧急停止新执行的服务端开关，设为 `false` 时必须在任何 Message、Lease 或 AgentRun 写入前失败。
 13. 只读 Files 只附着已有、具有 Lease 级文件连续性的沙箱；不因浏览而创建沙箱。它在无活动 Run 时做尽力一致读取，但不是文件系统事务或严格并发锁。
+14. Terminal 只通过同源认证 WebSocket 代理当前 E2B PTY；D1 临时行保存硬互斥及私有 sandbox/PTY 终止引用。30 分钟 expiry 和关闭后的 idle cleanup 都由 Workflow 承担持久调度，终端内容不持久化。
 
 ## 有意不建模的内容
 

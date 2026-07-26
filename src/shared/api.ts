@@ -13,6 +13,7 @@ export type PlatformCapabilitiesResponse = {
   agentRuntimeIds: AgentRuntimeId[];
   defaultAgentRuntimeId: AgentRuntimeId;
   runCreationEnabled: boolean;
+  terminalEnabled: boolean;
 };
 
 export type SandboxLeaseResponse = {

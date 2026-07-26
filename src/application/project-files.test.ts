@@ -97,12 +97,20 @@ describe("ProjectFilesService", () => {
     });
   });
 
-  it("does not attach files while a Run is active or no live Lease exists", async () => {
+  it("does not attach files while a Run or Terminal is active or no live Lease exists", async () => {
     const busy = await createFixture(undefined, { activeRun: true });
+    const terminalBusy = await createFixture(undefined, {
+      terminalActive: true,
+    });
     const stopped = await createFixture(undefined, { leaseStatus: "stopped" });
     const requestScoped = await createFixture(new FakeSandboxRuntime());
 
     await expect(busy.service.list("project-1", "")).resolves.toEqual({
+      kind: "project_busy",
+    });
+    await expect(
+      terminalBusy.service.list("project-1", ""),
+    ).resolves.toEqual({
       kind: "project_busy",
     });
     await expect(stopped.service.list("project-1", "")).resolves.toEqual({
@@ -119,6 +127,7 @@ async function createFixture(
   options: {
     activeRun?: boolean;
     leaseStatus?: SandboxLeaseRecord["status"];
+    terminalActive?: boolean;
   } = {},
 ) {
   const handle = await runtime.ensureLease({
@@ -149,7 +158,12 @@ async function createFixture(
     service: new ProjectFilesService({
       agentRuns,
       getSandboxRuntime: () => runtime,
+      now: () => new Date("2026-07-26T00:00:00.000Z"),
       sandboxLeases,
+      terminalSessions: {
+        findByProjectId: async () =>
+          options.terminalActive ? ({} as never) : null,
+      },
       workingDirectory: "/workspace",
     }),
   };

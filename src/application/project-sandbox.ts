@@ -3,6 +3,7 @@ import type {
   AgentRunRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
+  TerminalSessionRepository,
 } from "./ports";
 
 export type StopProjectSandboxResult =
@@ -17,6 +18,10 @@ export type ProjectSandboxServiceDependencies = {
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   now(): Date;
   sandboxLeases: SandboxLeaseRepository;
+  terminalSessions: Pick<
+    TerminalSessionRepository,
+    "findByProjectId"
+  >;
 };
 
 /**
@@ -29,6 +34,7 @@ export class ProjectSandboxService {
   ) {}
 
   async stop(projectId: string): Promise<StopProjectSandboxResult> {
+    const now = this.dependencies.now().toISOString();
     const lease = await this.dependencies.sandboxLeases.findByProjectId(
       projectId,
     );
@@ -41,9 +47,12 @@ export class ProjectSandboxService {
     if (activeRun) {
       return { kind: "project_busy" };
     }
+    if (await this.dependencies.terminalSessions.findByProjectId(projectId)) {
+      return { kind: "project_busy" };
+    }
 
     const providerRef = lease.providerRef;
-    const updatedAt = this.dependencies.now().toISOString();
+    const updatedAt = now;
     const claimed =
       await this.dependencies.sandboxLeases.claimForManualStop({
         expectedProviderRef: providerRef,
@@ -79,6 +88,9 @@ export class ProjectSandboxService {
     const activeRun =
       await this.dependencies.agentRuns.findActiveByProjectId(projectId);
     if (activeRun) {
+      return { kind: "project_busy" };
+    }
+    if (await this.dependencies.terminalSessions.findByProjectId(projectId)) {
       return { kind: "project_busy" };
     }
 

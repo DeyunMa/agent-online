@@ -1,7 +1,7 @@
 # 本地开发基线
 
 > 状态：D2 本地代码、真实 E2B spike 及远程 Workflow happy path、取消、deadline 和空闲 TTL 已完成
-> 当前阶段：受控只读 Files 与 Goose 私有 Preview spike 已通过；当前用户跨 Run Usage API/UI 已完成本地验收、待发布 Preview。Goose 仍受公开门控，Terminal 和 Preview 待完成。
+> 当前阶段：受控只读 Files 与 Goose 私有 Preview spike 已通过；当前用户跨 Run Usage 与受控 Terminal 已完成本地实现和测试、待发布 Preview。Goose 仍受公开门控，Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -27,13 +27,13 @@ worker/         Cloudflare Worker 入口
 ## 当前运行时状态
 
 - D1 migration、Better Auth 邮箱密码客户端、Project API、Message 查询、单活跃 Run、SSE 和取消状态转换已经实现；SSE 在自己的请求内轮询 D1 的 Run 状态，页面刷新后可通过当前活跃 Run 查询恢复。
-- `FakeSandboxRuntime` 用于无外部成本的 UI/控制面开发；`E2BSandboxRuntime` 支持真实 Linux、进程重连、精确进程终止和沙箱停止。
+- `FakeSandboxRuntime` 用于无外部成本的 UI/控制面开发；`E2BSandboxRuntime` 支持真实 Linux、进程重连、精确进程终止、PTY 和沙箱停止。
 - Pi 是默认且已验收的 AgentRuntime，它把 `pi --mode rpc` JSONL 映射为统一 Agent 事件。Goose adapter 和组合 E2B 模板已通过本地及私有 Preview 真实 E2E，但剩余安全和浏览器验收完成前不出现在 UI；fake runtime 不执行真实 Agent 二进制。
 - `AgentRunWorkflow`、ModelGateway、Run capability、真实 usage、deadline 和空闲 TTL 已实现。远程 Preview 已通过代表性的文件工具调用、取消、deadline 与 10 分钟空闲回收；更复杂任务下的 Workflows Free CPU/subrequest 限额仍需观察。
 - 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
 - 只读 Files 已实现并通过远端 E2B 验收；fake Runtime 的内存文件不跨请求，因此本地 fake 控制面会显示明确的沙箱不可用状态。停止 Lease 不发 Files 请求，也不显示缓存的旧目录或文本。
 - `GET /api/usage` 和响应式 Usage 页面已实现，直接聚合现有 `agent_runs`；它不需要新迁移、环境变量或外部服务。本地 fake Run 会产生 Run 数和沙箱生命周期事实，但不会伪造 token 或模型请求。
-- 终端、preview、changes 和每用户并发上限尚未实现。
+- Terminal 已实现同源 WebSocket、临时 D1 互斥、30 分钟会话上限和 idle Workflow；fake Runtime 明确不提供 Terminal。preview、changes 和每用户并发上限尚未实现。
 - Goose 是当前唯一获准实现的第二 Runtime 候选；Claude Code、Codex CLI 仍仅在 Runtime ID 合同中预留。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
 
@@ -45,6 +45,8 @@ worker/         Cloudflare Worker 入口
 4. 启动：`pnpm dev`，Vite/Workers 本地地址为 `http://localhost:5173`。
 5. 默认 `RUNTIME_PROVIDER` 为空时使用 fake；真实链路设置 `RUNTIME_PROVIDER=e2b`、`E2B_API_KEY`、`E2B_TEMPLATE_ID`，并为本地 E2B 提供可访问的 `MODEL_GATEWAY_BASE_URL`。
 6. 验证：`pnpm typecheck && pnpm test && pnpm build`，并在浏览器完成注册、创建 Project、启动/取消 Run 的 smoke。
+
+`pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*` 或 `.env*` 文件。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。需要本地 Secret 的运行流程使用 `pnpm dev`，不依赖构建目录。
 
 `wrangler.jsonc` 顶层的 D1 ID 是本地开发占位值，`preview` 环境使用独立的真实 D1 ID。新增远程环境时只创建目标 D1 并配置对应环境；R2 不属于 V1。本项目不会自动创建任何云端资源。
 

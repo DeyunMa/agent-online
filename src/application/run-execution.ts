@@ -21,6 +21,11 @@ export type AgentRunExecutionInput = {
   runId: string;
 };
 
+export type TerminalIdleCleanupInput = {
+  expectedLeaseUpdatedAt: string;
+  projectId: string;
+};
+
 export type IdleSandboxStopResult = {
   detached: boolean;
   stopped: boolean;
@@ -207,6 +212,55 @@ export class RunExecutionService {
       return { detached: true, stopped: true };
     } catch (_error) {
       // The Lease was atomically detached first. Provider timeout bounds any orphan.
+      return { detached: true, stopped: false };
+    }
+  }
+
+  async stopSandboxAfterTerminalIdle(
+    input: TerminalIdleCleanupInput,
+  ): Promise<IdleSandboxStopResult> {
+    const activeRun =
+      await this.dependencies.agentRuns.findActiveByProjectId(
+        input.projectId,
+      );
+    if (activeRun) {
+      return { detached: false, stopped: false };
+    }
+
+    const sandboxLease =
+      await this.dependencies.sandboxLeases.findByProjectId(
+        input.projectId,
+      );
+    if (
+      !sandboxLease?.providerRef ||
+      sandboxLease.status !== "idle" ||
+      sandboxLease.updatedAt !== input.expectedLeaseUpdatedAt
+    ) {
+      return { detached: false, stopped: false };
+    }
+
+    const runtime = this.dependencies.getSandboxRuntime(
+      sandboxLease.runtimeId,
+    );
+    const providerRef = sandboxLease.providerRef;
+    const claimed =
+      await this.dependencies.sandboxLeases.claimIdleAfterActivityForStop({
+        expectedProviderRef: providerRef,
+        expectedUpdatedAt: input.expectedLeaseUpdatedAt,
+        leaseId: sandboxLease.id,
+        updatedAt: this.timestamp(),
+      });
+    if (!claimed) {
+      return { detached: false, stopped: false };
+    }
+
+    try {
+      await runtime.stop(
+        toRuntimeHandle(sandboxLease, providerRef),
+        "idle",
+      );
+      return { detached: true, stopped: true };
+    } catch {
       return { detached: true, stopped: false };
     }
   }

@@ -154,6 +154,55 @@ describe("RunExecutionService", () => {
       status: "stopped",
     });
   });
+
+  it("stops a Terminal-idle sandbox only while its Lease activity timestamp is unchanged", async () => {
+    const current = createFixture({
+      lease: createLease({
+        providerRef: "sandbox_1",
+        status: "idle",
+        updatedAt: "2026-07-25T00:10:00.000Z",
+      }),
+      run: createRun({
+        finishedAt: "2026-07-25T00:05:00.000Z",
+        status: "succeeded",
+      }),
+    });
+    const stale = createFixture({
+      lease: createLease({
+        providerRef: "sandbox_2",
+        status: "idle",
+        updatedAt: "2026-07-25T00:11:00.000Z",
+      }),
+      run: createRun({
+        finishedAt: "2026-07-25T00:05:00.000Z",
+        status: "succeeded",
+      }),
+    });
+
+    await expect(
+      current
+        .createService(blockingAgent())
+        .stopSandboxAfterTerminalIdle({
+          expectedLeaseUpdatedAt:
+            "2026-07-25T00:10:00.000Z",
+          projectId: "project_1",
+        }),
+    ).resolves.toEqual({ detached: true, stopped: true });
+    await expect(
+      stale
+        .createService(blockingAgent())
+        .stopSandboxAfterTerminalIdle({
+          expectedLeaseUpdatedAt:
+            "2026-07-25T00:10:00.000Z",
+          projectId: "project_1",
+        }),
+    ).resolves.toEqual({ detached: false, stopped: false });
+
+    expect(current.runtime.stoppedSandboxes).toEqual([
+      { providerRef: "sandbox_1", reason: "idle" },
+    ]);
+    expect(stale.runtime.stoppedSandboxes).toEqual([]);
+  });
 });
 
 function createFixture(
@@ -357,6 +406,32 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     readonly lease: SandboxLeaseRecord,
     private readonly agentRuns: InMemoryAgentRunRepository,
   ) {}
+
+  async claimIdleAfterActivityForStop(
+    input: Parameters<
+      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
+    >[0],
+  ) {
+    const active = await this.agentRuns.findActiveByProjectId(
+      this.lease.projectId,
+    );
+    if (
+      active ||
+      this.lease.id !== input.leaseId ||
+      this.lease.status !== "idle" ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(this.lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
 
   async claimForManualStop(
     input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],

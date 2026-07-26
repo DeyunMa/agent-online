@@ -23,6 +23,7 @@ export type SandboxCommand = {
 export type ProcessTerminationReason = "completed" | "cancelled" | "timed_out" | "failed";
 export type SandboxStopReason = "idle" | "manual" | "failed";
 export type SandboxFilesystemScope = "lease" | "runtime-instance";
+export type TerminalCloseReason = "client_closed" | "expired" | "failed";
 
 export type SandboxFileEntry = {
   kind: "directory" | "file" | "symlink";
@@ -50,11 +51,28 @@ export type SandboxProcessEvent =
   | { chunk: string; sandboxLeaseId: string; stream: "stderr" | "stdout"; type: "process.output" }
   | { exitCode: number; sandboxLeaseId: string; type: "process.completed" };
 
+export type SandboxTerminalEvent =
+  | { chunk: Uint8Array; sandboxLeaseId: string; type: "terminal.output" }
+  | { exitCode: number; sandboxLeaseId: string; type: "terminal.exited" };
+
+export type SandboxTerminalSize = {
+  cols: number;
+  rows: number;
+};
+
 export interface SandboxProcessSession {
   readonly providerProcessRef: string;
   events(): AsyncIterable<SandboxProcessEvent>;
   terminate(reason: ProcessTerminationReason): Promise<void>;
   write(input: string): Promise<void>;
+}
+
+export interface SandboxTerminalSession {
+  readonly providerProcessRef: string;
+  close(reason: TerminalCloseReason): Promise<void>;
+  events(): AsyncIterable<SandboxTerminalEvent>;
+  resize(size: SandboxTerminalSize): Promise<void>;
+  write(input: Uint8Array): Promise<void>;
 }
 
 export interface SandboxLifecycleRuntime {
@@ -78,6 +96,19 @@ export interface SandboxProcessRuntime {
     handle: RuntimeHandle,
     providerProcessRef: string,
     reason: ProcessTerminationReason,
+  ): Promise<void>;
+}
+
+export interface SandboxTerminalRuntime {
+  readonly kind: RuntimeKind;
+  startTerminal(
+    handle: RuntimeHandle,
+    input: SandboxTerminalSize & { cwd: string },
+  ): Promise<SandboxTerminalSession>;
+  terminateTerminal(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    reason: TerminalCloseReason,
   ): Promise<void>;
 }
 

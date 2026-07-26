@@ -1,5 +1,5 @@
 import { LoaderCircle, Square } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type {
   AgentRunResponse,
@@ -18,30 +18,43 @@ import {
 } from "../presentation";
 import { ErrorState } from "./ui-states";
 import { ProjectFiles } from "./project-files";
+import { ProjectTerminal } from "./project-terminal";
 
-type InspectorView = "files" | "overview";
+type InspectorView = "files" | "overview" | "terminal";
 
 export function ProjectInspector({
   hasActiveRun,
   isStopping,
   onStopSandbox,
+  onTerminalActivityChange,
   project,
   run,
   stopError,
+  terminalActive,
+  terminalEnabled,
 }: {
   hasActiveRun: boolean;
   isStopping: boolean;
   onStopSandbox: () => void;
+  onTerminalActivityChange(active: boolean): void;
   project: ProjectResponse;
   run: AgentRunResponse | undefined;
   stopError: Error | null;
+  terminalActive: boolean;
+  terminalEnabled: boolean;
 }) {
   const [view, setView] = useState<InspectorView>("overview");
+  useEffect(() => {
+    if (!terminalEnabled && view === "terminal") {
+      setView("overview");
+    }
+  }, [terminalEnabled, view]);
   const lease = project.sandboxLease;
   const canStop =
     lease !== null &&
     lease.status !== "stopped" &&
     !hasActiveRun &&
+    !terminalActive &&
     !isStopping;
 
   return (
@@ -73,7 +86,19 @@ export function ProjectInspector({
         >
           Files
         </button>
-        <DisabledInspectorTab label="Terminal" />
+        {terminalEnabled ? (
+          <button
+            aria-selected={view === "terminal"}
+            className={`inspector-tab ${view === "terminal" ? "inspector-tab-active" : ""}`}
+            onClick={() => setView("terminal")}
+            role="tab"
+            type="button"
+          >
+            Terminal
+          </button>
+        ) : (
+          <DisabledInspectorTab label="Terminal" />
+        )}
         <DisabledInspectorTab label="Preview" />
       </div>
 
@@ -122,15 +147,23 @@ export function ProjectInspector({
 
           <CurrentRunUsage run={run} />
         </>
-      ) : (
+      ) : view === "files" ? (
         <ProjectFiles
-          hasActiveRun={hasActiveRun}
+          hasActiveRun={hasActiveRun || terminalActive}
           projectId={project.id}
           sandboxAvailable={
             lease !== null && isActiveSandboxLease(lease.status)
           }
         />
-      )}
+      ) : null}
+      {terminalEnabled ? (
+        <ProjectTerminal
+          active={view === "terminal"}
+          hasActiveRun={hasActiveRun}
+          onActivityChange={onTerminalActivityChange}
+          projectId={project.id}
+        />
+      ) : null}
     </aside>
   );
 }

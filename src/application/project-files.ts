@@ -2,6 +2,7 @@ import type {
   AgentRunRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
+  TerminalSessionRepository,
 } from "./ports";
 import type {
   RuntimeHandle,
@@ -61,7 +62,12 @@ export type ReadProjectFileResult =
 export type ProjectFilesServiceOptions = {
   agentRuns: Pick<AgentRunRepository, "findActiveByProjectId">;
   getSandboxRuntime: (id: RuntimeKind) => SandboxFilesystemRuntime;
+  now(): Date;
   sandboxLeases: Pick<SandboxLeaseRepository, "findByProjectId">;
+  terminalSessions: Pick<
+    TerminalSessionRepository,
+    "findByProjectId"
+  >;
   workingDirectory: string;
 };
 
@@ -178,6 +184,9 @@ export class ProjectFilesService {
     | Extract<ProjectFilesFailure, { kind: "project_busy" | "provider_error" | "sandbox_unavailable" }>
   > {
     if (await this.options.agentRuns.findActiveByProjectId(projectId)) {
+      return { kind: "project_busy" };
+    }
+    if (await this.options.terminalSessions.findByProjectId(projectId)) {
       return { kind: "project_busy" };
     }
 

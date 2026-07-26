@@ -1054,6 +1054,123 @@ textarea:disabled {
   min-height: 280px;
 }
 
+.project-terminal-view {
+  min-height: 0;
+  height: calc(100% - 92px);
+  background: #151715;
+}
+
+.project-terminal-view:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+.project-terminal-toolbar {
+  display: flex;
+  min-height: 42px;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid #30332f;
+  background: #20221f;
+}
+
+.project-terminal-status {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #a8aaa4;
+  font-size: 11px;
+}
+
+.project-terminal-status > span {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #73766f;
+}
+
+.terminal-status-ready {
+  color: #dce5d7;
+}
+
+.terminal-status-ready > span {
+  background: #8aaf79;
+}
+
+.terminal-status-connecting > span,
+.terminal-status-closing > span,
+.terminal-status-loading > span {
+  background: #c3a85f;
+}
+
+.project-terminal-action {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #444740;
+  border-radius: 4px;
+  background: #292c28;
+  color: #e1e2dc;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.project-terminal-action:hover:not(:disabled) {
+  border-color: #62665d;
+  background: #343732;
+}
+
+.project-terminal-action:disabled {
+  color: #777a73;
+}
+
+.project-terminal-notice,
+.project-terminal-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #30332f;
+  background: #20221f;
+  color: #c9cac4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.project-terminal-error {
+  color: #e39b91;
+}
+
+.project-terminal-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.project-terminal-canvas {
+  min-width: 0;
+  min-height: 320px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 9px 7px 7px 10px;
+  background: #151715;
+}
+
+.project-terminal-canvas .xterm {
+  height: 100%;
+}
+
+.project-terminal-canvas .xterm-viewport {
+  scrollbar-color: #4b4e48 #151715;
+  scrollbar-width: thin;
+}
+
 .project-files-toolbar {
   display: flex;
   min-height: 42px;
@@ -2027,6 +2144,11 @@ textarea:disabled {
     overflow: visible;
     border-top: 1px solid var(--border);
     border-left: 0;
+  }
+
+  .project-terminal-view {
+    height: min(68dvh, 560px);
+    min-height: 420px;
   }
 
   .project-index,

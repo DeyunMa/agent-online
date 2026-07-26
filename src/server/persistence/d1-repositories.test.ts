@@ -5,6 +5,7 @@ import {
   D1MessageRepository,
   D1ProjectRepository,
   D1SandboxLeaseRepository,
+  D1TerminalSessionRepository,
   D1UserUsageRepository,
 } from "./d1-repositories";
 
@@ -248,12 +249,42 @@ describe("D1 persistence adapters", () => {
     expect(db.prepared[0]?.query).toContain(
       "status IN ('queued', 'starting', 'running', 'cancelling')",
     );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM terminal_sessions",
+    );
     expect(db.prepared[0]?.bindings).toEqual([
       "2026-07-25T00:13:00.000Z",
       "lease-1",
       "sandbox-1",
       "2026-07-25T00:03:00.000Z",
       "run-2",
+    ]);
+  });
+
+  it("atomically claims an unchanged idle sandbox after Terminal activity", async () => {
+    const db = new TestD1Database();
+
+    const claimed = await new D1SandboxLeaseRepository(
+      db.asBinding(),
+    ).claimIdleAfterActivityForStop({
+      expectedProviderRef: "sandbox-1",
+      expectedUpdatedAt: "2026-07-25T00:03:00.000Z",
+      leaseId: "lease-1",
+      updatedAt: "2026-07-25T00:13:00.000Z",
+    });
+
+    expect(claimed).toBe(true);
+    expect(db.prepared[0]?.query).not.toContain(
+      "ORDER BY created_at",
+    );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM terminal_sessions",
+    );
+    expect(db.prepared[0]?.bindings).toEqual([
+      "2026-07-25T00:13:00.000Z",
+      "lease-1",
+      "sandbox-1",
+      "2026-07-25T00:03:00.000Z",
     ]);
   });
 
@@ -276,12 +307,106 @@ describe("D1 persistence adapters", () => {
     expect(db.prepared[0]?.query).toContain(
       "status IN ('queued', 'starting', 'running', 'cancelling')",
     );
+    expect(db.prepared[0]?.query).toContain(
+      "FROM terminal_sessions",
+    );
     expect(db.prepared[0]?.bindings).toEqual([
       "2026-07-25T00:04:00.000Z",
       "lease-1",
       "provider-private-sandbox",
       "2026-07-25T00:03:00.000Z",
     ]);
+  });
+
+  it("atomically claims one ephemeral Terminal against an unchanged Lease", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([
+      result(),
+      result([
+        {
+          created_at: "2026-07-25T00:30:00.000Z",
+          expires_at: "2026-07-25T01:00:00.000Z",
+          id: "terminal-new",
+          project_id: "project-1",
+          provider_process_ref: null,
+          provider_sandbox_ref: null,
+          sandbox_lease_id: "lease-1",
+          updated_at: "2026-07-25T00:30:00.000Z",
+        },
+      ]),
+    ]);
+
+    const claimed = await new D1TerminalSessionRepository(
+      db.asBinding(),
+    ).claim({
+      expectedLeaseProviderRef: "sandbox-1",
+      expectedLeaseUpdatedAt: "2026-07-25T00:29:00.000Z",
+      expiresAt: "2026-07-25T01:00:00.000Z",
+      id: "terminal-new",
+      now: "2026-07-25T00:30:00.000Z",
+      projectId: "project-1",
+      sandboxLeaseId: "lease-1",
+    });
+
+    expect(claimed).toMatchObject({
+      kind: "claimed",
+      session: {
+        id: "terminal-new",
+        providerProcessRef: null,
+        providerSandboxRef: null,
+      },
+    });
+    expect(db.batches[0]?.[0]?.query).toContain("NOT EXISTS");
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "sandbox_leases.updated_at = ?",
+    );
+    expect(db.batches[0]?.[0]?.query).not.toContain(
+      "ON CONFLICT(project_id) DO UPDATE",
+    );
+  });
+
+  it("returns project_busy when the atomic Terminal claim changes no row", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([result([], 0), result()]);
+
+    await expect(
+      new D1TerminalSessionRepository(db.asBinding()).claim({
+        expectedLeaseProviderRef: null,
+        expectedLeaseUpdatedAt: "2026-07-25T00:29:00.000Z",
+        expiresAt: "2026-07-25T01:00:00.000Z",
+        id: "terminal-new",
+        now: "2026-07-25T00:30:00.000Z",
+        projectId: "project-1",
+        sandboxLeaseId: "lease-1",
+      }),
+    ).resolves.toEqual({ kind: "project_busy" });
+  });
+
+  it("releases a Terminal and marks its unchanged Lease idle in one batch", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([result(), result()]);
+
+    const released = await new D1TerminalSessionRepository(
+      db.asBinding(),
+    ).releaseAndMarkLeaseIdle({
+      expectedProviderSandboxRef: "sandbox-1",
+      now: "2026-07-25T00:31:00.000Z",
+      sessionId: "terminal-1",
+    });
+
+    expect(released).toBe(true);
+    expect(db.batches[0]?.[0]?.query).toContain(
+      "SELECT sandbox_lease_id",
+    );
+    expect(db.batches[0]?.[0]?.bindings).toEqual([
+      "2026-07-25T00:31:00.000Z",
+      "terminal-1",
+      "sandbox-1",
+      "sandbox-1",
+    ]);
+    expect(db.batches[0]?.[1]?.query).toContain(
+      "DELETE FROM terminal_sessions",
+    );
   });
 
   it("creates the user message and queued AgentRun in one batch", async () => {
@@ -362,6 +487,28 @@ describe("D1 persistence adapters", () => {
         agentRunId: "run-2",
         agentRuntimeId: "pi",
         content: "A second request",
+        inputMessageId: "message-2",
+        modelId: "gemini-2.5-flash",
+        now: "2026-07-25T00:01:00.000Z",
+        projectId: "project-1",
+        sandboxLeaseId: "lease-1",
+        sandboxRuntimeId: "fake",
+        userId: "user-1",
+      }),
+    ).resolves.toEqual({ kind: "project_busy" });
+  });
+
+  it("converts the active Terminal trigger into AgentRun project_busy", async () => {
+    const db = new TestD1Database();
+    db.batchError = new Error(
+      "SQLITE_CONSTRAINT_TRIGGER: project_terminal_active",
+    );
+
+    await expect(
+      new D1AgentRunRepository(db.asBinding()).createQueuedWithInput({
+        agentRunId: "run-2",
+        agentRuntimeId: "pi",
+        content: "A request while the terminal is open",
         inputMessageId: "message-2",
         modelId: "gemini-2.5-flash",
         now: "2026-07-25T00:01:00.000Z",

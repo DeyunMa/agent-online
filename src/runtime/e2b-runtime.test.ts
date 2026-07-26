@@ -90,6 +90,110 @@ describe("E2BSandboxRuntime", () => {
     expect(sandbox.killed).toBe(false);
   });
 
+  it("maps an E2B PTY to the explicit terminal capability", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    const terminal = await runtime.startTerminal(handle, {
+      cols: 96,
+      cwd: "/workspace",
+      rows: 28,
+    });
+    await terminal.write(new TextEncoder().encode("pwd\r"));
+    await terminal.resize({ cols: 120, rows: 36 });
+    const events = [];
+    for await (const event of terminal.events()) {
+      events.push(event);
+    }
+
+    expect(terminal.providerProcessRef).toBe("42");
+    expect(sandbox.ptyOptions).toMatchObject({
+      cols: 96,
+      cwd: "/workspace",
+      rows: 28,
+      timeoutMs: 3_000,
+    });
+    expect(sandbox.terminalInputs).toEqual([
+      { data: new TextEncoder().encode("pwd\r"), processId: 42 },
+    ]);
+    expect(sandbox.terminalSizes).toEqual([
+      { processId: 42, size: { cols: 120, rows: 36 } },
+    ]);
+    expect(events).toEqual([
+      {
+        chunk: new TextEncoder().encode("terminal output"),
+        sandboxLeaseId: "lease-1",
+        type: "terminal.output",
+      },
+      {
+        exitCode: 0,
+        sandboxLeaseId: "lease-1",
+        type: "terminal.exited",
+      },
+    ]);
+  });
+
+  it("terminates a persisted PTY reference through the terminal capability", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    await runtime.terminateTerminal(handle, "42", "expired");
+
+    expect(sandbox.killedTerminalIds).toEqual([42]);
+    expect(sandbox.killed).toBe(false);
+  });
+
+  it("treats an already-exited PTY as terminated", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    sandbox.terminalKillResult = false;
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    await expect(
+      runtime.terminateTerminal(handle, "42", "expired"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects a PTY that exceeds its bounded output budget", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = new E2BSandboxRuntime({
+      apiKey: "test-e2b-key",
+      client: new FakeE2BClient(sandbox),
+      sandboxTimeoutMs: 1_000,
+      templateId: "template-1",
+      terminalOutputLimitBytes: 4,
+      terminalPendingOutputBytes: 32,
+      terminalTimeoutMs: 3_000,
+    });
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    await expect(
+      runtime.startTerminal(handle, {
+        cols: 80,
+        cwd: "/workspace",
+        rows: 24,
+      }),
+    ).rejects.toThrow("output limit");
+  });
+
   it("maps provider file metadata and bytes to the generic filesystem contract", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
     const runtime = createRuntime(new FakeE2BClient(sandbox));
@@ -172,8 +276,22 @@ class FakeE2BSandbox {
   commandOptions: (CommandStartOpts & { background: true }) | null = null;
   killed = false;
   processKillResult = true;
+  terminalKillResult = true;
   readonly killedProcessIds: number[] = [];
+  readonly killedTerminalIds: number[] = [];
   readonly process = new FakeE2BCommandHandle();
+  ptyOptions: {
+    cols: number;
+    cwd: string;
+    onData(data: Uint8Array): void | Promise<void>;
+    rows: number;
+    timeoutMs: number;
+  } | null = null;
+  readonly terminalInputs: Array<{ data: Uint8Array; processId: number }> = [];
+  readonly terminalSizes: Array<{
+    processId: number;
+    size: { cols: number; rows: number };
+  }> = [];
   readonly timeoutValues: number[] = [];
   readonly files = {
     list: async (_path: string) => [
@@ -204,6 +322,26 @@ class FakeE2BSandbox {
       await options.onStdout?.("stdout");
       await options.onStderr?.("stderr");
       return this.process;
+    },
+  };
+  readonly pty = {
+    create: async (options: NonNullable<FakeE2BSandbox["ptyOptions"]>) => {
+      this.ptyOptions = options;
+      await options.onData(new TextEncoder().encode("terminal output"));
+      return this.process;
+    },
+    kill: async (processId: number) => {
+      this.killedTerminalIds.push(processId);
+      return this.terminalKillResult;
+    },
+    resize: async (
+      processId: number,
+      size: { cols: number; rows: number },
+    ) => {
+      this.terminalSizes.push({ processId, size });
+    },
+    sendInput: async (processId: number, data: Uint8Array) => {
+      this.terminalInputs.push({ data, processId });
     },
   };
 
@@ -247,5 +385,6 @@ function createRuntime(client: E2BSandboxClient) {
     processTimeoutMs: 2_000,
     sandboxTimeoutMs: 1_000,
     templateId: "template-1",
+    terminalTimeoutMs: 3_000,
   });
 }

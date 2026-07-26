@@ -7,6 +7,7 @@ import { NonRetryableError } from "cloudflare:workflows";
 
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
+import { createProjectTerminalService } from "./services";
 
 export class AgentRunWorkflow extends WorkflowEntrypoint<
   AppBindings,
@@ -18,6 +19,61 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
   ) {
     const payload = validatePayload(event.payload);
     const { config, service } = createE2BRunExecution(this.env);
+
+    if (payload.kind === "terminal-expiry") {
+      await step.sleepUntil(
+        "wait for terminal session expiry",
+        new Date(payload.expiresAt),
+      );
+      const cleanup = await step.do(
+        "expire terminal session",
+        {
+          retries: {
+            backoff: "constant",
+            delay: "2 seconds",
+            limit: 2,
+          },
+        },
+        () =>
+          createProjectTerminalService(this.env).expire(
+            payload.projectId,
+            payload.terminalSessionId,
+          ),
+      );
+      return {
+        ...cleanup,
+        terminalSessionId: payload.terminalSessionId,
+      };
+    }
+
+    if (payload.kind === "terminal-idle-cleanup") {
+      await step.sleep(
+        "wait for terminal sandbox idle timeout",
+        `${Math.ceil(config.idleTtlMs / 1_000)} seconds`,
+      );
+      const cleanup = await step.do(
+        "stop terminal idle sandbox",
+        {
+          retries: {
+            backoff: "constant",
+            delay: "2 seconds",
+            limit: 1,
+          },
+        },
+        () =>
+          service.stopSandboxAfterTerminalIdle({
+            expectedLeaseUpdatedAt:
+              payload.expectedLeaseUpdatedAt,
+            projectId: payload.projectId,
+          }),
+      );
+
+      return {
+        detached: cleanup.detached,
+        stopped: cleanup.stopped,
+        terminalSessionId: payload.terminalSessionId,
+      };
+    }
 
     if (payload.kind === "execute") {
       await step.do(
@@ -66,6 +122,32 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
 function validatePayload(
   value: Readonly<AgentRunWorkflowPayload>,
 ): AgentRunWorkflowPayload {
+  if (value.kind === "terminal-idle-cleanup") {
+    if (
+      !isIdentifier(value.projectId) ||
+      !isIdentifier(value.terminalSessionId) ||
+      !isTimestamp(value.expectedLeaseUpdatedAt)
+    ) {
+      throw new NonRetryableError(
+        "Terminal idle Workflow payload is invalid",
+      );
+    }
+    return { ...value };
+  }
+
+  if (value.kind === "terminal-expiry") {
+    if (
+      !isIdentifier(value.projectId) ||
+      !isIdentifier(value.terminalSessionId) ||
+      !isTimestamp(value.expiresAt)
+    ) {
+      throw new NonRetryableError(
+        "Terminal expiry Workflow payload is invalid",
+      );
+    }
+    return { ...value };
+  }
+
   if (
     (value.kind !== "execute" && value.kind !== "idle-cleanup") ||
     !isIdentifier(value.projectId) ||
@@ -79,4 +161,12 @@ function validatePayload(
 
 function isIdentifier(value: string) {
   return value.length >= 1 && value.length <= 100;
+}
+
+function isTimestamp(value: string) {
+  return (
+    value.length >= 20 &&
+    value.length <= 40 &&
+    !Number.isNaN(Date.parse(value))
+  );
 }

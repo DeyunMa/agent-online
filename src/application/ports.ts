@@ -60,6 +60,17 @@ export type MessageRecord = {
   sequence: number;
 };
 
+export type TerminalSessionRecord = {
+  createdAt: string;
+  expiresAt: string;
+  id: string;
+  projectId: string;
+  providerProcessRef: string | null;
+  providerSandboxRef: string | null;
+  sandboxLeaseId: string;
+  updatedAt: string;
+};
+
 export interface ProjectRepository {
   create(input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string }): Promise<ProjectRecord>;
   deleteOwned(projectId: string, userId: string): Promise<boolean>;
@@ -101,6 +112,16 @@ export interface SandboxLeaseRepository {
     leaseId: string;
     updatedAt: string;
   }): Promise<boolean>;
+  /**
+   * Atomically detaches an idle provider sandbox after a non-Run activity,
+   * provided that the Lease has not changed since that activity ended.
+   */
+  claimIdleAfterActivityForStop(input: {
+    expectedProviderRef: string;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    updatedAt: string;
+  }): Promise<boolean>;
   findByProjectId(projectId: string): Promise<SandboxLeaseRecord | null>;
   getOrCreate(input: {
     id: string;
@@ -114,6 +135,69 @@ export interface SandboxLeaseRepository {
     updatedAt: string;
     leaseId: string;
   }): Promise<SandboxLeaseRecord>;
+}
+
+export type ClaimTerminalSessionResult =
+  | {
+      kind: "claimed";
+      session: TerminalSessionRecord;
+    }
+  | { kind: "project_busy" };
+
+export interface TerminalSessionRepository {
+  /**
+   * Atomically claims the Project for a single ephemeral Terminal only when no
+   * AgentRun or Terminal is active and the Lease has not changed since read.
+   */
+  claim(input: {
+    expectedLeaseProviderRef: string | null;
+    expectedLeaseUpdatedAt: string;
+    expiresAt: string;
+    id: string;
+    now: string;
+    projectId: string;
+    sandboxLeaseId: string;
+  }): Promise<ClaimTerminalSessionResult>;
+  findById(sessionId: string): Promise<TerminalSessionRecord | null>;
+  findByProjectId(projectId: string): Promise<TerminalSessionRecord | null>;
+  setProviderProcessRef(
+    sessionId: string,
+    providerProcessRef: string,
+    now: string,
+  ): Promise<TerminalSessionRecord | null>;
+  setProviderSandboxRef(
+    sessionId: string,
+    providerSandboxRef: string,
+    now: string,
+  ): Promise<TerminalSessionRecord | null>;
+  release(sessionId: string): Promise<boolean>;
+  /**
+   * Releases the Terminal lock and marks the same provider sandbox idle in one
+   * D1 transaction. A stale connection cannot mutate a replacement session.
+   */
+  releaseAndMarkLeaseIdle(input: {
+    expectedProviderSandboxRef: string;
+    now: string;
+    sessionId: string;
+  }): Promise<boolean>;
+  /**
+   * Releases the Terminal lock only after the entire provider sandbox has been
+   * stopped, atomically detaching that provider reference from the Lease.
+   */
+  releaseAndMarkLeaseStopped(input: {
+    expectedProviderSandboxRef: string;
+    now: string;
+    sessionId: string;
+  }): Promise<boolean>;
+  /**
+   * Keeps the Terminal lock while quarantining a provider sandbox whose PTY
+   * and sandbox could not be confirmed stopped.
+   */
+  markLeaseFailedKeepingSession(input: {
+    expectedProviderSandboxRef: string;
+    now: string;
+    sessionId: string;
+  }): Promise<boolean>;
 }
 
 export type CreateQueuedAgentRunResult =

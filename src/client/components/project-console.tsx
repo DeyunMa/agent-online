@@ -39,6 +39,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamOutput, setStreamOutput] = useState("");
   const [streamError, setStreamError] = useState<BrowserApiError | null>(null);
+  const [terminalActive, setTerminalActive] = useState(false);
   const [view, setView] = useState<ProjectConsoleView>("conversation");
 
   const project = useQuery({
@@ -131,6 +132,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     setActiveRunId(null);
     setStreamOutput("");
     setStreamError(null);
+    setTerminalActive(false);
     setView("conversation");
   }, [projectId]);
 
@@ -251,7 +253,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           </nav>
           <button
             className="new-run-action"
-            disabled={activeRunIsBlocking || runCreationUnavailable}
+            disabled={
+              activeRunIsBlocking ||
+              runCreationUnavailable ||
+              terminalActive
+            }
             onClick={() => composerRef.current?.focus()}
             type="button"
           >
@@ -336,7 +342,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             disabled={
               createRun.isPending ||
               activeRunIsBlocking ||
-              runCreationUnavailable
+              runCreationUnavailable ||
+              terminalActive
             }
             error={createRun.error}
             isSubmitting={createRun.isPending}
@@ -349,9 +356,21 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           hasActiveRun={activeRunIsBlocking}
           isStopping={stopSandbox.isPending}
           onStopSandbox={() => stopSandbox.mutate()}
+          onTerminalActivityChange={(active) => {
+            setTerminalActive(active);
+            if (!active) {
+              void queryClient.invalidateQueries({
+                queryKey: projectDetailQueryKey(projectId),
+              });
+            }
+          }}
           project={project.data}
           run={currentRun}
           stopError={stopSandbox.error}
+          terminalActive={terminalActive}
+          terminalEnabled={
+            platformCapabilities.data?.terminalEnabled === true
+          }
         />
       </section>
     </>

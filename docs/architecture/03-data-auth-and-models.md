@@ -1,13 +1,13 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；当前用户跨 Run 聚合 API/UI 已完成本地验收、待发布 Preview，维护者视图仍待实现。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；当前用户跨 Run 聚合与 Terminal 临时占用已完成本地验收、待发布 Preview，维护者视图仍待实现。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
 
 | 位置 | 保存内容 | 不保存内容 |
 | --- | --- | --- |
-| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage。 | Project 文件、原始 Agent 事件、完整终端日志、Provider 明文 Key、私有推理。 |
+| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage，以及当前临时 Terminal 互斥行。 | Project 文件、原始 Agent 事件、终端输入/输出/滚屏、Provider 明文 Key、私有推理。 |
 | 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
 | Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
 | 可选 Sentry | 脱敏错误和稀疏的服务端追踪元数据。 | prompt、消息正文、代码文件、密钥、原始 Agent/终端流。 |
@@ -41,10 +41,11 @@ Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth �
 | `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户消息和最终 assistant 消息。 |
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
 | `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、关联、当前私有进程引用和基础计量。 |
+| `terminal_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 PTY 的硬互斥与私有终止引用；关闭即删除，不是历史表。`expires_at` 只供 Workflow 调度，不能自动解锁。 |
 
 `agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。ModelGateway 用原子 delta 累加模型 usage；沙箱时长用幂等 `MAX` 写入，避免 Workflow 重试重复累计。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。
 
-数据库需要两个约束：
+数据库需要以下互斥约束：
 
 ```sql
 CREATE UNIQUE INDEX sandbox_leases_one_per_project
@@ -53,6 +54,18 @@ CREATE UNIQUE INDEX sandbox_leases_one_per_project
 CREATE UNIQUE INDEX agent_runs_one_active_per_project
   ON agent_runs(project_id)
   WHERE status IN ('queued', 'starting', 'running', 'cancelling');
+
+-- terminal_sessions.project_id 在表定义中声明为 UNIQUE
+
+CREATE TRIGGER agent_runs_block_active_terminal
+BEFORE INSERT ON agent_runs
+WHEN EXISTS (
+  SELECT 1 FROM terminal_sessions
+  WHERE project_id = NEW.project_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'project_terminal_active');
+END;
 ```
 
 不建立 `workspace_revisions`、`usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
@@ -79,7 +92,7 @@ Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token �
 
 聚合不按 Run 状态过滤。取消、失败、超时或仍在执行的 Run 只要已有真实落库用量，就计入当前读数。前端只显示 API 数据，不推算价格；实现没有新增迁移、`usage_events`、外部依赖或环境变量。内部管理视图仍未实现。
 
-`AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
+`AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。临时 Terminal 不生成 AgentRun，也不写长期 usage；其成本只由 30 分钟会话上限、E2B timeout 和 10 分钟 idle cleanup 约束。
 
 用量用于：
 

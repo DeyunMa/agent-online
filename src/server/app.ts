@@ -9,6 +9,7 @@ import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gate
 import { createProjectApi } from "./project-api";
 import { getInstalledSandboxRuntimeId } from "./runtime-config";
 import { createUsageApi } from "./usage-api";
+import { createTerminalApi } from "./terminal-api";
 
 export const app = new Hono<AppEnv>();
 
@@ -27,14 +28,16 @@ app.get("/api/health", (c) =>
 );
 
 app.get("/api/capabilities", (c) => {
+  const sandboxRuntimeId = getInstalledSandboxRuntimeId(c.env);
   const policy = getAgentRuntimePolicy(
     c.env,
-    getInstalledSandboxRuntimeId(c.env),
+    sandboxRuntimeId,
   );
   return c.json({
     agentRuntimeIds: [...policy.publicRuntimeIds],
     defaultAgentRuntimeId,
     runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
+    terminalEnabled: sandboxRuntimeId === "e2b",
   });
 });
 
@@ -44,6 +47,7 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.ra
 
 app.route("/api", createProjectApi());
 app.route("/api", createUsageApi());
+app.route("/api", createTerminalApi());
 
 app.notFound((c) => c.json({ error: "not_found", requestId: c.get("requestId") }, 404));
 

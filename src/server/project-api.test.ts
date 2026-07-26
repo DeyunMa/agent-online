@@ -13,11 +13,13 @@ import type {
   ProjectRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
+  TerminalSessionRepository,
 } from "../application/ports";
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
+import { ProjectTerminalService } from "../application/project-terminal";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import type {
@@ -457,6 +459,17 @@ function createFixture(
     sandboxRuntimeId: "fake",
     workingDirectory: "/workspace",
   });
+  const terminalSessions = {
+    claim: async () => ({ kind: "project_busy" as const }),
+    findById: async () => null,
+    findByProjectId: async () => null,
+    markLeaseFailedKeepingSession: async () => false,
+    release: async () => false,
+    releaseAndMarkLeaseIdle: async () => false,
+    releaseAndMarkLeaseStopped: async () => false,
+    setProviderProcessRef: async () => null,
+    setProviderSandboxRef: async () => null,
+  } satisfies TerminalSessionRepository;
   const services: ServerServices = {
     agentRuns,
     createAgentRuns,
@@ -466,7 +479,9 @@ function createFixture(
     projectFiles: new ProjectFilesService({
       agentRuns,
       getSandboxRuntime: () => sandboxRuntime,
+      now: () => new Date(now),
       sandboxLeases,
+      terminalSessions,
       workingDirectory: "/workspace",
     }),
     projectSandboxes: new ProjectSandboxService({
@@ -474,6 +489,19 @@ function createFixture(
       getSandboxRuntime: () => sandboxRuntime,
       now: () => new Date(now),
       sandboxLeases,
+      terminalSessions,
+    }),
+    projectTerminals: new ProjectTerminalService({
+      agentRuns,
+      clock: { now: () => new Date(now) },
+      createId,
+      getSandboxRuntime: () => null,
+      sandboxLeases,
+      sandboxRuntimeId: "fake",
+      scheduleExpiry: async () => undefined,
+      scheduleIdleCleanup: async () => undefined,
+      terminalSessions,
+      workingDirectory: "/workspace",
     }),
     projects,
     runExecutions: coordinator,
@@ -590,6 +618,29 @@ class InMemoryMessageRepository implements MessageRepository {
 
 class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   readonly records = new Map<string, SandboxLeaseRecord>();
+
+  async claimIdleAfterActivityForStop(
+    input: Parameters<
+      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
+    >[0],
+  ) {
+    const lease = this.records.get(input.leaseId);
+    if (
+      !lease ||
+      lease.status !== "idle" ||
+      lease.providerRef !== input.expectedProviderRef ||
+      lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
 
   async claimForManualStop(
     input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],

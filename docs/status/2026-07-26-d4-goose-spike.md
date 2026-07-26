@@ -98,4 +98,4 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 
 1. 保持私有 Preview 为 `spike`，先固化 capability 工具继承和输出/日志脱敏门禁。
 2. 公开门槛全部通过后再实现 React Runtime 选择，并完成刷新与移动端验收。
-3. 产品主线恢复到跨 Run 用量聚合；Terminal 和 Preview 前完成 use-case/route 与 Runtime capability 接口加固。
+3. 产品主线的跨 Run Usage、use-case/route 加固和受控 Terminal 已完成本地实现；下一步是 Terminal 远端验收与受控 Preview。
