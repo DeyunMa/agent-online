@@ -9,6 +9,14 @@ export function projectMessagesQueryKey(projectId: string) {
   return ["project-messages", projectId] as const;
 }
 
+export function projectFilesQueryKey(projectId: string, path: string) {
+  return ["project-files", projectId, path] as const;
+}
+
+export function projectFileQueryKey(projectId: string, path: string) {
+  return ["project-file", projectId, path] as const;
+}
+
 export function activeAgentRunQueryKey(projectId: string) {
   return ["active-agent-run", projectId] as const;
 }

@@ -1,4 +1,10 @@
-import { SandboxNotFoundError, type CommandStartOpts, type SandboxConnectOpts, type SandboxOpts } from "e2b";
+import {
+  FileType,
+  SandboxNotFoundError,
+  type CommandStartOpts,
+  type SandboxConnectOpts,
+  type SandboxOpts,
+} from "e2b";
 import { describe, expect, it } from "vitest";
 
 import { E2BSandboxRuntime, type E2BSandboxClient } from "./e2b-runtime";
@@ -84,6 +90,28 @@ describe("E2BSandboxRuntime", () => {
     expect(sandbox.killed).toBe(false);
   });
 
+  it("maps provider file metadata and bytes to the generic filesystem contract", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    await expect(runtime.listDirectory(handle, "/workspace")).resolves.toEqual([
+      {
+        kind: "file",
+        modifiedAt: null,
+        name: "example.txt",
+        size: 7,
+      },
+    ]);
+    await expect(runtime.readFile(handle, "/workspace/example.txt")).resolves.toEqual(
+      new TextEncoder().encode("example"),
+    );
+  });
+
   it("reports a missing persisted process so cancellation can stop the sandbox", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
     sandbox.processKillResult = false;
@@ -148,6 +176,20 @@ class FakeE2BSandbox {
   readonly process = new FakeE2BCommandHandle();
   readonly timeoutValues: number[] = [];
   readonly files = {
+    list: async (_path: string) => [
+      {
+        group: "e2b",
+        mode: 0o644,
+        name: "example.txt",
+        owner: "e2b",
+        path: "/workspace/example.txt",
+        permissions: "rw-r--r--",
+        size: 7,
+        type: FileType.FILE,
+      },
+    ],
+    read: async (_path: string, _options: { format: "bytes" }) =>
+      new TextEncoder().encode("example"),
     write: async (_path: string, _content: string) => undefined,
   };
 

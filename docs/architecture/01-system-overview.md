@@ -1,7 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2 真实执行 happy path、取消、deadline 与空闲 TTL 已通过远程 Preview；受控文件/终端/preview 待实现
-> 当前实施顺序：受控只读 Files -> 用量聚合 -> Terminal -> Preview。
+> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现，远程验收、用量聚合、Terminal 与 Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -41,7 +40,7 @@ React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供�
 
 - Project 与用户可见消息；
 - 应用自己的 `sandboxLeaseId`、状态和可用能力；
-- 脱敏后的 Agent 状态；文件列表、终端流和 preview 只有在对应受控 API 完成后才可见；
+- 脱敏后的 Agent 状态；现有 E2B Lease 的受控文件列表和 UTF-8 文本；终端流和 preview 只有在对应 API 完成后才可见；
 - 自己的基础用量汇总。
 
 它不能看到真实供应商 ID、Provider Key、沙箱内部端口、调度密钥或 Gemini Key，也不能指定任意二进制、Provider 或 shell 命令。
@@ -54,7 +53,7 @@ Worker 能拿到对话和用量，是因为它明确拥有请求和事件协议�
 
 ### Linux 沙箱
 
-Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前 `E2BSandboxRuntime` 已实现真实沙箱与进程合同；`FakeSandboxRuntime` 保留给无外部成本的控制面开发。
+Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前 `E2BSandboxRuntime` 已实现真实沙箱、进程和 Lease 级文件合同；`FakeSandboxRuntime` 保留给无外部成本的控制面开发，其内存文件不能跨请求读取，因此公共 Files 会明确返回不可用。
 
 沙箱磁盘是 V1 Project 文件的唯一副本。空闲 TTL、显式停止、Provider 过期或故障后，文件可以丢失；Project 的 D1 元数据和对话仍保留，但新沙箱从空目录开始。
 
@@ -116,6 +115,8 @@ sequenceDiagram
 | `/api/auth/*` | Better Auth。 |
 | `/api/projects` 与 `/api/projects/:id` | 创建、列出、读取用户自己的 Project。 |
 | `/api/projects/:id/messages` | 读取 Project 的可见消息。 |
+| `/api/projects/:id/files` | 在没有活动 Run 时列出现有沙箱 `/workspace` 下的受控目录。 |
+| `/api/projects/:id/files/content` | 读取受限相对路径指向的 UTF-8 文本文件。 |
 | `/api/projects/:id/agent-runs` | 创建 AgentRun，或读取当前用户该 Project 最近 50 条 Run 事实。 |
 | `/api/projects/:id/agent-runs/active` | 读取该 Project 当前的非终态 Run，供页面恢复。 |
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
@@ -123,7 +124,7 @@ sequenceDiagram
 | `/api/projects/:id/agent-runs/:runId/cancel` | 取消当前 Run。 |
 | `/api/projects/:id/sandbox/stop` | 在没有非终态 Run 时原子脱离并停止当前沙箱；不公开 Provider ID。 |
 
-以下 API 留待真实 Runtime 或管理能力阶段实现：
+以下 API 留待后续 Runtime 或管理能力阶段实现：
 
 | 路径 | 作用 |
 | --- | --- |

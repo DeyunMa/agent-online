@@ -13,11 +13,18 @@ import type {
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "../application/ports";
+import { ProjectFilesService } from "../application/project-files";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
-import type { AgentRunResponse, MessageResponse, ProjectResponse } from "../shared/api";
+import type {
+  AgentRunResponse,
+  MessageResponse,
+  ProjectDirectoryResponse,
+  ProjectFileResponse,
+  ProjectResponse,
+} from "../shared/api";
 import type { AppEnv } from "./env";
 import { createProjectApi } from "./project-api";
 import type { ServerServices } from "./services";
@@ -162,6 +169,60 @@ describe("Project API", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: "project_busy",
     });
+  });
+
+  it("lists and reads owned Project files without exposing provider details", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+    const lease = await fixture.sandboxLeases.getOrCreate({
+      id: "lease_1",
+      now,
+      projectId: "project_1",
+      runtimeId: "fake",
+    });
+    const handle = await fixture.sandboxRuntime.ensureLease({
+      projectId: "project_1",
+      providerRef: "provider-private-sandbox",
+      sandboxLeaseId: lease.id,
+    });
+    await fixture.sandboxRuntime.writeFile(
+      handle,
+      "/workspace/src/index.ts",
+      "export {};\n",
+    );
+    await fixture.sandboxLeases.updateState({
+      leaseId: lease.id,
+      providerRef: handle.id,
+      status: "idle",
+      updatedAt: now,
+    });
+
+    const listResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/files?path=src",
+    );
+    const list = (await listResponse.json()) as ProjectDirectoryResponse;
+    const fileResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/files/content?path=src%2Findex.ts",
+    );
+    const file = (await fileResponse.json()) as ProjectFileResponse;
+
+    expect(listResponse.status).toBe(200);
+    expect(list.entries).toMatchObject([
+      { kind: "file", name: "index.ts", path: "src/index.ts" },
+    ]);
+    expect(fileResponse.status).toBe(200);
+    expect(file).toMatchObject({
+      content: "export {};\n",
+      path: "src/index.ts",
+    });
+    expect(JSON.stringify([list, file])).not.toContain(handle.id);
+    expect(JSON.stringify([list, file])).not.toContain("providerRef");
   });
 
   it("creates one visible input message and one queued Run, without exposing private lease details", async () => {
@@ -310,11 +371,17 @@ function createFixture(
   const agentRuns = new InMemoryAgentRunRepository(messages);
   const sandboxLeases = new InMemorySandboxLeaseRepository();
   const coordinator = new FakeRunCoordinator(agentRuns);
-  const sandboxRuntime = new FakeSandboxRuntime();
+  const sandboxRuntime = new PersistentFakeSandboxRuntime();
   const services: ServerServices = {
     agentRuns,
-    defaultModelId: "gemini-2.5-flash",
+    defaultModelId: "gemini-3.6-flash",
     messages,
+    projectFiles: new ProjectFilesService({
+      agentRuns,
+      getSandboxRuntime: () => sandboxRuntime,
+      sandboxLeases,
+      workingDirectory: "/workspace",
+    }),
     projectSandboxes: new ProjectSandboxService({
       agentRuns,
       getSandboxRuntime: () => sandboxRuntime,
@@ -348,7 +415,19 @@ function createFixture(
     }),
   );
 
-  return { agentRuns, app, coordinator, messages, projects, sandboxLeases };
+  return {
+    agentRuns,
+    app,
+    coordinator,
+    messages,
+    projects,
+    sandboxLeases,
+    sandboxRuntime,
+  };
+}
+
+class PersistentFakeSandboxRuntime extends FakeSandboxRuntime {
+  override readonly filesystemScope = "lease" as const;
 }
 
 class InMemoryProjectRepository implements ProjectRepository {

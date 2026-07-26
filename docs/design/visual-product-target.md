@@ -1,7 +1,7 @@
 # 视觉与产品目标
 
 > 状态：已确认的产品方向基准。效果图约束后续界面和功能组织，但不代表图中所有能力已经实现。
-> 当前进度：D2 已远程验收；D3 正从受控只读 Files 开始。
+> 当前进度：D2 已远程验收；D3 受控只读 Files 已完成本地实现与浏览器验收。
 > 关联：[视觉基准图](./assets/agent-online-visual-target.png) · [系统总览](../architecture/01-system-overview.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ![Agent Online 视觉基准](./assets/agent-online-visual-target.png)
@@ -47,16 +47,16 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 
 | 阶段 | 可以展示 | 不能伪造 |
 | --- | --- | --- |
-| 当前 D2 | 邮箱密码认证、真实 Project、Message、Run 历史、E2B + Pi、最终 assistant Message、真实 usage、取消、deadline、空闲 TTL 和受控手动停止沙箱。 | 文件、终端、preview、changes 或任何未经网关授权的数据。 |
-| D3 | 受控文件浏览、终端、preview、用户/维护者基础用量视图。 | 工作区恢复、R2 快照、商业账单。 |
+| 当前 D2 + Files | 邮箱密码认证、真实 Project、Message、Run 历史、E2B + Pi、最终 assistant Message、真实 usage、取消、deadline、空闲 TTL、受控停止和只读 Files。 | 终端、preview、changes 或任何未经网关授权的数据。 |
+| D3 后续 | 终端、preview、用户/维护者基础用量视图。 | 工作区恢复、R2 快照、商业账单。 |
 | 后续 | 基于真实 Provider 能力的 diff、仓库集成和第二个 Runtime。 | 仅凭预留 ID 暴露 Goose、Claude Code 或 Codex CLI。 |
 
-右栏在功能未完成时只显示真实的 Lease、AgentRuntime、SandboxRuntime、模型和 Run usage；文件、终端、preview 标签必须等对应 API 和授权路径完成后再加入。
+右栏只显示真实的 Lease、AgentRuntime、SandboxRuntime、模型和 Run usage。Files 已使用真实 API 启用；Terminal 和 Preview 仍必须等对应授权路径完成后再启用。
 
 ## 5. 当前实现优先级
 
 1. 维持已确认的三栏 Project 控制台，并保持所有 loading/empty/error/disabled 状态真实。
-2. 先启用受控只读 Files：目录、文本读取和真实无沙箱/过期/错误状态。
-3. 再实现用量聚合、Terminal 和 Preview，不让浏览器接触 Provider ID、内部端口或未受控命令入口。
+2. 已启用受控只读 Files：目录、文本读取和真实无沙箱/过期/错误状态。
+3. 后续实现用量聚合、Terminal 和 Preview，不让浏览器接触 Provider ID、内部端口或未受控命令入口。
 
 视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、布局跳动和无语义的大面积绿色。

@@ -69,6 +69,28 @@ export type CreateAgentRunRequest = {
   content: string;
 };
 
+export type ProjectFileEntryResponse = {
+  kind: "directory" | "file" | "symlink";
+  modifiedAt: string | null;
+  name: string;
+  path: string;
+  size: number;
+};
+
+export type ProjectDirectoryResponse = {
+  entries: ProjectFileEntryResponse[];
+  path: string;
+  truncated: boolean;
+};
+
+export type ProjectFileResponse = {
+  content: string;
+  modifiedAt: string | null;
+  name: string;
+  path: string;
+  size: number;
+};
+
 export type AgentRunStreamEvent =
   | { sequence: number; status: AgentRunStatus; type: "run.status" }
   | { chunk: string; sequence: number; type: "agent.output" }
@@ -78,11 +100,16 @@ export type AgentRunStreamEvent =
 export type ApiErrorResponse = {
   error:
     | "forbidden"
+    | "file_too_large"
     | "internal_error"
     | "not_found"
+    | "path_not_found"
     | "project_busy"
     | "runs_disabled"
+    | "sandbox_unavailable"
     | "unauthorized"
+    | "unsupported_file"
+    | "unsupported_path"
     | "validation_error";
   requestId: string;
 };

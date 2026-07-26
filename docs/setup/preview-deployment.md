@@ -1,7 +1,7 @@
 # Cloudflare 私有 Preview 部署
 
 > 状态：2026-07-26 已完成锁定部署、真实 Pi AgentRun happy path、远程取消、deadline 和 10 分钟空闲回收。
-> D2 代表性验收已完成；D3 能力仍应逐项部署和验收，不能因 Preview 可用而提前开放。
+> D2 代表性验收已完成；D3 Files 已在本地完成但尚未部署，后续能力仍应逐项部署和验收。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -113,6 +113,6 @@ pnpm deploy:preview
 - D1 中只出现产品状态和聚合 usage，不出现 Provider Key、raw transcript 或 Project 文件。
 - Cloudflare Workflow 免费层的真实限制有实测结论。
 
-完成以上条件后，D2 才算通过完整远程环境验收。文件、终端、Preview 和 Changes API 仍属于 D3，不因 Worker 已部署而提前开放。
+完成以上条件后，D2 才算通过完整远程环境验收。只读 Files 已完成本地纵切，仍需在下一次 Preview 部署后使用真实 E2B Lease 验收；Terminal、Preview 和 Changes API 不因 Worker 已部署而提前开放。
 
 当前已完成 owner 注册、Project 创建、同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。第 5 项已验证：10 分钟空闲 TTL 后 Workflow 返回 `detached=true, stopped=true`，D1 Lease 变为 `stopped` 并清空 Provider 引用。未单独点击手动 Stop；自动回收已验证同一停止路径，Project 测试文件按 V1 设计允许丢失。

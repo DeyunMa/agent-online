@@ -7,6 +7,9 @@ import type {
   SandboxLeaseRepository,
 } from "../application/ports";
 import {
+  ProjectFilesService,
+} from "../application/project-files";
+import {
   ProjectSandboxService,
   type StopProjectSandboxResult,
 } from "../application/project-sandbox";
@@ -26,6 +29,7 @@ import {
   D1SandboxLeaseRepository,
 } from "./persistence/d1-repositories";
 import {
+  defaultWorkingDirectory,
   getDefaultModelId,
   getE2BExecutionConfig,
   getInstalledSandboxRuntimeId,
@@ -49,6 +53,7 @@ export type ServerServices = {
   agentRuns: AgentRunRepository;
   defaultModelId: string;
   messages: MessageRepository;
+  projectFiles: ProjectFilesService;
   projectSandboxes: ProjectSandboxController;
   projects: ProjectRepository;
   runExecutions: RunExecutionDispatcher;
@@ -92,6 +97,12 @@ export function createServerServices(env: AppBindings): ServerServices {
     agentRuns,
     defaultModelId: getDefaultModelId(env),
     messages,
+    projectFiles: new ProjectFilesService({
+      agentRuns,
+      getSandboxRuntime,
+      sandboxLeases,
+      workingDirectory: defaultWorkingDirectory,
+    }),
     projectSandboxes: new ProjectSandboxService({
       agentRuns,
       getSandboxRuntime,

@@ -78,4 +78,31 @@ describe("FakeSandboxRuntime", () => {
 
     expect(handle).toEqual({ id: "fake-existing-lease", kind: "fake", sandboxLeaseId: "lease_1" });
   });
+
+  it("lists, reads, and removes files with the sandbox lifecycle", async () => {
+    const runtime = new FakeSandboxRuntime();
+    const handle = await runtime.ensureLease({
+      projectId: "project_1",
+      providerRef: null,
+      sandboxLeaseId: "lease_1",
+    });
+    await runtime.writeFile(handle, "/workspace/src/index.ts", "export {};\n");
+
+    await expect(runtime.listDirectory(handle, "/workspace")).resolves.toEqual([
+      {
+        kind: "directory",
+        modifiedAt: null,
+        name: "src",
+        size: 0,
+      },
+    ]);
+    await expect(runtime.readFile(handle, "/workspace/src/index.ts")).resolves.toEqual(
+      new TextEncoder().encode("export {};\n"),
+    );
+
+    await runtime.stop(handle, "manual");
+    await expect(runtime.readFile(handle, "/workspace/src/index.ts")).rejects.toThrow(
+      "Unknown fake runtime handle",
+    );
+  });
 });

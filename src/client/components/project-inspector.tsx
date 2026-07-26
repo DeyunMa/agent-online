@@ -1,5 +1,5 @@
 import { LoaderCircle, Square } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type {
   AgentRunResponse,
@@ -16,6 +16,9 @@ import {
   shortRunId,
 } from "../presentation";
 import { ErrorState } from "./ui-states";
+import { ProjectFiles } from "./project-files";
+
+type InspectorView = "files" | "overview";
 
 export function ProjectInspector({
   hasActiveRun,
@@ -32,6 +35,7 @@ export function ProjectInspector({
   run: AgentRunResponse | undefined;
   stopError: Error | null;
 }) {
+  const [view, setView] = useState<InspectorView>("overview");
   const lease = project.sandboxLease;
   const canStop =
     lease !== null &&
@@ -51,60 +55,75 @@ export function ProjectInspector({
         role="tablist"
       >
         <button
-          aria-selected="true"
-          className="inspector-tab inspector-tab-active"
+          aria-selected={view === "overview"}
+          className={`inspector-tab ${view === "overview" ? "inspector-tab-active" : ""}`}
+          onClick={() => setView("overview")}
           role="tab"
           type="button"
         >
           Overview
         </button>
-        <DisabledInspectorTab label="Files" />
+        <button
+          aria-selected={view === "files"}
+          className={`inspector-tab ${view === "files" ? "inspector-tab-active" : ""}`}
+          onClick={() => setView("files")}
+          role="tab"
+          type="button"
+        >
+          Files
+        </button>
         <DisabledInspectorTab label="Terminal" />
         <DisabledInspectorTab label="Preview" />
       </div>
 
-      <ProjectOverview project={project} run={run} />
+      {view === "overview" ? (
+        <>
+          <ProjectOverview project={project} run={run} />
 
-      <section className="inspector-section">
-        <h3>Sandbox</h3>
-        <dl className="inspector-definition-list">
-          <Definition
-            label="Status"
-            value={
-              <span className={`status-with-dot ${sandboxStatusTone(lease?.status)}`}>
-                <span aria-hidden="true" />
-                {lease ? sandboxStatusLabel(lease.status) : "Not started"}
-              </span>
-            }
-          />
-          <Definition
-            label="Runtime"
-            value={lease ? runtimeLabel(lease.runtimeId) : "—"}
-          />
-          <Definition
-            label="Updated"
-            value={lease ? formatDateTime(lease.updatedAt) : "—"}
-          />
-        </dl>
-        {stopError ? <ErrorState compact error={stopError} /> : null}
-        {lease && lease.status !== "stopped" ? (
-          <button
-            className="stop-sandbox-action"
-            disabled={!canStop}
-            onClick={onStopSandbox}
-            type="button"
-          >
-            {isStopping ? (
-              <LoaderCircle aria-hidden="true" className="spin" size={15} />
-            ) : (
-              <Square aria-hidden="true" size={13} />
-            )}
-            <span>{isStopping ? "Stopping" : "Stop sandbox"}</span>
-          </button>
-        ) : null}
-      </section>
+          <section className="inspector-section">
+            <h3>Sandbox</h3>
+            <dl className="inspector-definition-list">
+              <Definition
+                label="Status"
+                value={
+                  <span className={`status-with-dot ${sandboxStatusTone(lease?.status)}`}>
+                    <span aria-hidden="true" />
+                    {lease ? sandboxStatusLabel(lease.status) : "Not started"}
+                  </span>
+                }
+              />
+              <Definition
+                label="Runtime"
+                value={lease ? runtimeLabel(lease.runtimeId) : "—"}
+              />
+              <Definition
+                label="Updated"
+                value={lease ? formatDateTime(lease.updatedAt) : "—"}
+              />
+            </dl>
+            {stopError ? <ErrorState compact error={stopError} /> : null}
+            {lease && lease.status !== "stopped" ? (
+              <button
+                className="stop-sandbox-action"
+                disabled={!canStop}
+                onClick={onStopSandbox}
+                type="button"
+              >
+                {isStopping ? (
+                  <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                ) : (
+                  <Square aria-hidden="true" size={13} />
+                )}
+                <span>{isStopping ? "Stopping" : "Stop sandbox"}</span>
+              </button>
+            ) : null}
+          </section>
 
-      <CurrentRunUsage run={run} />
+          <CurrentRunUsage run={run} />
+        </>
+      ) : (
+        <ProjectFiles hasActiveRun={hasActiveRun} projectId={project.id} />
+      )}
     </aside>
   );
 }

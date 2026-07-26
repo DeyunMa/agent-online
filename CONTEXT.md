@@ -1,7 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2 已完成私有 Cloudflare Preview 的真实 Pi AgentRun happy path、取消、deadline 和空闲 TTL；受控文件/终端/preview 仍待完成。
-> 当前实施顺序：受控只读 Files -> 用量聚合 -> Terminal -> Preview。
+> 状态：D2 已完成私有 Cloudflare Preview 验收；D3 受控只读 Files 已完成本地实现，远程部署验收、用量聚合、Terminal 和 Preview 待完成。
 
 ## 产品定义
 
@@ -19,7 +18,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `SandboxLease` | 应用为 Project 保留的唯一逻辑沙箱记录。 | 不是供应商真实 sandbox ID；同一时刻映射到 0 或 1 个真实沙箱，不保留实例历史。 |
 | `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
 | `AgentRunWorkflow` | 每个 AgentRun 一个的 Cloudflare Workflow 执行所有者。 | 只接收 Project/Run 应用 ID；D1 仍是产品事实，不保存 raw transcript。 |
-| `SandboxRuntime` | 创建、附着、执行和停止 Linux 沙箱的适配器端口。 | 不认识 Pi、消息、模型或 D1 业务。 |
+| `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，不能当作跨请求 Project 文件。 |
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；当前只注册 Pi。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | `AgentRun` 上的聚合计量字段。 | 真实 Runtime 写 token、模型请求数和沙箱时长；它不是账单流水或套餐。 |
@@ -52,6 +51,7 @@ erDiagram
 10. `AgentRun` 终态写入实际 token、模型请求数和沙箱时长。后台按 `user_id` 聚合这些字段即可得到基础用量视图。
 11. 真实执行 owner 是 [ADR-0003](./docs/adr/0003-agent-run-workflow.md) 中每个 Run 一个的 `AgentRunWorkflow`；Workflow 重试不能再次启动已非 `queued` 的 Run。
 12. 私有 Preview 只允许部署邮箱 allowlist 中的用户访问；`RUNS_ENABLED` 是紧急停止新执行的服务端开关，设为 `false` 时必须在任何 Message、Lease 或 AgentRun 写入前失败。
+13. 只读 Files 只附着已有、具有 Lease 级文件连续性的沙箱；不因浏览而创建沙箱。它在无活动 Run 时做尽力一致读取，但不是文件系统事务或严格并发锁。
 
 ## 有意不建模的内容
 

@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2 真实执行 happy path、取消、deadline 与空闲 TTL 已通过远程 Preview；D3 受控能力待完成
+> 状态：D2 已通过远程 Preview；D3 只读 Files 已完成本地实现，远程验收和其余受控能力待完成
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -34,13 +34,13 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。远端已验证沙箱工具调用、同 Project 文件复用、多次模型请求、最终回复、D1 usage、取消只终止当前 Pi 进程、8 秒测试 deadline 的 `timed_out` 收敛，以及 10 分钟空闲 TTL 后 `detached=true, stopped=true` 的沙箱回收。更复杂任务下的 Workflows Free CPU/subrequest 限额仍需持续观察，但不阻塞代表性 D2 纵切完成。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和桌面/移动 UI 验收；尚未部署远程 Preview。Terminal、preview 和 changes 当前仍禁用。
 
-D3 固定按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> Changes”的顺序推进。前一个纵切必须完成服务端授权、Provider 信息隐藏、错误状态、测试和 UI 验收，才启用下一个能力。
+D3 原计划按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> Changes”推进。Files 本地纵切已完成；在启用 Terminal/Preview 前还需完成 Runtime 能力接口和 Hono/use-case 边界的小范围加固。
 
 ## 3. 当前与未来 Runtime 的边界
 
-- `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟或执行真实 wall-clock timeout。
+- `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟真实 wall-clock timeout，内存文件也不具备跨请求连续性，因此公共 Files 不可用。
 - `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。终端和 preview 需要额外受控 API，不能因 E2B 已接入就直接开放。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：唯一已注册的 AgentRuntime，也是当前真实执行路径。

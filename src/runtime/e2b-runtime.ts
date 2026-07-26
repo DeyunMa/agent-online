@@ -1,10 +1,13 @@
 import {
   CommandExitError,
+  FileNotFoundError,
+  FileType,
   Sandbox,
   SandboxNotFoundError,
   type CommandHandle,
   type CommandResult,
   type CommandStartOpts,
+  type EntryInfo,
   type SandboxConnectOpts,
   type SandboxOpts,
 } from "e2b";
@@ -14,10 +17,15 @@ import type {
   ProcessTerminationReason,
   RuntimeHandle,
   SandboxCommand,
+  SandboxFileEntry,
   SandboxProcessEvent,
   SandboxProcessSession,
   SandboxRuntime,
   SandboxStopReason,
+} from "./contract";
+import {
+  SandboxPathNotFoundError,
+  SandboxUnavailableError,
 } from "./contract";
 
 type E2BCommandHandle = Pick<CommandHandle, "kill" | "pid" | "sendStdin" | "wait">;
@@ -28,6 +36,8 @@ type E2BSandbox = {
     run(command: string, options: CommandStartOpts & { background: true }): Promise<E2BCommandHandle>;
   };
   files: {
+    list(path: string): Promise<EntryInfo[]>;
+    read(path: string, options: { format: "bytes" }): Promise<Uint8Array>;
     write(path: string, content: string): Promise<unknown>;
   };
   kill(): Promise<boolean>;
@@ -57,6 +67,7 @@ const defaultClient: E2BSandboxClient = {
 };
 
 export class E2BSandboxRuntime implements SandboxRuntime {
+  readonly filesystemScope = "lease" as const;
   readonly kind = "e2b" as const;
 
   private readonly client: E2BSandboxClient;
@@ -151,6 +162,30 @@ export class E2BSandboxRuntime implements SandboxRuntime {
     return new E2BProcessSession(process, queue);
   }
 
+  async listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]> {
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      const entries = await sandbox.files.list(path);
+      return entries.map((entry) => ({
+        kind: toSandboxFileEntryKind(entry.type),
+        modifiedAt: entry.modifiedTime?.toISOString() ?? null,
+        name: entry.name,
+        size: entry.size,
+      }));
+    } catch (error) {
+      throw mapFilesystemError(error, path);
+    }
+  }
+
+  async readFile(handle: RuntimeHandle, path: string) {
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      return await sandbox.files.read(path, { format: "bytes" });
+    } catch (error) {
+      throw mapFilesystemError(error, path);
+    }
+  }
+
   async stop(handle: RuntimeHandle, _reason: SandboxStopReason) {
     assertRuntimeHandle(handle, this.kind);
 
@@ -214,6 +249,26 @@ export class E2BSandboxRuntime implements SandboxRuntime {
     this.sandboxes.set(sandbox.sandboxId, sandbox);
     return sandbox;
   }
+}
+
+function toSandboxFileEntryKind(type: FileType | undefined): SandboxFileEntry["kind"] {
+  if (type === FileType.DIR) {
+    return "directory";
+  }
+  if (type === FileType.FILE) {
+    return "file";
+  }
+  return "symlink";
+}
+
+function mapFilesystemError(error: unknown, path: string): Error {
+  if (error instanceof SandboxNotFoundError) {
+    return new SandboxUnavailableError();
+  }
+  if (error instanceof FileNotFoundError) {
+    return new SandboxPathNotFoundError(path);
+  }
+  return error instanceof Error ? error : new Error("Sandbox filesystem request failed");
 }
 
 class E2BProcessSession implements SandboxProcessSession {

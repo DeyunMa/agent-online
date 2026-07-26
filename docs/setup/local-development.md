@@ -1,7 +1,7 @@
 # 本地开发基线
 
 > 状态：D2 本地代码、真实 E2B spike 及远程 Workflow happy path、取消、deadline 和空闲 TTL 已完成
-> 下一阶段：受控只读 Files -> 用量聚合 -> Terminal -> Preview。
+> 当前阶段：受控只读 Files 已完成本地实现；远程验收、用量聚合、Terminal 和 Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -31,7 +31,8 @@ worker/         Cloudflare Worker 入口
 - Pi 是唯一已注册的 AgentRuntime，它把 `pi --mode rpc` JSONL 映射为统一 Agent 事件；fake runtime 不执行真实 Pi 二进制。
 - `AgentRunWorkflow`、ModelGateway、Run capability、真实 usage、deadline 和空闲 TTL 已实现。远程 Preview 已通过代表性的文件工具调用、取消、deadline 与 10 分钟空闲回收；更复杂任务下的 Workflows Free CPU/subrequest 限额仍需观察。
 - 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
-- 文件浏览、终端、preview、changes 和每用户并发上限尚未实现。
+- 只读 Files 已实现，但 fake Runtime 的内存文件不跨请求，因此本地 fake 控制面会显示明确的沙箱不可用状态；真实文件浏览需要 E2B Lease。
+- 终端、preview、changes 和每用户并发上限尚未实现。
 - Goose、Claude Code、Codex CLI 仅在 Runtime ID 合同中预留，尚未实现或暴露为选择项。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
 

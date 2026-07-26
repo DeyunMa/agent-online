@@ -7,6 +7,8 @@ import type {
   HealthResponse,
   MessageResponse,
   PlatformCapabilitiesResponse,
+  ProjectDirectoryResponse,
+  ProjectFileResponse,
   ProjectResponse,
 } from "../shared/api";
 
@@ -115,10 +117,20 @@ function messageForApiError(error: ApiErrorResponse["error"]) {
       return "你没有访问此项目的权限。";
     case "not_found":
       return "未找到请求的项目或执行记录。";
+    case "path_not_found":
+      return "文件路径已不存在，请刷新目录后重试。";
     case "project_busy":
       return "该项目已有正在执行的任务。";
     case "runs_disabled":
       return "Agent Run 当前已由维护者暂停。";
+    case "sandbox_unavailable":
+      return "项目沙箱未启动或已停止。运行一次 Agent 后即可查看文件。";
+    case "file_too_large":
+      return "该文件超过在线预览大小限制。";
+    case "unsupported_file":
+      return "当前只支持预览 UTF-8 文本文件。";
+    case "unsupported_path":
+      return "该文件路径不允许在线访问。";
     case "validation_error":
       return "输入内容不符合要求，请检查后重试。";
     case "internal_error":
@@ -128,6 +140,16 @@ function messageForApiError(error: ApiErrorResponse["error"]) {
 
 function runPath(projectId: string, runId: string) {
   return `/api/projects/${encodeURIComponent(projectId)}/agent-runs/${encodeURIComponent(runId)}`;
+}
+
+function projectFilesPath(projectId: string, path: string, content = false) {
+  const query = new URLSearchParams();
+  if (path) {
+    query.set("path", path);
+  }
+  const suffix = content ? "/content" : "";
+  const search = query.size > 0 ? `?${query.toString()}` : "";
+  return `/api/projects/${encodeURIComponent(projectId)}/files${suffix}${search}`;
 }
 
 export const browserApi = {
@@ -179,6 +201,14 @@ export const browserApi = {
 
   listProjects() {
     return requestJson<ProjectResponse[]>("/api/projects");
+  },
+
+  listProjectFiles(projectId: string, path: string) {
+    return requestJson<ProjectDirectoryResponse>(projectFilesPath(projectId, path));
+  },
+
+  readProjectFile(projectId: string, path: string) {
+    return requestJson<ProjectFileResponse>(projectFilesPath(projectId, path, true));
   },
 
   stopProjectSandbox(projectId: string) {

@@ -3,11 +3,14 @@ import type {
   ProcessTerminationReason,
   RuntimeHandle,
   SandboxCommand,
+  SandboxFileEntry,
+  SandboxFilesystemScope,
   SandboxProcessEvent,
   SandboxProcessSession,
   SandboxRuntime,
   SandboxStopReason,
 } from "./contract";
+import { SandboxPathNotFoundError } from "./contract";
 
 class FakeSandboxProcessSession implements SandboxProcessSession {
   private terminationReason: ProcessTerminationReason | null = null;
@@ -71,6 +74,7 @@ export type FakeSandboxRuntimeOptions = {
 };
 
 export class FakeSandboxRuntime implements SandboxRuntime {
+  readonly filesystemScope: SandboxFilesystemScope = "runtime-instance";
   readonly kind = "fake" as const;
 
   private readonly handles = new Set<string>();
@@ -96,6 +100,59 @@ export class FakeSandboxRuntime implements SandboxRuntime {
     return session;
   }
 
+  async listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]> {
+    this.assertHandle(handle);
+    const directory = normalizeAbsolutePath(path);
+    const prefix = `${handle.id}:`;
+    const entries = new Map<string, SandboxFileEntry>();
+    let directoryExists = directory === "/workspace";
+
+    for (const key of this.files.keys()) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+
+      const filePath = normalizeAbsolutePath(key.slice(prefix.length));
+      if (filePath === directory) {
+        throw new SandboxPathNotFoundError(path);
+      }
+      if (!filePath.startsWith(`${directory}/`)) {
+        continue;
+      }
+
+      directoryExists = true;
+      const remainder = filePath.slice(directory.length + 1);
+      const [name, ...rest] = remainder.split("/");
+      if (!name) {
+        continue;
+      }
+
+      const kind = rest.length > 0 ? "directory" : "file";
+      const content = this.files.get(key) ?? "";
+      entries.set(name, {
+        kind,
+        modifiedAt: null,
+        name,
+        size: kind === "file" ? new TextEncoder().encode(content).byteLength : 0,
+      });
+    }
+
+    if (!directoryExists) {
+      throw new SandboxPathNotFoundError(path);
+    }
+
+    return [...entries.values()];
+  }
+
+  async readFile(handle: RuntimeHandle, path: string) {
+    this.assertHandle(handle);
+    const content = this.files.get(`${handle.id}:${normalizeAbsolutePath(path)}`);
+    if (content === undefined) {
+      throw new SandboxPathNotFoundError(path);
+    }
+    return new TextEncoder().encode(content);
+  }
+
   async terminateProcess(
     handle: RuntimeHandle,
     providerProcessRef: string,
@@ -112,6 +169,11 @@ export class FakeSandboxRuntime implements SandboxRuntime {
   async stop(handle: RuntimeHandle, _reason: SandboxStopReason) {
     assertRuntimeHandle(handle, this.kind);
     this.handles.delete(handle.id);
+    for (const key of this.files.keys()) {
+      if (key.startsWith(`${handle.id}:`)) {
+        this.files.delete(key);
+      }
+    }
   }
 
   async writeFile(handle: RuntimeHandle, path: string, content: string) {
@@ -124,6 +186,11 @@ export class FakeSandboxRuntime implements SandboxRuntime {
       throw new Error(`Unknown fake runtime handle: ${handle.id}`);
     }
   }
+}
+
+function normalizeAbsolutePath(path: string) {
+  const normalized = path.replace(/\/+/g, "/").replace(/\/$/, "");
+  return normalized || "/";
 }
 
 function assertRuntimeHandle(handle: RuntimeHandle, kind: "fake") {

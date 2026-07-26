@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Run 聚合 usage 已通过远程 Preview；用户/管理聚合视图待 D3 实现。
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Run 聚合 usage 已通过远程 Preview；只读 Files 不新增持久化，用户/管理聚合视图待实现。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -70,7 +70,7 @@ BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的�
 
 ## 5. 用量与管理，不是计费
 
-Project Inspector 可以显示所选 Run 的真实聚合值；fake Runtime 的值仍为零。跨 Run 的用户用量页与内部管理视图尚未实现，排在受控只读 Files 之后；第一版直接聚合 `agent_runs`，不新增 `usage_events`。
+Project Inspector 可以显示所选 Run 的真实聚合值；fake Runtime 的值仍为零。跨 Run 的用户用量页与内部管理视图尚未实现，是 Files 之后的下一项产品能力；第一版直接聚合 `agent_runs`，不新增 `usage_events`。
 
 `AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
 

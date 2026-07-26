@@ -125,6 +125,7 @@ Preview 已验证：
 尚未验证：
 
 - 手动 Stop UI；
+- 当前本地已完成的只读 Files API 与 UI 尚未部署到该 Preview；
 - 更复杂任务下 Workflow Free 的 CPU 与 subrequest 限制。
 
 验收期间产生的失败 Run 记录保留在 Preview D1 中，用于确认错误状态和 usage 收敛；它们不是生产数据。未点击手动“Stop sandbox”；最终 smoke 沙箱由 10 分钟空闲 TTL 自动停止，文件按 V1 设计允许丢失。

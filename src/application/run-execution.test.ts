@@ -258,6 +258,7 @@ function blockingAgent(): AgentRuntime {
 }
 
 class RecordingSandboxRuntime implements SandboxRuntime {
+  readonly filesystemScope = "lease" as const;
   readonly kind = "e2b" as const;
   readonly stoppedSandboxes: Array<{
     providerRef: string;
@@ -281,6 +282,14 @@ class RecordingSandboxRuntime implements SandboxRuntime {
     _command: SandboxCommand,
   ): Promise<SandboxProcessSession> {
     throw new Error("Agent fixture starts no provider process");
+  }
+
+  async listDirectory() {
+    return [];
+  }
+
+  async readFile() {
+    return new Uint8Array();
   }
 
   async terminateProcess(

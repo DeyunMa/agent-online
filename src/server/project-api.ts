@@ -14,6 +14,8 @@ import type {
   AgentRunStreamEvent,
   ApiErrorResponse,
   MessageResponse,
+  ProjectDirectoryResponse,
+  ProjectFileResponse,
   ProjectResponse,
   SandboxLeaseResponse,
 } from "../shared/api";
@@ -151,6 +153,44 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
 
     const messages = await services.messages.listByProjectId(project.id);
     return c.json(messages.map(toMessageResponse));
+  });
+
+  api.get("/projects/:projectId/files", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const services = dependencies.createServices(c.env);
+    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    if (!project) {
+      return notFound(c);
+    }
+
+    const result = await services.projectFiles.list(project.id, c.req.query("path"));
+    if (result.kind !== "ok") {
+      return projectFilesError(c, result.kind);
+    }
+    return c.json<ProjectDirectoryResponse>(result.directory);
+  });
+
+  api.get("/projects/:projectId/files/content", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const services = dependencies.createServices(c.env);
+    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    if (!project) {
+      return notFound(c);
+    }
+
+    const result = await services.projectFiles.read(project.id, c.req.query("path"));
+    if (result.kind !== "ok") {
+      return projectFilesError(c, result.kind);
+    }
+    return c.json<ProjectFileResponse>(result.file);
   });
 
   api.post("/projects/:projectId/agent-runs", async (c) => {
@@ -462,6 +502,35 @@ function runsDisabled(c: AppContext) {
   return apiError(c, "runs_disabled", 503);
 }
 
+function projectFilesError(
+  c: AppContext,
+  error:
+    | "file_too_large"
+    | "path_not_found"
+    | "project_busy"
+    | "provider_error"
+    | "sandbox_unavailable"
+    | "unsupported_file"
+    | "unsupported_path",
+) {
+  switch (error) {
+    case "file_too_large":
+      return apiError(c, error, 413);
+    case "path_not_found":
+      return apiError(c, error, 404);
+    case "project_busy":
+      return apiError(c, error, 409);
+    case "sandbox_unavailable":
+      return apiError(c, error, 409);
+    case "unsupported_file":
+      return apiError(c, error, 415);
+    case "unsupported_path":
+      return apiError(c, error, 400);
+    case "provider_error":
+      return internalError(c, 503);
+  }
+}
+
 function internalError(c: AppContext, status: 500 | 503 = 500) {
   return apiError(c, "internal_error", status);
 }
@@ -469,7 +538,7 @@ function internalError(c: AppContext, status: 500 | 503 = 500) {
 function apiError(
   c: AppContext,
   error: ApiErrorResponse["error"],
-  status: 400 | 401 | 404 | 409 | 500 | 503,
+  status: 400 | 401 | 404 | 409 | 413 | 415 | 500 | 503,
 ) {
   return c.json(
     {

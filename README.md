@@ -1,8 +1,7 @@
 # Agent Online
 
-> 状态：D2 真实执行纵切已部署到私有 Cloudflare Preview（2026-07-26）
-> 当前 Preview 已完成 Worker、Assets、D1、Workflow、加密 Secret、邮箱白名单，以及真实 Pi AgentRun 的 happy path、取消、deadline 和空闲 TTL；受控文件、终端、preview 尚未完成。
-> 下一阶段：D3 先实现受控只读 Files，再依次实现用量聚合、Terminal 和 Preview。
+> 状态：D2 真实执行纵切已部署到私有 Cloudflare Preview；D3 受控只读 Files 已在本地完成（2026-07-26）
+> 当前 Preview 已完成 Worker、Assets、D1、Workflow、加密 Secret、邮箱白名单，以及真实 Pi AgentRun 的 happy path、取消、deadline 和空闲 TTL；Files 的远程部署验收、用量聚合、Terminal 和 Preview 尚未完成。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -14,22 +13,23 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - `User -> Project -> SandboxLease` 是资源关系。一个 Project 只有一个逻辑沙箱记录，并在同一时刻最多对应一个真实 Provider 沙箱。
 - `Project` 是用户看见的代码项目和对话容器，不单独建 Session 表。真实沙箱停止、过期或故障后，Project 文件可以丢失；第一版不恢复它们。
 - `AgentRun` 是一次短生命周期的 Agent 执行，通常对应一个用户回合。一个 Project 同时最多一个非终态 `AgentRun`；多个连续 Run 可以复用仍存活的沙箱文件系统。
-- `SandboxRuntime` 管理 Provider 沙箱和通用进程；`AgentRuntime` 管理 Pi 等 Agent 协议；两者是可替换代码边界，不是额外微服务。
+- `SandboxRuntime` 按生命周期、进程和文件能力提供窄接口；`AgentRuntime` 管理 Pi 等 Agent 协议；两者是可替换代码边界，不是额外微服务。
 - Agent 在沙箱内运行，Hono Worker 在沙箱外负责鉴权、D1、Run 编排、事件脱敏和 `ModelGateway`。Gemini Key 永远不进入浏览器或沙箱。
 - D1 是唯一的 V1 持久化存储，保存认证、Project 元数据、用户可见消息、AgentRun 状态和聚合用量。R2 不属于 V1。
 
 ## 当前实现
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
-- Pi 是唯一注册的 AgentRuntime；`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，`E2BSandboxRuntime` 提供真实进程、文件写入、精确进程终止和沙箱停止。
+- Pi 是唯一注册的 AgentRuntime；`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消优先只终止当前 Pi 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
+- Project Inspector 已启用只读 Files：仅附着现有 E2B Lease，限制在 `/workspace`，拒绝路径穿越、`.git`、符号链接、二进制和超大文本；活动 Run 期间不读取文件。
 
-远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run，也验证了长任务取消只终止当前 Pi 进程、沙箱可继续复用，并用临时 8 秒配置验证了 `timed_out` 收敛。10 分钟空闲 TTL 到期后，Workflow 已原子脱离并停止 E2B 沙箱，D1 清除了 Provider 引用。手动 Stop UI 和更复杂任务下的 Workflows 免费层限额仍需单独验收。受控文件浏览、终端、preview、changes 和用户用量页属于后续纵切，UI 在对应 API 完成前必须保持禁用或不展示。
+远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run，也验证了长任务取消只终止当前 Pi 进程、沙箱可继续复用，并用临时 8 秒配置验证了 `timed_out` 收敛。10 分钟空闲 TTL 到期后，Workflow 已原子脱离并停止 E2B 沙箱，D1 清除了 Provider 引用。Files 已完成本地 API、测试和浏览器验收，但尚未部署到远程 Preview。Terminal、preview、changes 和用户用量页仍须保持禁用或不展示。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 
@@ -68,6 +68,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [Cloudflare Preview 资源台账](./docs/setup/cloudflare-preview-resources.md) | 已创建资源、Dashboard 查看路径、变量/Secret 名称、日志与运维命令。 |
 | [E2B + Pi + Gemini Spike](./docs/testing/e2b-pi-gemini-spike.md) | 显式启用的真实 Provider 可行性验证，不等同于 D2 产品实现。 |
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
+| [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序
