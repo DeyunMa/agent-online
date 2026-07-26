@@ -1,12 +1,12 @@
 # Agent Online 领域术语
 
-> 状态：D2 已完成私有 Cloudflare Preview 验收；D3 受控只读 Files 已完成本地实现。Goose adapter、组合模板和本地真实 E2E 已通过，但 D1/Workflow/TTL/浏览器 Preview 门槛未完成；远程 Files 验收、用量聚合、Terminal 和 Preview 待完成。
+> 状态：D2 与 D3 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择仍关闭；跨 Run 用量聚合、Terminal 和 Preview 待完成。
 
 ## 产品定义
 
 Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端和 preview；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
 
-第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认且已验收的 AgentRuntime；Goose 按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 作为受控候选实现，本地真实 adapter E2E 已通过，但在 Preview 产品链路的全部门槛通过前不能当作产品能力。
+第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认且已验收的 AgentRuntime；Goose 按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 完成本地与私有 Preview spike，但在浏览器选择和剩余安全复核通过前不能当作公开产品能力。
 
 ## 核心术语
 

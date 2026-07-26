@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Run 聚合 usage 已通过远程 Preview；只读 Files 不新增持久化，用户/管理聚合视图待实现。
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；只读 Files 不新增持久化，用户/管理聚合视图待实现。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -64,7 +64,7 @@ CREATE UNIQUE INDEX agent_runs_one_active_per_project
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
-短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi + Gemini spike 和 Cloudflare 远程 Workflow 均已完成代表性验收；Goose 必须按 [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) 复用同一网关且不能把 Gemini Key 注入沙箱。复杂任务下的免费层 CPU/subrequest 上限仍需持续观察。
+短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi/Goose + Gemini 和 Cloudflare 远程 Workflow 均已完成代表性验收；两种 Runtime 复用同一网关，沙箱没有 Gemini Key。公开 Goose 前仍需复核 capability 的工具继承与输出脱敏；复杂任务下的免费层 CPU/subrequest 上限也需持续观察。
 
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 

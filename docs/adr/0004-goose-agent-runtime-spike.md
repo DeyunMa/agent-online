@@ -134,9 +134,14 @@ Pi 创建文件、Goose 修改、Pi 再验证，以及 Goose 精确取消后沙�
 两种 Runtime 都只通过短时 ModelGateway capability 调用 Gemini，provider
 配置不含 token 值。
 
-Cloudflare Preview 的真实 Goose Run、D1 最终事实、Workflow deadline/恢复、
-空闲 TTL 和浏览器选择仍未验收。因此本 ADR 的“实现 spike”部分成立，
-“产品启用”门槛仍未满足；默认模式继续是 `disabled`。
+Cloudflare Preview 已使用组合模板和 `GOOSE_RUNTIME_MODE=spike` 完成真实
+`Pi -> Goose -> Pi`、D1 最终事实、usage、取消、deadline、恢复和空闲 TTL
+验收；手动停止与 Files 停止状态也通过。公开 capabilities 仍只返回 Pi。
+
+因此本 ADR 的“实现 spike”和“私有 Preview 执行验证”均成立；短时 capability
+的工具继承与精确输出/日志脱敏、浏览器选择、刷新恢复和移动端验收尚未完成，
+“产品公开”门槛仍未满足。普通环境默认模式继续是 `disabled`，当前私有 Preview
+保持 `spike`。
 
 ## 参考
 

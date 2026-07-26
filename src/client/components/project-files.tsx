@@ -20,9 +20,11 @@ import { ErrorState, LoadingState } from "./ui-states";
 export function ProjectFiles({
   hasActiveRun,
   projectId,
+  sandboxAvailable,
 }: {
   hasActiveRun: boolean;
   projectId: string;
+  sandboxAvailable: boolean;
 }) {
   const [directoryPath, setDirectoryPath] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -33,13 +35,13 @@ export function ProjectFiles({
   }, [projectId]);
 
   const directory = useQuery({
-    enabled: !hasActiveRun && selectedFilePath === null,
+    enabled: sandboxAvailable && !hasActiveRun && selectedFilePath === null,
     queryFn: () => browserApi.listProjectFiles(projectId, directoryPath),
     queryKey: projectFilesQueryKey(projectId, directoryPath),
     retry: false,
   });
   const file = useQuery({
-    enabled: !hasActiveRun && selectedFilePath !== null,
+    enabled: sandboxAvailable && !hasActiveRun && selectedFilePath !== null,
     queryFn: () => browserApi.readProjectFile(projectId, selectedFilePath ?? ""),
     queryKey: projectFileQueryKey(projectId, selectedFilePath ?? ""),
     retry: false,
@@ -51,6 +53,17 @@ export function ProjectFiles({
         <FilesNotice
           detail="Files become available again when the current run finishes."
           title="Sandbox is busy"
+        />
+      </section>
+    );
+  }
+
+  if (!sandboxAvailable) {
+    return (
+      <section className="project-files-view">
+        <FilesNotice
+          detail="项目沙箱未启动或已停止。运行一次 Agent 后即可查看文件。"
+          title="Sandbox not started"
         />
       </section>
     );
@@ -77,7 +90,7 @@ export function ProjectFiles({
             onRetry={() => void file.refetch()}
           />
         ) : null}
-        {file.data ? (
+        {!file.error && file.data ? (
           <pre className="project-file-content" tabIndex={0}>
             <code>{file.data.content}</code>
           </pre>
@@ -106,7 +119,7 @@ export function ProjectFiles({
           onRetry={() => void directory.refetch()}
         />
       ) : null}
-      {directory.data ? (
+      {!directory.error && directory.data ? (
         <>
           {directory.data.entries.length > 0 ? (
             <div className="project-file-list">

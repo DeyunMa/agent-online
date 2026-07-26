@@ -5,6 +5,7 @@ import type {
   AgentRunResponse,
   ProjectResponse,
 } from "../../shared/api";
+import { isActiveSandboxLease } from "../../domain/sandbox-lease";
 import {
   agentRunStatusLabel,
   agentRunStatusTone,
@@ -122,7 +123,13 @@ export function ProjectInspector({
           <CurrentRunUsage run={run} />
         </>
       ) : (
-        <ProjectFiles hasActiveRun={hasActiveRun} projectId={project.id} />
+        <ProjectFiles
+          hasActiveRun={hasActiveRun}
+          projectId={project.id}
+          sandboxAvailable={
+            lease !== null && isActiveSandboxLease(lease.status)
+          }
+        />
       )}
     </aside>
   );

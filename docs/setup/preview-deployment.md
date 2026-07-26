@@ -1,7 +1,7 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-26 已完成锁定部署、真实 Pi AgentRun happy path、远程取消、deadline 和 10 分钟空闲回收。
-> D2 代表性验收已完成；D3 Files 已在本地完成但尚未部署，后续能力仍应逐项部署和验收。
+> 状态：2026-07-26 已完成锁定部署、Pi/Goose 真实 AgentRun、Files、远程取消、deadline、空闲回收和手动停止。
+> D2、D3 与 Goose 私有 spike 已完成；Goose 仍不公开，后续能力继续逐项部署和验收。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -30,6 +30,8 @@ pnpm deploy:preview:dry-run
 - 全零的 Preview D1 `database_id`；
 - 包含 `replace-me` 的 `BETTER_AUTH_URL`；
 - 占位 E2B Template ID；
+- 非法或尚未批准的 `GOOSE_RUNTIME_MODE=public`；
+- 启用 Goose 时仍使用非组合 E2B Template；
 - 非 allowlist 的 Preview 访问模式；
 - 非 E2B 的 Preview SandboxRuntime。
 
@@ -112,7 +114,10 @@ pnpm deploy:preview
 - Gemini Key 只在 Worker，E2B Key 只在 Worker 的 Sandbox Adapter。
 - D1 中只出现产品状态和聚合 usage，不出现 Provider Key、raw transcript 或 Project 文件。
 - Cloudflare Workflow 免费层的真实限制有实测结论。
+- `GOOSE_RUNTIME_MODE=spike` 时只有显式受控 API 可以执行 Goose，公开 capabilities 和 UI 仍保持 Pi-only。
 
-完成以上条件后，D2 才算通过完整远程环境验收。只读 Files 已完成本地纵切，仍需在下一次 Preview 部署后使用真实 E2B Lease 验收；Terminal、Preview 和 Changes API 不因 Worker 已部署而提前开放。
+完成以上条件后，D2 才算通过完整远程环境验收。只读 Files 已使用真实 E2B Lease 验证目录、文本、停止状态和陈旧缓存清理；Terminal、Preview 和 Changes API 不因 Worker 已部署而提前开放。
 
-当前已完成 owner 注册、Project 创建、同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。第 5 项已验证：10 分钟空闲 TTL 后 Workflow 返回 `detached=true, stopped=true`，D1 Lease 变为 `stopped` 并清空 Provider 引用。未单独点击手动 Stop；自动回收已验证同一停止路径，Project 测试文件按 V1 设计允许丢失。
+当前已完成 owner 注册、Project 创建、Pi/Goose 同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。临时 8 秒空闲 TTL 已验证 `detached=true, stopped=true`，正式值恢复为 600 秒；手动 Stop UI 也已独立通过。两种停止路径都会让 D1 Lease 变为 `stopped` 并清空 Provider 引用，Project 文件按 V1 设计允许丢失。
+
+Worker binding 与 Workflow 版本可能短暂不同步。涉及 wall clock 或 TTL 的部署，必须等待 Workflow 最新版本传播，并在实例详情确认实际 sleep/timeout 后再记录结论。

@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi RPC、模型通道、进程取消与 Workflow 空闲回收已通过远程 Preview；只读 Files 已完成本地实现；Goose 独立 adapter、组合模板和本地真实 E2E 已通过，Preview 产品路径仍受门控。
+> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收与只读 Files 均已通过私有 Preview；Goose 公开产品路径仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -14,7 +14,7 @@
 | `SandboxRuntime` | 取得当前沙箱、启动通用进程、读写 stdin、读取进程事件、终止进程、受控文件 IO 与停止沙箱。 | Pi 协议、D1、Message、模型调用。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
-Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已实现并通过组合模板真实 E2E，但在 ADR-0004 的 Preview Workflow 与浏览器验收全部通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
+Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和 Preview Workflow 真实 E2E，但在 ADR-0004 的剩余安全与浏览器验收通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
 
 ## 2. 当前代码合同
 
@@ -107,7 +107,7 @@ stateDiagram-v2
 
 1. 每个 Project 只有一条逻辑 Lease。
 2. D1 部分唯一索引保证每个 Project 同时最多一个非终态 Run。
-3. Pi 适配器通过受控进程接口得到事件；Goose 只有在门控 E2E 通过后才加入可用 registry；E2B 适配器支持重连当前沙箱、启动进程、按 PID 终止和停止沙箱。
+3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程、按 PID 终止和停止沙箱。
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
 5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
@@ -139,7 +139,7 @@ stateDiagram-v2
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
 | Pi | 默认且已验收；支持 fake 控制面与真实 E2B 执行。 | 当前执行路径；选择 UI 随第二 Runtime 一起设计。 |
-| Goose | 独立 adapter、组合模板、ModelGateway、文件连续性与取消的本地真实 E2E 已通过；Preview Workflow/TTL 待验收。 | 验收前不可以。 |
+| Goose | 独立 adapter、组合模板、ModelGateway、文件连续性、D1、usage、取消、deadline 与 TTL 的本地/Preview E2E 已通过；输出脱敏和浏览器验收待完成。 | 当前不可以。 |
 | Claude Code | 仅预留 Runtime ID。 | 不可以。 |
 | Codex CLI | 仅预留 Runtime ID。 | 不可以。 |
 

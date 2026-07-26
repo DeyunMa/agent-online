@@ -36,6 +36,28 @@ if (!preview) {
     );
   }
 
+  const gooseRuntimeMode = vars.GOOSE_RUNTIME_MODE ?? "disabled";
+  if (!["disabled", "spike", "public"].includes(gooseRuntimeMode)) {
+    errors.push(
+      "env.preview GOOSE_RUNTIME_MODE must be disabled, spike, or public",
+    );
+  }
+
+  if (gooseRuntimeMode === "public") {
+    errors.push(
+      "env.preview GOOSE_RUNTIME_MODE=public is not approved by ADR-0004",
+    );
+  }
+
+  if (
+    gooseRuntimeMode !== "disabled" &&
+    !vars.E2B_TEMPLATE_ID?.startsWith("agent-online-pi-goose-runtime:")
+  ) {
+    errors.push(
+      "env.preview must use the combined Pi/Goose template when Goose is enabled",
+    );
+  }
+
   if (vars.ACCESS_MODE !== "allowlist") {
     errors.push("env.preview ACCESS_MODE must remain allowlist");
   }

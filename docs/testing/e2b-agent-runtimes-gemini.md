@@ -1,6 +1,6 @@
 # E2B + Pi/Goose + Gemini 真实链路
 
-> 状态：Pi 与 Goose adapter 的组合模板 spike 已通过；Cloudflare Preview 产品路径仍待部署验收。
+> 状态：Pi 与 Goose adapter 的组合模板本地 E2E 和 Cloudflare Preview 受控产品链路均已通过；Goose 公开 UI 仍待安全门禁与前端验收。
 > 关联：[ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
 这个 opt-in E2E 测试验证：
@@ -102,11 +102,19 @@ pnpm test:e2e:e2b-agent-runtimes
 - 直接 CLI 链路通过后，严格 adapter parser 首次发现 Goose 会输出 session 信息；adapter 增加官方 `--quiet` 参数后，stdout 成为受控 `stream-json`。
 - 最终 adapter 级 `Pi -> Goose -> Pi`、每 Run 签名 capability、真实 usage、Key 隔离和可观察的 Goose 取消/沙箱复用全部通过，最近一次耗时约 48 秒。
 
-这仍不等同于 Cloudflare Preview 产品验收。以下项目尚未通过远程 Workflow 验证：
+## Cloudflare Preview 结果
 
-- Hono 创建 Goose Run 后，D1 中真实 `agent_runtime_id = 'goose'`；
-- Workflow 跨请求取消、deadline 和失败收敛；
-- 组合模板的空闲 TTL 回收；
-- 浏览器 Runtime 选择与刷新恢复。
+私有 Preview 使用精确组合模板和 `GOOSE_RUNTIME_MODE=spike`，通过同源 Hono API 与 Cloudflare Workflow 验证：
 
-因此 `GOOSE_RUNTIME_MODE` 仍应保持 `disabled` 或测试环境短时使用 `spike`，不能设置为 `public`。
+1. Pi 创建文件、Goose 修改、Pi 再验证，同一 Project 的当前沙箱文件连续。
+2. Goose 最终回复、`agent_runtime_id='goose'` 和真实 usage 正确写入 D1。
+3. Goose 长 shell 可跨请求取消；Run 为 `cancelled`、无 assistant Message，Lease 回到 idle。
+4. 临时 8 秒 deadline 下 Run 为 `timed_out`；恢复 1800 秒后超过 8 秒的任务成功。
+5. 临时 8 秒空闲 TTL 下 Workflow 原子脱离并停止沙箱；恢复后的正式 TTL 为 600 秒。
+6. 浏览器真实验证 Files、停止状态和手动 Stop；停止后不请求 Files，也不显示陈旧缓存。
+7. `/api/capabilities` 在 spike 模式只返回 Pi；未登录业务 API 为 `401`。
+8. D1 抽查未发现原始 Key/capability 名称，终态 Run 不保留进程引用，停止 Lease 不保留 Provider 引用。
+
+配置部署后，Worker 与 Workflow 版本存在短暂传播窗口。第一次 TTL 探针命中旧 Workflow 版本，因此正式 timeout/TTL 验收必须先在 Workflow 详情确认最新版本，再运行探针。
+
+`GOOSE_RUNTIME_MODE` 仍不能设置为 `public`。剩余门槛是 capability 的工具继承与精确输出/日志脱敏、React Runtime 选择、刷新恢复和移动端验收。

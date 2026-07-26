@@ -1,7 +1,7 @@
 # Agent Online
 
-> 状态：D2 真实执行纵切已部署到私有 Cloudflare Preview；D3 受控只读 Files 已在本地完成（2026-07-26）
-> 当前 Preview 已完成 Worker、Assets、D1、Workflow、加密 Secret、邮箱白名单，以及真实 Pi AgentRun 的 happy path、取消、deadline 和空闲 TTL；Files 的远程部署验收、用量聚合、Terminal 和 Preview 尚未完成。
+> 状态：D2 真实执行纵切和 D3 受控只读 Files 已通过私有 Cloudflare Preview；D4 Goose Runtime 已完成受控远端 spike（2026-07-26）。
+> 当前 Preview 已验证 Pi/Goose 同 Project 切换、真实 usage、取消、deadline、空闲回收、手动停止和 Files；Goose 仍不向浏览器公开。跨 Run 用量聚合、Terminal 和 Preview 尚未完成。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -20,7 +20,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 ## 当前实现
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
-- Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime spike 已按 ADR-0004 获准，本地真实 adapter E2E 已通过，但在 Preview 产品链路验收完成前保持服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
+- Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
@@ -28,9 +28,9 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 - Project Inspector 已启用只读 Files：仅附着现有 E2B Lease，限制在 `/workspace`，拒绝路径穿越、`.git`、符号链接、二进制和超大文本；活动 Run 期间不读取文件。
-- Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板和 adapter 级 `Pi -> Goose -> Pi`、usage、Key 隔离、取消/沙箱复用 E2E 已通过。Preview 的 D1/Workflow/TTL 与浏览器选择尚未验收，因此默认仍是 Pi-only 产品能力。
+- Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
 
-远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run，也验证了长任务取消只终止当前 Pi 进程、沙箱可继续复用，并用临时 8 秒配置验证了 `timed_out` 收敛。10 分钟空闲 TTL 到期后，Workflow 已原子脱离并停止 E2B 沙箱，D1 清除了 Provider 引用。Files 已完成本地 API、测试和浏览器验收，但尚未部署到远程 Preview。Terminal、preview、changes 和用户用量页仍须保持禁用或不展示。
+远程 Preview 已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal、preview、changes、跨 Run 用户用量页和 Goose 选择器仍须保持禁用或不展示。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 

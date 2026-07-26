@@ -1,6 +1,6 @@
 # 2026-07-26 D4 Goose Runtime Spike
 
-> 结论：第二个 `AgentRuntime` 的代码、组合模板和本地真实 E2E 已成立；产品公开门槛尚未全部通过，Goose 继续保持门控。
+> 结论：第二个 `AgentRuntime` 的代码、组合模板、本地 E2E 和私有 Cloudflare Preview 产品链路均已成立；Goose 继续保持 `spike` 门控，不向浏览器公开。
 
 ## 1. 本阶段完成
 
@@ -59,18 +59,34 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 - 类型检查通过。
 - 完整 test/build 结果在本阶段提交前重新执行。
 
-## 5. 尚未通过的产品门槛
+## 5. Cloudflare Preview 验收
 
-- Cloudflare Preview 中由 Hono 创建真实 Goose Run，并确认 D1、最终 assistant Message 和 usage。
-- Workflow 跨请求取消、deadline、失败恢复与组合模板空闲 TTL。
-- Preview API/日志脱敏复核。
-- 短时 capability 在 Agent 进程及其工具中的继承边界与输出脱敏复核。
+私有 Preview 使用组合模板和 `GOOSE_RUNTIME_MODE=spike` 完成：
+
+| 场景 | 结果 |
+| --- | --- |
+| Pi 创建文件 -> Goose 读取并修改 -> Pi 再验证 | 三次 Run 成功，复用同一逻辑 Lease 和同一活动沙箱。 |
+| D1 与最终输出 | `agent_runtime_id`、最终 assistant Message、模型请求数、token 和沙箱时长均正确。 |
+| Goose 取消 | 进入长 shell 后收敛为 `cancelled`，无 assistant Message，沙箱可继续复用。 |
+| Goose deadline | 临时 8 秒 wall clock 下收敛为 `timed_out`；恢复 1800 秒后 12 秒任务成功。 |
+| 组合模板 TTL | 临时 8 秒 TTL 的 Workflow 返回 `detached=true, stopped=true`，Lease 清空 Provider 引用；正式值恢复为 600 秒。 |
+| Files 与手动 Stop | 真实目录/文本可见；手动停止后 Lease 为 `stopped`、Provider 引用为空，Files 不显示陈旧缓存。 |
+| 公开能力与脱敏 | `/api/capabilities` 仍只公布 Pi；浏览器响应不含 Provider 标识，D1 Message 未发现 Key 或 capability 名称。 |
+
+最终部署 Worker 版本为 `d424d9ed-4a4f-45ea-aa89-2856cc78885a`。验收期间的临时 deadline/TTL 配置均已恢复，当前为 1800 秒和 600 秒。
+
+首次 TTL 探针紧邻部署启动，命中了仍在传播的旧 Workflow 版本；等待最新 Workflow 版本生效后重新执行，8 秒 sleep 与停止步骤均通过。涉及 timeout/TTL 的后续部署必须先确认 Workflow 版本传播完成。
+
+## 6. 尚未通过的公开门槛
+
+- 短时 capability 在 Agent 进程及其工具中的继承边界与精确输出脱敏复核。
+- Goose 公开响应和 Workers Logs 的针对性泄漏测试需要固化为可重复门禁；本次 D1/API 抽查通过，但不替代长期日志策略。
 - 浏览器 Runtime 选择、刷新恢复和移动端验收。
 
 因此当前：
 
 - Project 默认 Runtime 仍是 Pi；
-- `GOOSE_RUNTIME_MODE` 默认 `disabled`；
+- 仓库默认环境仍为 `disabled`，私有 Preview 当前为 `spike`；
 - UI 仍显示不可操作的 Pi 控件；
 - 不能对外声称 Goose 已是可用产品功能。
 
@@ -78,9 +94,8 @@ Preview 验收应使用新 Project，或先停止旧 Project sandbox、清除其
 任何通过现有认证和部署访问策略的用户都可手工请求已启用的 Goose；因此该模式
 只能用于当前邮箱 allowlist 保护的私有 Preview。
 
-## 6. 下一步
+## 7. 下一步
 
-1. 在明确授权的 Preview 部署中，将组合模板与 `GOOSE_RUNTIME_MODE=spike` 一起上线。
-2. 使用新 Project（或先停止旧 Pi-only sandbox），通过 API 完成真实 Goose Run、取消、deadline 和 TTL 验收。
-3. 全部通过后把模式提升为 `public`，再启用 React Runtime 选择。
-4. Goose 收敛后回到用量聚合、Terminal 和 Preview 纵切。
+1. 保持私有 Preview 为 `spike`，先固化 capability 工具继承和输出/日志脱敏门禁。
+2. 公开门槛全部通过后再实现 React Runtime 选择，并完成刷新与移动端验收。
+3. 产品主线恢复到跨 Run 用量聚合；Terminal 和 Preview 前完成 use-case/route 与 Runtime capability 接口加固。

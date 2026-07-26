@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi AgentRun、取消、deadline 和空闲 TTL 已配置并验证。Pi/Goose 组合模板和本地真实 adapter E2E 已通过，Preview Goose 产品路径尚未部署。
+> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -11,7 +11,7 @@
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
 | Gemini API | `GEMINI_API_KEY` | D2 Worker ModelGateway 和真实 E2E。 | 已由本地 `.dev.vars` 提供。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱。 | 已由本地 `.dev.vars` 提供。 |
-| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose 和 `/workspace` 的组合模板。 | 精确 build 已构建并完成 adapter E2E；Preview 当前部署仍使用旧 Pi-only build。 |
+| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter 与 Preview 产品链路 E2E。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
 
@@ -29,7 +29,7 @@
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
 | 私有访问 | owner 邮箱。 | 已以 `ACCESS_ALLOWED_EMAILS` Secret 写入；`ACCESS_MODE=allowlist`。 |
-| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi Run、取消、deadline 和 10 分钟空闲回收已成功，复杂任务限额仍需观察。 |
+| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline 和空闲回收已成功，复杂任务限额仍需观察。 |
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke 和真实 Run；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
@@ -60,7 +60,7 @@
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |
 | 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有独立 `SandboxRuntime` Adapter、能力声明和 E2E。 |
-| 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | Goose adapter、组合模板、事件、ModelGateway 和取消 E2E 已通过；D1/Workflow/TTL/浏览器 Preview 验收仍待完成。 |
+| 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | Goose adapter、组合模板、事件、ModelGateway、D1/Workflow/TTL 已通过；输出脱敏和浏览器公开验收仍待完成。 |
 
 ## 5. 当前明确不需要
 

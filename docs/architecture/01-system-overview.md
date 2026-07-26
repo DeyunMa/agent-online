@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2 已通过远程 Preview；D3 受控只读 Files 已完成本地实现。Goose adapter、组合模板与本地真实 E2E 已通过，但 Preview 产品启用门槛尚未完成；远程 Files 验收、用量聚合、Terminal 与 Preview 待完成。
+> 状态：D2、D3 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。Goose UI 仍关闭；跨 Run 用量聚合、Terminal 与 Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -9,7 +9,7 @@ Agent Online 的第一版不是团队协作平台，也不是浏览器内运行 
 
 参考 CCOnline 的是产品体验：真实 Coding Agent、独立 Linux 环境、终端、文件与 preview。它不代表复制第三方代码，或推断其未公开实现。
 
-Pi 是默认且已验收的 AgentRuntime。Goose 正按 ADR-0004 作为第二 Runtime 做受控 spike；它在同 Project 文件连续性、模型通道、事件、取消、usage 和 TTL 的真实 E2E 全部通过前不会出现在 UI。Claude Code 与 Codex CLI 仍只有保留 ID。
+Pi 是默认且已验收的 AgentRuntime。Goose 已按 ADR-0004 完成第二 Runtime 的同 Project 文件连续性、模型通道、事件、取消、usage、deadline 和 TTL 真实 E2E；在 capability 输出脱敏与浏览器选择验收前仍不会出现在 UI。Claude Code 与 Codex CLI 仍只有保留 ID。
 
 ## 2. 总体结构
 

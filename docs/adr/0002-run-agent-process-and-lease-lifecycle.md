@@ -199,6 +199,6 @@ sequenceDiagram
 
 ## 实施结果
 
-截至 2026-07-26，本 ADR 的 D1 迁移、领域合同、fake runtime、认证 Project、Message、单 Lease/单活动 Run、SSE、基础用量、Gemini ModelGateway 与 E2B + Pi 均已实现。远程 Preview 还验证了连续 Run 文件复用、取消、deadline，以及停止后不恢复文件的空闲 TTL 路径。只读 Files 已完成本地实现：只附着现有 Lease，不新增 D1/R2，不公开 Provider 信息；fake 因缺少跨请求文件连续性而明确不可用。
+截至 2026-07-26，本 ADR 的 D1 迁移、领域合同、fake runtime、认证 Project、Message、单 Lease/单活动 Run、SSE、基础用量、Gemini ModelGateway 与 E2B + Pi/Goose 均已实现。远程 Preview 还验证了跨 Runtime 连续 Run 文件复用、取消、deadline、空闲 TTL 和手动停止。只读 Files 已通过真实 E2B 验收：只附着现有 Lease，不新增 D1/R2，不公开 Provider 信息；停止后不请求文件或展示陈旧缓存，fake 因缺少跨请求文件连续性而明确不可用。
 
 后续 Terminal 和 Preview 继续复用本 ADR 的 Project 授权与单 Lease 边界，但必须拥有各自的生命周期约束，不能把 Files 的尽力一致检查当作严格锁。Sentry 仍只是可选错误观测，不成为运行前提。

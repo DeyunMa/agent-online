@@ -1,6 +1,6 @@
 # Cloudflare Preview 资源台账
 
-> 状态：2026-07-26 已创建 Preview，`RUNS_ENABLED=true`，真实 Pi AgentRun、取消、deadline 和空闲 TTL 已通过。
+> 状态：2026-07-26 已创建 Preview，`RUNS_ENABLED=true`，Pi/Goose、Files、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -28,7 +28,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `df7a9361-c101-41cc-93b9-2011894fc4ec` |
+| 当前部署版本 | `d424d9ed-4a4f-45ea-aa89-2856cc78885a` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -74,7 +74,8 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun 和聚合
 | `ACCESS_MODE` | `allowlist` |
 | `BETTER_AUTH_URL` | `https://agent-online-preview.mdy1145141.workers.dev` |
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` |
-| `E2B_TEMPLATE_ID` | `agent-online-pi-runtime:885fa807-3bd8-4cae-9532-afa0d6c71986` |
+| `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8` |
+| `GOOSE_RUNTIME_MODE` | `spike` |
 | `MAX_RUN_WALL_SECONDS` | `1800` |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` |
 | `RUNTIME_PROVIDER` | `e2b` |
@@ -82,13 +83,10 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun 和聚合
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-07-26，本表记录的是当前已部署 Preview。仓库已将下一次部署候选
-`E2B_TEMPLATE_ID` 更新为经过本地真实 E2E 的
-`agent-online-pi-goose-runtime:130dc6f0-e4d5-4e0f-9682-9142f115b2a8`，
-但尚未执行 Cloudflare 部署；`GOOSE_RUNTIME_MODE` 也尚未在 Preview 启用。
-旧 Pi-only Provider sandbox 不会随 Worker 配置原地升级。组合模板上线后的
-Goose 验收必须使用新 Project，或先从 Project Inspector 停止旧 sandbox，
-让下一次 Run 按新的精确模板重建。
+截至 2026-07-26，本表记录的是当前已部署 Preview。组合模板和
+`GOOSE_RUNTIME_MODE=spike` 已上线；该模式允许受邀测试者显式调用 Goose，
+但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
+随 Worker 配置原地升级；本次验收使用新 Project，让首个 Run 按组合模板创建沙箱。
 
 ## 6. 加密 Secret
 
@@ -129,14 +127,19 @@ Preview 已验证：
 - 临时将 Run wall clock 改为 8 秒后，长任务准确收敛为 `timed_out`；验收后已恢复正式值 `1800`。
 - 恢复正式值后再次完成真实 Run；Workflow 实例中的 `execute agent run` 步骤配置已确认为 `timeout: 1830 seconds`，排除了临时 8 秒配置仍在传播的风险。
 - 最终 Run 空闲 10 分钟后，Workflow 返回 `detached=true, stopped=true`；D1 Lease 收敛为 `stopped` 且不再保存 Provider 引用。
+- 使用组合模板在同一 Project 完成 Pi 创建文件、Goose 修改、Pi 再验证；三次 Run 的最终 Message、Runtime ID 和真实 usage 均写入 D1。
+- Goose 长 shell 的跨请求取消收敛为 `cancelled`；临时 8 秒 deadline 收敛为 `timed_out`，恢复 1800 秒后超过 8 秒的任务成功。
+- 临时 8 秒空闲 TTL 的最新 Workflow 实例完成 sleep、原子脱离和停止；正式 TTL 已恢复为 600 秒。
+- Files 在真实 E2B Lease 上完成目录和文本读取；空闲回收和手动 Stop 后显示明确停止状态，不创建新沙箱、不请求文件且不展示陈旧缓存。
+- 最终公开能力仍只有 Pi，未登录 Project API 为 `401`；D1 抽查未发现 Key/capability 名称，终态 Run/停止 Lease 的私有引用均已清空。
 
 尚未验证：
 
-- 手动 Stop UI；
-- 当前本地已完成的只读 Files API 与 UI 尚未部署到该 Preview；
 - 更复杂任务下 Workflow Free 的 CPU 与 subrequest 限制。
+- Goose capability 在子工具中的继承和精确输出/日志脱敏自动门禁。
+- Goose 浏览器选择、刷新恢复和移动端交互。
 
-验收期间产生的失败 Run 记录保留在 Preview D1 中，用于确认错误状态和 usage 收敛；它们不是生产数据。未点击手动“Stop sandbox”；最终 smoke 沙箱由 10 分钟空闲 TTL 自动停止，文件按 V1 设计允许丢失。
+验收期间产生的取消、超时和探针 Run 记录保留在 Preview D1 中，用于确认状态和 usage 收敛；它们不是生产数据。最终测试沙箱已通过手动 Stop 停止，Provider 引用已清空，文件按 V1 设计允许丢失。
 
 ## 9. 运维命令
 

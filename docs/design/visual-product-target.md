@@ -1,7 +1,7 @@
 # 视觉与产品目标
 
 > 状态：已确认的产品方向基准。效果图约束后续界面和功能组织，但不代表图中所有能力已经实现。
-> 当前进度：D2 已远程验收；D3 受控只读 Files 已完成本地实现与浏览器验收。
+> 当前进度：D2、D3 已远程验收；Goose 已完成私有 Preview spike，但 UI 仍只公开 Pi。
 > 关联：[视觉基准图](./assets/agent-online-visual-target.png) · [系统总览](../architecture/01-system-overview.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ![Agent Online 视觉基准](./assets/agent-online-visual-target.png)
@@ -49,7 +49,7 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 | --- | --- | --- |
 | 当前 D2 + Files | 邮箱密码认证、真实 Project、Message、Run 历史、E2B + Pi、最终 assistant Message、真实 usage、取消、deadline、空闲 TTL、受控停止和只读 Files。 | 终端、preview、changes 或任何未经网关授权的数据。 |
 | D3 后续 | 终端、preview、用户/维护者基础用量视图。 | 工作区恢复、R2 快照、商业账单。 |
-| 后续 | 基于真实 Provider 能力的 diff、仓库集成和第二个 Runtime。 | 仅凭预留 ID 暴露 Goose、Claude Code 或 Codex CLI。 |
+| 后续 | 基于真实 Provider 能力的 diff、仓库集成，以及通过全部公开门槛的第二个 Runtime。 | 仅凭预留 ID 或私有 spike 暴露 Goose、Claude Code 或 Codex CLI。 |
 
 右栏只显示真实的 Lease、AgentRuntime、SandboxRuntime、模型和 Run usage。Files 已使用真实 API 启用；Terminal 和 Preview 仍必须等对应授权路径完成后再启用。
 

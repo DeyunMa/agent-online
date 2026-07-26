@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2 已通过远程 Preview；D3 只读 Files 已完成本地实现。D4 Goose adapter/组合模板本地真实 E2E 已通过，但 Preview 产品验收仍受门控；远程 Files 验收和其余受控能力待完成
+> 状态：D2、D3 已通过远程 Preview；D4 Goose adapter/组合模板已通过私有 Preview 受控 spike，但公开能力仍受门控；跨 Run 用量聚合和其余受控能力待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -35,9 +35,9 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和桌面/移动 UI 验收；尚未部署远程 Preview。D4 已完成 Goose adapter、服务端门控、组合模板和 adapter 级真实 E2E；Preview 的 D1/Workflow/TTL/浏览器门槛尚未完成，Goose 仍不是公开产品能力。Terminal、preview 和 changes 当前仍禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和远端 UI/手动停止验收。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Preview spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。Terminal、preview 和 changes 当前仍禁用。
 
-D3 原计划按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> Changes”推进。Files 本地纵切已完成；在启用 Terminal/Preview 前还需完成 Runtime 能力接口和 Hono/use-case 边界的小范围加固。
+D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进。Files 已完成；下一项恢复为直接聚合现有 `agent_runs` 的用户用量视图。在启用 Terminal/Preview 前还需完成 Runtime 能力接口和 Hono/use-case 边界的小范围加固。
 
 ## 3. 当前与未来 Runtime 的边界
 
@@ -45,7 +45,7 @@ D3 原计划按“受控只读 Files -> 用量聚合 -> Terminal -> Preview -> C
 - `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。终端和 preview 需要额外受控 API，不能因 E2B 已接入就直接开放。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：默认且已验收的 AgentRuntime，也是当前公开执行路径。
-- Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；只有完成同 Project 的 Pi -> Goose -> Pi、取消、usage、deadline 和 TTL 真实 E2E 后才可出现在 UI 中。
+- Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛已通过，但 capability 输出脱敏和浏览器选择验收前仍不可出现在 UI 中。
 - Claude Code、Codex CLI：仍是后续候选，保留 ID 不表示已支持。
 
 ## 4. D2/D3 成本与滥用护栏
