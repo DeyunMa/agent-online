@@ -33,12 +33,14 @@ env: HOST=0.0.0.0, PORT=3000, BROWSER=none
 浏览器不能传入 command、args、cwd、env、端口或 Provider 参数。项目必须在本地
 `node_modules` 中安装 Vite；缺少固定二进制时 Preview 明确失败，不通过 `npx` 下载，
 也不执行项目自定义 script 或加载项目自定义 Vite config。E2B adapter 在 `/tmp`
-写入平台固定 config，关闭 HMR、WebSocket、文件监听和 CORS。平台在启动前生成与该
+写入平台固定 config，关闭浏览器 HMR、WebSocket 和 CORS，同时保留 Vite 服务端文件
+监听来失效转换缓存，让用户手动 Reload 后能看到 Agent 的文件修改。平台在启动前生成与该
 Preview session 同寿命的签名 base，
 Vite 因此会把 HTML、模块依赖和 CSS 资源统一指向同源代理路径；Worker 不对任意
-JavaScript 内容做字符串改写。Vite 8 即使关闭 HMR 仍会注入固定的 `@vite/client`
-script；HTML 网关只移除这一条平台已知脚本，避免浏览器发起 V1 不支持的 WebSocket。
-Preview tab 隐藏时不挂载 iframe，但服务端 Preview 生命周期保持不变。
+JavaScript 内容做字符串改写。Vite 8 即使关闭 HMR 仍会从 HTML 或转换后的 CSS 模块
+加载固定的 `@vite/client`；网关只对这一条平台已知资源返回不联网的最小 style runtime，
+保留初始 CSS 注入并避免浏览器发起 V1 不支持的 WebSocket。Preview tab 隐藏时不挂载
+iframe，但服务端 Preview 生命周期保持不变。
 
 ### 2. D1 只保存当前临时 Preview
 

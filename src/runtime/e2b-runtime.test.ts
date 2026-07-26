@@ -196,6 +196,9 @@ describe("E2BSandboxRuntime", () => {
           path: "/tmp/agent-online-vite-preview.config.mjs",
         },
       ]);
+      expect(sandbox.fileWrites[0]?.content).not.toContain(
+        "watch: null",
+      );
       expect(response.status).toBe(200);
       const proxyCall = fetchMock.mock.calls.at(-1);
       expect(proxyCall?.[0]).toBe(

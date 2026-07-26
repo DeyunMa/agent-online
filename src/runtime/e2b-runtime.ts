@@ -103,7 +103,6 @@ const previewConfig = `export default {
   server: {
     cors: false,
     hmr: false,
-    watch: null,
     ws: false,
   },
 };
