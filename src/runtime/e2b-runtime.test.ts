@@ -214,7 +214,7 @@ describe("E2BSandboxRuntime", () => {
     }
   });
 
-  it("reconnects once when writing the Preview config transiently fails", async () => {
+  it("falls back to a fixed command when Preview config file RPCs fail", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -226,7 +226,7 @@ describe("E2BSandboxRuntime", () => {
     );
     try {
       const sandbox = new FakeE2BSandbox("sandbox-existing");
-      sandbox.fileWriteErrorsRemaining = 1;
+      sandbox.fileWriteErrorsRemaining = 2;
       const client = new FakeE2BClient(sandbox);
       const runtime = createRuntime(client);
       const handle = await runtime.ensureLease({
@@ -250,7 +250,11 @@ describe("E2BSandboxRuntime", () => {
         "sandbox-existing",
         "sandbox-existing",
       ]);
-      expect(sandbox.fileWrites).toHaveLength(1);
+      expect(sandbox.fileWrites).toHaveLength(0);
+      expect(sandbox.commandHistory).toHaveLength(2);
+      expect(sandbox.commandHistory[0]).toContain(
+        "'/bin/sh' '-c'",
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -418,6 +422,7 @@ class FakeE2BClient implements E2BSandboxClient {
 
 class FakeE2BSandbox {
   command = "";
+  readonly commandHistory: string[] = [];
   commandOptions: (CommandStartOpts & { background: true }) | null = null;
   fileWriteErrorsRemaining = 0;
   killed = false;
@@ -472,6 +477,7 @@ class FakeE2BSandbox {
     list: async () => [{ pid: this.process.pid }],
     run: async (command: string, options: CommandStartOpts & { background: true }) => {
       this.command = command;
+      this.commandHistory.push(command);
       this.commandOptions = options;
       await options.onStdout?.("stdout");
       await options.onStderr?.("stderr");

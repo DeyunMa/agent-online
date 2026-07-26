@@ -353,6 +353,7 @@ export class E2BSandboxRuntime
       | "traffic_token"
       | "wait_ready"
       | "write_config"
+      | "write_config_command"
       | "write_config_retry" = "attach";
     try {
       sandbox = await this.attachSandbox(handle);
@@ -375,7 +376,12 @@ export class E2BSandboxRuntime
         this.sandboxes.set(sandbox.sandboxId, sandbox);
         requireTrafficAccessToken(sandbox);
         stage = "write_config_retry";
-        await sandbox.files.write(previewConfigPath, previewConfig);
+        try {
+          await sandbox.files.write(previewConfigPath, previewConfig);
+        } catch {
+          stage = "write_config_command";
+          await writePreviewConfigWithCommand(sandbox);
+        }
       }
       stage = "command_start";
       const startedProcess = await sandbox.commands.run(
@@ -870,6 +876,29 @@ function toPreviewStartError(stage: string, error: unknown) {
   });
   result.name = `E2BPreviewStartError.${stage}.${sourceName}`;
   return result;
+}
+
+async function writePreviewConfigWithCommand(
+  sandbox: E2BSandbox,
+) {
+  const script =
+    `umask 077 && printf %s ${btoa(previewConfig)}` +
+    ` | base64 -d > ${previewConfigPath}`;
+  const process = await sandbox.commands.run(
+    toShellCommand({
+      args: ["-c", script],
+      command: "/bin/sh",
+    }),
+    {
+      background: true,
+      cwd: "/tmp",
+      timeoutMs: 10_000,
+    },
+  );
+  const result = await process.wait();
+  if (result.exitCode !== 0) {
+    throw new Error("E2B Preview config command failed");
+  }
 }
 
 async function waitForPreviewReady(
