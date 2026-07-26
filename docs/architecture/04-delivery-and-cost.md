@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2、D3 Files 已通过远程 Preview；D4 Goose adapter/组合模板已通过私有 Preview 受控 spike，但公开能力仍受门控；当前用户跨 Run Usage 与受控 Terminal 已完成本地验收、待发布 Preview。
+> 状态：D2、D3 Files、当前用户跨 Run Usage 与受控 Terminal 已通过远程 Preview；D4 Goose adapter/组合模板已通过私有 Preview 受控 spike，但公开能力仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -35,9 +35,9 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files 已完成授权 API、E2B 文件适配、路径/大小/文本限制、明确状态、测试和远端 UI/手动停止验收；当前用户全量 Usage API/UI 与受控 Terminal 已完成代码、测试和本地构建验收，Terminal 新增的 D1 临时占用、E2B PTY、同源 WebSocket 和 idle Workflow 尚待发布 Preview 验证。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Preview spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。Preview 和 changes 当前仍禁用。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关。D3 只读 Files、当前用户全量 Usage API/UI 与受控 Terminal 已完成授权边界、代码、测试、迁移、部署和远端真实浏览器验收；Terminal 已验证 D1 硬互斥、E2B PTY、同源 WebSocket、文件连续性、显式关闭和断线清理。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Preview spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。Preview 和 changes 当前仍禁用。
 
-D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进。前三项代码已完成；Terminal 远端验收后，下一步实现固定开发端口、同源代理和显式关闭的受控 Preview。维护者用量、日期筛选和配额仍留待后续。
+D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进。前三项已完成远端验收；下一步实现固定开发端口、同源代理和显式关闭的受控 Preview。维护者用量、日期筛选和配额仍留待后续。
 
 ## 3. 当前与未来 Runtime 的边界
 

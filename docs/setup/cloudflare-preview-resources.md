@@ -1,6 +1,6 @@
 # Cloudflare Preview 资源台账
 
-> 状态：2026-07-26 已创建 Preview，`RUNS_ENABLED=true`，Pi/Goose、Files、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
+> 状态：2026-07-26 已创建 Preview，`RUNS_ENABLED=true`，Pi/Goose、Files、Usage、Terminal、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -28,7 +28,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `d424d9ed-4a4f-45ea-aa89-2856cc78885a` |
+| 当前部署版本 | `099981b2-b923-44bb-94f6-b41f89dfcb16` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -52,8 +52,9 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0001_app.sql`
 - `0002_d2_run_execution.sql`
 - `0003_provider_process_ref.sql`
+- `0004_terminal_sessions.sql`
 
-D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun 和聚合 usage。没有创建 R2、KV、Durable Object 或文件快照。
+D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage 和活动 Terminal 的临时互斥行。Terminal 关闭后该行已删除，不保存命令或输出。没有创建 R2、KV、Durable Object 或文件快照。
 
 ## 4. Workflow
 
@@ -63,7 +64,7 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun 和聚合
 | Worker Binding | `AGENT_RUN_WORKFLOW` |
 | Dashboard | [Workflow Instances](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/workflows/agent-online-preview-run/instances) |
 
-锁定部署验收时实例数为 0。打开 `RUNS_ENABLED` 后，受邀 owner 已通过该 Workflow 完成真实 AgentRun。
+打开 `RUNS_ENABLED` 后，受邀 owner 已通过该 Workflow 完成真实 AgentRun、Run 空闲回收，以及 Terminal expiry/idle cleanup 的持久调度。30 分钟 Terminal expiry 的完整等待未纳入本轮远端 smoke，expiry claim 和调度失败路径由自动测试覆盖。
 
 ## 5. 非敏感变量
 

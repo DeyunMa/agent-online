@@ -1,7 +1,7 @@
 # 本地开发基线
 
 > 状态：D2 本地代码、真实 E2B spike 及远程 Workflow happy path、取消、deadline 和空闲 TTL 已完成
-> 当前阶段：受控只读 Files 与 Goose 私有 Preview spike 已通过；当前用户跨 Run Usage 与受控 Terminal 已完成本地实现和测试、待发布 Preview。Goose 仍受公开门控，Preview 待完成。
+> 当前阶段：受控只读 Files、当前用户跨 Run Usage、受控 Terminal 与 Goose 私有 Preview spike 已通过远端验收。Goose 仍受公开门控，Preview 待完成。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -33,7 +33,7 @@ worker/         Cloudflare Worker 入口
 - 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
 - 只读 Files 已实现并通过远端 E2B 验收；fake Runtime 的内存文件不跨请求，因此本地 fake 控制面会显示明确的沙箱不可用状态。停止 Lease 不发 Files 请求，也不显示缓存的旧目录或文本。
 - `GET /api/usage` 和响应式 Usage 页面已实现，直接聚合现有 `agent_runs`；它不需要新迁移、环境变量或外部服务。本地 fake Run 会产生 Run 数和沙箱生命周期事实，但不会伪造 token 或模型请求。
-- Terminal 已实现同源 WebSocket、临时 D1 互斥、30 分钟会话上限和 idle Workflow；fake Runtime 明确不提供 Terminal。preview、changes 和每用户并发上限尚未实现。
+- Terminal 已实现并通过远端真实 E2B 验收：同源 WebSocket、临时 D1 硬互斥、30 分钟会话上限、显式关闭、断线清理和 idle Workflow；fake Runtime 明确不提供 Terminal。preview、changes 和每用户并发上限尚未实现。
 - Goose 是当前唯一获准实现的第二 Runtime 候选；Claude Code、Codex CLI 仍仅在 Runtime ID 合同中预留。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
 

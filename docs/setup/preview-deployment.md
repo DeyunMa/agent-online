@@ -118,7 +118,7 @@ pnpm deploy:preview
 - Cloudflare Workflow 免费层的真实限制有实测结论。
 - `GOOSE_RUNTIME_MODE=spike` 时只有显式受控 API 可以执行 Goose，公开 capabilities 和 UI 仍保持 Pi-only。
 
-完成以上条件后，D2 才算通过完整远程环境验收。只读 Files 已使用真实 E2B Lease 验证目录、文本、停止状态和陈旧缓存清理。Terminal 发布时还必须应用 `0004_terminal_sessions.sql`，再验证同源 WebSocket、真实 `/workspace` PTY、Run/Files/Stop 互斥、断线关闭、文件连续性和 idle Workflow；Preview 与 Changes API 不因 Worker 已部署而提前开放。
+完成以上条件后，D2 才算通过完整远程环境验收。只读 Files 已使用真实 E2B Lease 验证目录、文本、停止状态和陈旧缓存清理。Terminal 已应用 `0004_terminal_sessions.sql` 并验证同源 WebSocket、真实 `/workspace` PTY、Run/Files/Stop 互斥、显式关闭、断线关闭和 Terminal/Pi Run 文件连续性；30 分钟 durable expiry 由测试覆盖，本轮没有为了验收等待完整时长。Preview 与 Changes API 不因 Worker 已部署而提前开放。
 
 当前已完成 owner 注册、Project 创建、Pi/Goose 同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。临时 8 秒空闲 TTL 已验证 `detached=true, stopped=true`，正式值恢复为 600 秒；手动 Stop UI 也已独立通过。两种停止路径都会让 D1 Lease 变为 `stopped` 并清空 Provider 引用，Project 文件按 V1 设计允许丢失。
 

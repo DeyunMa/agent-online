@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2 与 D3 Files 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。当前用户跨 Run Usage 与受控 Terminal 已完成本地实现和测试、待发布 Preview；Goose 浏览器选择和 Preview 仍未开放。
+> 状态：D2、D3 Files、当前用户跨 Run Usage 与受控 Terminal 已完成私有 Cloudflare Preview 验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择和 Preview 仍未开放。
 
 ## 产品定义
 

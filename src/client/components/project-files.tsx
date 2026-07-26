@@ -51,7 +51,7 @@ export function ProjectFiles({
     return (
       <section className="project-files-view">
         <FilesNotice
-          detail="Files become available again when the current run finishes."
+          detail="Files become available again when the current project activity finishes."
           title="Sandbox is busy"
         />
       </section>

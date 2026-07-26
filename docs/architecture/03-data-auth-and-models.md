@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway 与 Pi/Goose Run 聚合 usage 已通过远程 Preview；当前用户跨 Run 聚合与 Terminal 临时占用已完成本地验收、待发布 Preview，维护者视图仍待实现。
+> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway、Pi/Goose Run 聚合 usage、当前用户跨 Run 聚合与 Terminal 临时占用均已通过远程 Preview；维护者视图仍待实现。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界

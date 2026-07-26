@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2、D3 Files 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。当前用户跨 Run Usage 与受控 Terminal 已完成本地实现和测试、待发布 Preview；Goose UI 与 Preview 仍关闭。
+> 状态：D2、D3 Files、当前用户跨 Run Usage 与受控 Terminal 已通过远程 Preview；Goose adapter、组合模板与私有 Preview 产品链路已通过受控 spike。Goose UI 与 Preview 仍关闭。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界

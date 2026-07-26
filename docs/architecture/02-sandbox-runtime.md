@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收与只读 Files 均已通过私有 Preview；受控 Terminal 已完成本地实现和测试、待发布 Preview；Goose 公开产品路径仍受门控。
+> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files 与受控 Terminal 均已通过私有 Preview；Goose 公开产品路径仍受门控，Preview 端口代理尚未实现。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论

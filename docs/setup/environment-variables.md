@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow 和 Pi/Goose 组合模板均已完成私有 Preview 验收；受控 Terminal 复用现有 E2B/D1/Workflow 配置且不新增环境变量，待发布 Preview；Goose 仍保持 `spike`，不向 UI 公开。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板与受控 Terminal 均已完成私有 Preview 验收；Terminal 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
