@@ -410,6 +410,13 @@ function rewritePreviewHtml(response: Response, baseUrl: string) {
       element(element) {
         const value = element.getAttribute(attribute);
         if (value) {
+          if (
+            selector === "script" &&
+            isViteClientResourcePath(value, baseUrl)
+          ) {
+            element.remove();
+            return;
+          }
           element.setAttribute(
             attribute,
             rewriteRootRelativeUrl(value, baseUrl),
@@ -419,6 +426,16 @@ function rewritePreviewHtml(response: Response, baseUrl: string) {
     });
   }
   return rewriter.transform(response);
+}
+
+export function isViteClientResourcePath(
+  value: string,
+  baseUrl: string,
+) {
+  const withoutBase = value.startsWith(baseUrl)
+    ? value.slice(baseUrl.length)
+    : value.replace(/^\/+/, "");
+  return withoutBase.split(/[?#]/, 1)[0] === "@vite/client";
 }
 
 function rewriteRootRelativeUrl(value: string, baseUrl: string) {

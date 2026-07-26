@@ -8,6 +8,7 @@ import type { ProjectPreviewResponse } from "../shared/api";
 import type { AppEnv } from "./env";
 import {
   createPreviewApi,
+  isViteClientResourcePath,
   type PreviewApiDependencies,
 } from "./preview-api";
 import type { ServerServices } from "./services";
@@ -25,6 +26,24 @@ const project: ProjectRecord = {
 };
 
 describe("Preview API", () => {
+  it("recognizes only the fixed Vite client module for removal", () => {
+    const baseUrl =
+      "/api/projects/project-1/preview/content/capability/";
+
+    expect(
+      isViteClientResourcePath(
+        `${baseUrl}@vite/client`,
+        baseUrl,
+      ),
+    ).toBe(true);
+    expect(isViteClientResourcePath("/@vite/client?v=1", baseUrl)).toBe(
+      true,
+    );
+    expect(isViteClientResourcePath("/src/main.js", baseUrl)).toBe(
+      false,
+    );
+  });
+
   it("issues an opaque same-origin content URL without provider details", async () => {
     const fixture = createFixture();
     const response = await fixture.app.request(

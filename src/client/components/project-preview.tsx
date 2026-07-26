@@ -173,7 +173,7 @@ export function ProjectPreview({
         />
       ) : null}
 
-      {status === "running" && preview.data?.contentUrl ? (
+      {active && status === "running" && preview.data?.contentUrl ? (
         <iframe
           className="project-preview-frame"
           key={`${preview.data.contentUrl}:${reloadVersion}`}
