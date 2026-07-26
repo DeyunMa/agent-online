@@ -16,5 +16,12 @@
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
+  ],
+  "workflows": [
+    {
+      "binding": "AGENT_RUN_WORKFLOW",
+      "name": "agent-online-run",
+      "class_name": "AgentRunWorkflow"
+    }
   ]
 }

@@ -2,6 +2,7 @@ import type {
   AgentRunRecord,
   AgentRunRepository,
   AgentRunUsage,
+  AgentRunUsageDelta,
   CreateQueuedAgentRunResult,
   MessageRecord,
   MessageRepository,
@@ -11,7 +12,7 @@ import type {
   SandboxLeaseRepository,
 } from "../../application/ports";
 import type { AgentRuntimeId } from "../../agent/contract";
-import type { AgentRunStatus } from "../../domain/agent-run";
+import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
 import type { SandboxLeaseStatus } from "../../domain/sandbox-lease";
 import type { RuntimeKind } from "../../runtime/contract";
 
@@ -46,6 +47,7 @@ type AgentRunRow = {
   model_request_count: number;
   output_tokens: number;
   project_id: string;
+  provider_process_ref: string | null;
   sandbox_duration_ms: number;
   sandbox_lease_id: string;
   sandbox_runtime_id: RuntimeKind;
@@ -98,6 +100,7 @@ const agentRunColumns = `
   output_tokens,
   total_tokens,
   model_request_count,
+  provider_process_ref,
   sandbox_duration_ms,
   failure_reason,
   created_at,
@@ -148,6 +151,7 @@ function toAgentRunRecord(row: AgentRunRow): AgentRunRecord {
     inputMessageId: row.input_message_id,
     modelId: row.model_id,
     projectId: row.project_id,
+    providerProcessRef: row.provider_process_ref,
     sandboxLeaseId: row.sandbox_lease_id,
     sandboxRuntimeId: row.sandbox_runtime_id,
     startedAt: row.started_at,
@@ -275,6 +279,59 @@ export class D1ProjectRepository implements ProjectRepository {
 export class D1MessageRepository implements MessageRepository {
   constructor(private readonly db: D1Database) {}
 
+  async appendAssistant(input: {
+    agentRunId: string;
+    content: string;
+    id: string;
+    now: string;
+    projectId: string;
+  }): Promise<MessageRecord> {
+    const results = await this.db.batch<MessageRow>([
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO messages (
+            id,
+            project_id,
+            agent_run_id,
+            sequence,
+            role,
+            content,
+            created_at
+          ) VALUES (?, ?, ?, COALESCE((SELECT MAX(sequence) + 1 FROM messages WHERE project_id = ?), 0), 'assistant', ?, ?)`,
+        )
+        .bind(
+          input.id,
+          input.projectId,
+          input.agentRunId,
+          input.projectId,
+          input.content,
+          input.now,
+        ),
+      this.db
+        .prepare("UPDATE projects SET updated_at = ? WHERE id = ?")
+        .bind(input.now, input.projectId),
+      this.db
+        .prepare(
+          `SELECT ${messageColumns}
+          FROM messages
+          WHERE project_id = ? AND agent_run_id = ? AND role = 'assistant'
+          LIMIT 1`,
+        )
+        .bind(input.projectId, input.agentRunId),
+    ]);
+
+    return toMessageRecord(requireBatchRow<MessageRow>(results, 2, "append assistant message"));
+  }
+
+  async findById(messageId: string, projectId: string): Promise<MessageRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${messageColumns} FROM messages WHERE id = ? AND project_id = ? LIMIT 1`)
+      .bind(messageId, projectId)
+      .first<MessageRow>();
+
+    return row === null ? null : toMessageRecord(row);
+  }
+
   async listByProjectId(projectId: string): Promise<MessageRecord[]> {
     const result = await this.db
       .prepare(`SELECT ${messageColumns} FROM messages WHERE project_id = ? ORDER BY sequence ASC`)
@@ -287,6 +344,79 @@ export class D1MessageRepository implements MessageRepository {
 
 export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
   constructor(private readonly db: D1Database) {}
+
+  async claimForManualStop(input: {
+    expectedProviderRef: string;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    updatedAt: string;
+  }) {
+    const result = await this.db
+      .prepare(
+        `UPDATE sandbox_leases
+        SET provider_ref = NULL, status = 'stopped', updated_at = ?
+        WHERE id = ?
+          AND provider_ref = ?
+          AND status != 'stopped'
+          AND updated_at = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM agent_runs
+            WHERE project_id = sandbox_leases.project_id
+              AND status IN ('queued', 'starting', 'running', 'cancelling')
+          )`,
+      )
+      .bind(
+        input.updatedAt,
+        input.leaseId,
+        input.expectedProviderRef,
+        input.expectedUpdatedAt,
+      )
+      .run();
+
+    return result.meta.changes === 1;
+  }
+
+  async claimIdleForStop(input: {
+    expectedProviderRef: string;
+    expectedRunId: string;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    updatedAt: string;
+  }) {
+    const result = await this.db
+      .prepare(
+        `UPDATE sandbox_leases
+        SET provider_ref = NULL, status = 'stopped', updated_at = ?
+        WHERE id = ?
+          AND provider_ref = ?
+          AND status = 'idle'
+          AND updated_at = ?
+          AND (
+            SELECT id
+            FROM agent_runs
+            WHERE project_id = sandbox_leases.project_id
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+          ) = ?
+          AND NOT EXISTS (
+            SELECT 1
+            FROM agent_runs
+            WHERE project_id = sandbox_leases.project_id
+              AND status IN ('queued', 'starting', 'running', 'cancelling')
+          )`,
+      )
+      .bind(
+        input.updatedAt,
+        input.leaseId,
+        input.expectedProviderRef,
+        input.expectedUpdatedAt,
+        input.expectedRunId,
+      )
+      .run();
+
+    return result.meta.changes === 1;
+  }
 
   async findByProjectId(projectId: string): Promise<SandboxLeaseRecord | null> {
     const row = await this.db
@@ -397,12 +527,13 @@ export class D1AgentRunRepository implements AgentRunRepository {
               output_tokens,
               total_tokens,
               model_request_count,
+              provider_process_ref,
               sandbox_duration_ms,
               failure_reason,
               created_at,
               started_at,
               finished_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, 0, 0, NULL, ?, NULL, NULL)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, 0, 0, 0, NULL, 0, NULL, ?, NULL, NULL)`,
           )
           .bind(
             input.agentRunId,
@@ -453,6 +584,22 @@ export class D1AgentRunRepository implements AgentRunRepository {
     return row === null ? null : toAgentRunRecord(row);
   }
 
+  async findActiveByProjectId(projectId: string): Promise<AgentRunRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT ${agentRunColumns}
+        FROM agent_runs
+        WHERE project_id = ?
+          AND status IN ('queued', 'starting', 'running', 'cancelling')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+      )
+      .bind(projectId)
+      .first<AgentRunRow>();
+
+    return row === null ? null : toAgentRunRecord(row);
+  }
+
   async findActiveOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord | null> {
     const row = await this.db
       .prepare(
@@ -468,6 +615,102 @@ export class D1AgentRunRepository implements AgentRunRepository {
       .first<AgentRunRow>();
 
     return row === null ? null : toAgentRunRecord(row);
+  }
+
+  async listRecentOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT ${agentRunColumns}
+        FROM agent_runs
+        WHERE project_id = ? AND user_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 50`,
+      )
+      .bind(projectId, userId)
+      .all<AgentRunRow>();
+
+    return result.results.map(toAgentRunRecord);
+  }
+
+  async setProviderProcessRef(runId: string, providerProcessRef: string) {
+    if (!providerProcessRef || providerProcessRef.length > 512) {
+      throw new Error("AgentRun provider process reference is invalid");
+    }
+
+    const results = await this.db.batch<AgentRunRow>([
+      this.db
+        .prepare(
+          `UPDATE agent_runs
+          SET provider_process_ref = ?
+          WHERE id = ?
+            AND status IN ('starting', 'running', 'cancelling')`,
+        )
+        .bind(providerProcessRef, runId),
+      this.db.prepare(`SELECT ${agentRunColumns} FROM agent_runs WHERE id = ? LIMIT 1`).bind(runId),
+    ]);
+
+    if (results[0]?.meta.changes !== 1) {
+      return null;
+    }
+
+    return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "set AgentRun process reference"));
+  }
+
+  async setSandboxDuration(runId: string, sandboxDurationMs: number) {
+    if (!Number.isSafeInteger(sandboxDurationMs) || sandboxDurationMs < 0) {
+      throw new Error("AgentRun sandbox duration must be a non-negative safe integer");
+    }
+
+    const results = await this.db.batch<AgentRunRow>([
+      this.db
+        .prepare(
+          `UPDATE agent_runs
+          SET sandbox_duration_ms = MAX(sandbox_duration_ms, ?)
+          WHERE id = ?
+            AND status IN ('queued', 'starting', 'running', 'cancelling')`,
+        )
+        .bind(sandboxDurationMs, runId),
+      this.db.prepare(`SELECT ${agentRunColumns} FROM agent_runs WHERE id = ? LIMIT 1`).bind(runId),
+    ]);
+
+    if (results[0]?.meta.changes !== 1) {
+      return null;
+    }
+
+    return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "set AgentRun sandbox duration"));
+  }
+
+  async addUsageDelta(runId: string, usage: AgentRunUsageDelta): Promise<AgentRunRecord | null> {
+    assertUsageDelta(usage);
+
+    const results = await this.db.batch<AgentRunRow>([
+      this.db
+        .prepare(
+          `UPDATE agent_runs
+          SET input_tokens = input_tokens + ?,
+              output_tokens = output_tokens + ?,
+              total_tokens = total_tokens + ?,
+              model_request_count = model_request_count + ?,
+              sandbox_duration_ms = sandbox_duration_ms + ?
+          WHERE id = ?
+            AND status IN ('queued', 'starting', 'running', 'cancelling')`,
+        )
+        .bind(
+          usage.inputTokens,
+          usage.outputTokens,
+          usage.totalTokens,
+          usage.modelRequestCount,
+          usage.sandboxDurationMs,
+          runId,
+        ),
+      this.db.prepare(`SELECT ${agentRunColumns} FROM agent_runs WHERE id = ? LIMIT 1`).bind(runId),
+    ]);
+
+    if (results[0]?.meta.changes !== 1) {
+      return null;
+    }
+
+    return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "add AgentRun usage delta"));
   }
 
   async transition(input: {
@@ -494,6 +737,10 @@ export class D1AgentRunRepository implements AgentRunRepository {
     if (input.finishedAt !== undefined) {
       assignments.push("finished_at = ?");
       values.push(input.finishedAt);
+    }
+
+    if (isTerminalAgentRun(input.to)) {
+      assignments.push("provider_process_ref = NULL");
     }
 
     values.push(input.runId, input.from);
@@ -540,5 +787,13 @@ export class D1AgentRunRepository implements AgentRunRepository {
     }
 
     return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "update AgentRun usage"));
+  }
+}
+
+function assertUsageDelta(usage: AgentRunUsageDelta) {
+  for (const value of Object.values(usage)) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error("AgentRun usage deltas must be non-negative safe integers");
+    }
   }
 }

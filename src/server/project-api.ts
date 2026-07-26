@@ -19,7 +19,8 @@ import type {
 } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
-import { createServerServices, installedSandboxRuntimeId, type ServerServices } from "./services";
+import { createServerServices, type ServerServices } from "./services";
+import { defaultWorkingDirectory } from "./runtime-config";
 
 const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -29,8 +30,6 @@ const createAgentRunSchema = z.object({
   content: z.string().trim().min(1).max(64_000),
 });
 
-const defaultPlatformModelId = "gemini-2.5-flash";
-const defaultWorkingDirectory = "/workspace";
 type AppContext = Context<AppEnv>;
 
 export type ProjectApiDependencies = {
@@ -106,6 +105,32 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     return c.json(toProjectResponse(project, await services.sandboxLeases.findByProjectId(project.id)));
   });
 
+  api.post("/projects/:projectId/sandbox/stop", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const services = dependencies.createServices(c.env);
+    const project = await services.projects.findOwnedById(
+      c.req.param("projectId"),
+      user.id,
+    );
+    if (!project) {
+      return notFound(c);
+    }
+
+    const stopped = await services.projectSandboxes.stop(project.id);
+    if (stopped.kind === "project_busy") {
+      return projectBusy(c);
+    }
+    if (stopped.kind === "conflict" || stopped.kind === "provider_error") {
+      return internalError(c, 503);
+    }
+
+    return c.json(toProjectResponse(project, stopped.lease));
+  });
+
   api.get("/projects/:projectId/messages", async (c) => {
     const user = await requireAuthenticatedUser(c, dependencies);
     if (!user) {
@@ -144,14 +169,17 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       id: dependencies.createId(),
       now,
       projectId: project.id,
-      runtimeId: installedSandboxRuntimeId,
+      runtimeId: services.sandboxRuntimeId,
     });
+    if (sandboxLease.runtimeId !== services.sandboxRuntimeId) {
+      return internalError(c);
+    }
     const created = await services.agentRuns.createQueuedWithInput({
       agentRunId: dependencies.createId(),
       agentRuntimeId: project.defaultAgentRuntimeId,
       content: input.content,
       inputMessageId: dependencies.createId(),
-      modelId: defaultPlatformModelId,
+      modelId: services.defaultModelId,
       now,
       projectId: project.id,
       sandboxLeaseId: sandboxLease.id,
@@ -164,26 +192,48 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     try {
-      const coordinatedRun = await services.runCoordinator.start({
+      const execution = await services.runExecutions.start({
         agentRun: created.run,
         prompt: input.content,
         sandboxLease,
         workingDirectory: defaultWorkingDirectory,
       });
 
-      keepRunAlive(c, coordinatedRun.completion);
+      if (execution.completion) {
+        keepRunAlive(c, execution.completion);
+      }
     } catch (_error) {
-      await services.agentRuns.transition({
+      const failed = await services.agentRuns.transition({
         failureReason: "Agent run could not be started",
         finishedAt: dependencies.now().toISOString(),
         from: "queued",
         runId: created.run.id,
         to: "failed",
       });
-      return internalError(c);
+      const current = failed ?? (await services.agentRuns.findById(created.run.id));
+      if (!current || current.status === "queued") {
+        return internalError(c);
+      }
+      return c.json(toAgentRunResponse(current), 201);
     }
 
     return c.json(toAgentRunResponse(created.run), 201);
+  });
+
+  api.get("/projects/:projectId/agent-runs", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const services = dependencies.createServices(c.env);
+    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    if (!project) {
+      return notFound(c);
+    }
+
+    const runs = await services.agentRuns.listRecentOwnedByProjectId(project.id, user.id);
+    return c.json(runs.map(toAgentRunResponse));
   });
 
   api.get("/projects/:projectId/agent-runs/active", async (c) => {
@@ -239,7 +289,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return notFound(c);
     }
 
-    const cancelled = await requestFakeRunCancellation(services, run, dependencies.now());
+    const cancelled = await services.runExecutions.cancel(run, dependencies.now());
     return cancelled ? c.json(toAgentRunResponse(cancelled)) : internalError(c);
   });
 
@@ -329,26 +379,6 @@ function streamRunLifecycle(c: AppContext, initialRun: AgentRunRecord, readRun: 
       usage: run.usage,
     });
   });
-}
-
-async function requestFakeRunCancellation(services: ServerServices, run: AgentRunRecord, now: Date) {
-  if (isTerminalAgentRun(run.status) || run.status === "cancelling") {
-    return run;
-  }
-
-  const targetStatus = run.status === "queued" ? "cancelled" : "cancelling";
-  const updatedRun = await services.agentRuns.transition({
-    finishedAt: targetStatus === "cancelled" ? now.toISOString() : undefined,
-    from: run.status,
-    runId: run.id,
-    to: targetStatus,
-  });
-
-  if (updatedRun) {
-    return updatedRun;
-  }
-
-  return services.agentRuns.findOwnedById(run.id, run.userId);
 }
 
 function delay(milliseconds: number) {

@@ -1,7 +1,7 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D0 已完成；D1 的 fake 控制面已落地，真实 Runtime 尚未开始
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
+> 状态：D2 真实执行代码与本地 E2E 已完成；远程 Workflow 免费层验收和 D3 受控能力待完成
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
 
@@ -29,24 +29,24 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | D0 | 重建轻量合同 | 按 ADR-0002 清理 R2/Revision 模型，重建 D1 迁移、领域合同与 fake 测试。 | 真实 Provider、真实模型、BYOK。 | 单 Lease、单活动 AgentRun、文件不恢复和状态机测试通过。 |
 | D1 | fake 控制面闭环 | Better Auth 邮箱密码登录、Project、用户输入、AgentRun、Lease、SSE、取消与零值 usage UI。 | 团队、支付、公开 BYOK、第三方登录、伪造 assistant 回复。 | 注册登录、创建 Project、fake Pi Run、取消和 D1 Run 状态可见。 |
-| D2 | 真实 Agent 路径 | Gemini ModelGateway、E2B Adapter、真实 Pi、终端事件和 preview。 | 匿名开放注册、R2 恢复。 | 同 Project 连续 Run 复用存活沙箱；停止后明确显示工作区不可恢复。 |
-| D3 | 基础观测与护栏 | 可选 Sentry 错误监控、最小 Run 时间限制、`ADMIN_EMAILS` 用量视图。 | 日志全量归档、Session Replay、商业计费。 | Worker/沙箱/模型失败可定位，且不上传 prompt、文件或密钥。 |
+| D2 | 真实 Agent 路径 | 按 ADR-0003 实现 AgentRunWorkflow、Gemini ModelGateway、E2B Adapter、真实 Pi、最终回复、取消、deadline 和 TTL。 | 匿名开放注册、R2 恢复、raw event 归档。 | 同 Project 连续 Run 复用存活沙箱；取消/TTL 收敛；远程 Workflow 免费层运行通过。 |
+| D3 | 受控 Project 能力与基础观测 | 文件浏览、终端、preview、changes、可选 Sentry、每用户上限和 `ADMIN_EMAILS` 用量视图。 | 任意 shell 公共入口、日志全量归档、Session Replay、商业计费。 | Worker/沙箱/模型失败可定位，受控能力不泄漏 Provider ID、端口、prompt、文件或密钥。 |
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0 的 D1-only 合同、迁移、端口与 fake 测试已完成。D1 已有邮箱密码 UI、Project、可恢复的当前活跃 fake Run、取消与 SSE；可信最终助手消息、真实用量和真实 Runtime 不属于 D1 验收。D2 的 E2B、Pi RPC、ModelGateway、终端和 preview 尚未开始。
+当前进度：D0/D1 已完成。D2 已实现 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复和原子空闲回收；真实 E2B + Pi + Gemini spike 已通过。D2 剩余门槛是部署到 Cloudflare 预览环境验证 Workflows Free 的 CPU/subrequest 限额。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
 
 ## 3. 当前与未来 Runtime 的边界
 
 - `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟或执行真实 wall-clock timeout。
-- `e2b`：开发测试真实 Pi、Linux、终端和 preview；`E2B_API_KEY` 只在服务端环境中使用。
+- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。终端和 preview 需要额外受控 API，不能因 E2B 已接入就直接开放。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
-- Pi：唯一已注册的 AgentRuntime。它是默认路径，但真实 Pi 沙箱执行尚未完成。
+- Pi：唯一已注册的 AgentRuntime，也是当前真实执行路径。
 - Goose、Claude Code、Codex CLI：后续候选，只有达到 D4 的单独验收条件后才可出现在 UI 中。
 
 ## 4. D2/D3 成本与滥用护栏
 
-以下是接入真实 Runtime 后必须实现的护栏，不是 fake P1 当前能力：
+以下是公开部署前的护栏。第 2 至 4 项已在 D2 实现，第 1 和第 5 项仍待 D3：
 
 1. 每个 User 默认最多一个活动 Lease，配置化而非硬编码。
 2. 每个 AgentRun 设置最大 wall-clock 时间；真实沙箱接入后记录 `sandbox_duration_ms`。
@@ -55,6 +55,7 @@ flowchart LR
 5. 出现 Provider 错误或异常用量时，维护者能先通过 admin 用量视图关闭或暂停新 Run；精细配额以后再设计。
 6. 早期真实沙箱只对自己或受邀测试账号开放；开源不等于开放匿名计算资源。
 7. 每个新 AgentRuntime 独立评估镜像体积、冷启动、模型请求路径、凭据持有方式和出网能力，不能沿用 Pi 的成本假设。
+8. Cloudflare Workflows Free 每 step 只有 10ms CPU、每 instance 最多 50 个外部 subrequest；预览环境必须验证典型 Pi Run，并在超限时停止公开注册。
 
 ## 5. 支付不是延后实现项，而是范围外
 
@@ -74,6 +75,7 @@ flowchart LR
 
 - [Cloudflare Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
 - [Cloudflare D1 定价](https://developers.cloudflare.com/d1/platform/pricing/)
+- [Cloudflare Workflows 限制](https://developers.cloudflare.com/workflows/reference/limits/) 与 [定价](https://developers.cloudflare.com/workflows/reference/pricing/)
 - [Cloudflare Containers](https://developers.cloudflare.com/containers/)
 - [E2B Pricing](https://e2b.dev/pricing) 与 [Billing and limits](https://e2b.dev/docs/billing)
 - [Sentry Pricing](https://sentry.io/pricing/)

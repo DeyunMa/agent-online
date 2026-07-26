@@ -30,6 +30,8 @@ export type AgentRunUsage = {
   totalTokens: number;
 };
 
+export type AgentRunUsageDelta = AgentRunUsage;
+
 export type AgentRunRecord = {
   agentRuntimeId: AgentRuntimeId;
   createdAt: string;
@@ -39,6 +41,7 @@ export type AgentRunRecord = {
   inputMessageId: string | null;
   modelId: string;
   projectId: string;
+  providerProcessRef: string | null;
   sandboxLeaseId: string;
   sandboxRuntimeId: RuntimeKind;
   startedAt: string | null;
@@ -65,10 +68,39 @@ export interface ProjectRepository {
 }
 
 export interface MessageRepository {
+  appendAssistant(input: {
+    agentRunId: string;
+    content: string;
+    id: string;
+    now: string;
+    projectId: string;
+  }): Promise<MessageRecord>;
+  findById(messageId: string, projectId: string): Promise<MessageRecord | null>;
   listByProjectId(projectId: string): Promise<MessageRecord[]>;
 }
 
 export interface SandboxLeaseRepository {
+  /**
+   * Atomically detaches a provider sandbox for a user-requested stop only
+   * while the Project still has no active Run.
+   */
+  claimForManualStop(input: {
+    expectedProviderRef: string;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    updatedAt: string;
+  }): Promise<boolean>;
+  /**
+   * Atomically detaches an idle provider sandbox only when the Lease has not
+   * changed and the Project still has no active Run.
+   */
+  claimIdleForStop(input: {
+    expectedProviderRef: string;
+    expectedRunId: string;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    updatedAt: string;
+  }): Promise<boolean>;
   findByProjectId(projectId: string): Promise<SandboxLeaseRecord | null>;
   getOrCreate(input: {
     id: string;
@@ -107,8 +139,18 @@ export interface AgentRunRepository {
   }): Promise<CreateQueuedAgentRunResult>;
   /** Internal coordinator read after a cross-request cancellation transition. */
   findById(agentRunId: string): Promise<AgentRunRecord | null>;
+  /** Internal execution-owner read used before stopping an idle Project sandbox. */
+  findActiveByProjectId(projectId: string): Promise<AgentRunRecord | null>;
   findActiveOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord | null>;
   findOwnedById(agentRunId: string, userId: string): Promise<AgentRunRecord | null>;
+  /** Returns the newest runs first. The adapter owns the bounded history size. */
+  listRecentOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord[]>;
+  /** Stores a provider-private process identifier while a Run is non-terminal. */
+  setProviderProcessRef(runId: string, providerProcessRef: string): Promise<AgentRunRecord | null>;
+  /** Idempotently records elapsed sandbox wall time while a Run is non-terminal. */
+  setSandboxDuration(runId: string, sandboxDurationMs: number): Promise<AgentRunRecord | null>;
+  /** Atomically adds real usage while a Run is non-terminal. */
+  addUsageDelta(runId: string, usage: AgentRunUsageDelta): Promise<AgentRunRecord | null>;
   transition(input: {
     failureReason?: string | null;
     finishedAt?: string | null;

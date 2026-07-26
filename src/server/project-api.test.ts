@@ -14,11 +14,14 @@ import type {
   SandboxLeaseRepository,
 } from "../application/ports";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
+import { ProjectSandboxService } from "../application/project-sandbox";
 import { isTerminalAgentRun } from "../domain/agent-run";
+import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import type { AgentRunResponse, MessageResponse, ProjectResponse } from "../shared/api";
 import type { AppEnv } from "./env";
 import { createProjectApi } from "./project-api";
 import type { ServerServices } from "./services";
+import type { RunExecutionDispatcher } from "./services";
 
 const testUser = { email: "user@example.test", id: "user_1" };
 const otherUser = { email: "other@example.test", id: "user_2" };
@@ -84,6 +87,81 @@ describe("Project API", () => {
     await expect(invalid.json()).resolves.toMatchObject({ error: "validation_error" });
     expect(inaccessible.status).toBe(404);
     await expect(inaccessible.json()).resolves.toMatchObject({ error: "not_found" });
+  });
+
+  it("stops an owned Project sandbox without exposing its provider reference", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+    const lease = await fixture.sandboxLeases.getOrCreate({
+      id: "lease_1",
+      now,
+      projectId: "project_1",
+      runtimeId: "fake",
+    });
+    await fixture.sandboxLeases.updateState({
+      leaseId: lease.id,
+      providerRef: "provider-private-sandbox",
+      status: "idle",
+      updatedAt: now,
+    });
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/sandbox/stop",
+      { method: "POST" },
+    );
+    const body = (await response.json()) as ProjectResponse;
+
+    expect(response.status).toBe(200);
+    expect(body.sandboxLease).toMatchObject({
+      id: lease.id,
+      runtimeId: "fake",
+      status: "stopped",
+    });
+    expect(JSON.stringify(body)).not.toContain("provider-private-sandbox");
+    expect(JSON.stringify(body)).not.toContain("providerRef");
+  });
+
+  it("rejects a manual sandbox stop while the Project has an active Run", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+    await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "Build a demo" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+    const lease =
+      await fixture.sandboxLeases.findByProjectId("project_1");
+    await fixture.sandboxLeases.updateState({
+      leaseId: lease?.id ?? "",
+      providerRef: "provider-private-sandbox",
+      status: "busy",
+      updatedAt: now,
+    });
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/sandbox/stop",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "project_busy",
+    });
   });
 
   it("creates one visible input message and one queued Run, without exposing private lease details", async () => {
@@ -156,6 +234,40 @@ describe("Project API", () => {
     expect(streamText).toContain('"status":"cancelled"');
     expect(streamText).toContain('"type":"run.completed"');
   });
+
+  it("lists recent Runs only after authorizing the Project owner", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_other",
+      now,
+      title: "Other",
+      userId: otherUser.id,
+    });
+
+    const createdResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
+      body: JSON.stringify({ content: "Build a demo" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    const created = (await createdResponse.json()) as AgentRunResponse;
+    const historyResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs");
+    const history = (await historyResponse.json()) as AgentRunResponse[];
+    const inaccessible = await fixture.app.request("http://agent-online.test/api/projects/project_other/agent-runs");
+
+    expect(historyResponse.status).toBe(200);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ id: created.id, inputMessageId: created.inputMessageId });
+    expect(JSON.stringify(history)).not.toContain(testUser.id);
+    expect(inaccessible.status).toBe(404);
+  });
 });
 
 function createFixture(user: typeof testUser | null) {
@@ -163,12 +275,21 @@ function createFixture(user: typeof testUser | null) {
   const messages = new InMemoryMessageRepository();
   const agentRuns = new InMemoryAgentRunRepository(messages);
   const sandboxLeases = new InMemorySandboxLeaseRepository();
-  const coordinator = new FakeRunCoordinator();
+  const coordinator = new FakeRunCoordinator(agentRuns);
+  const sandboxRuntime = new FakeSandboxRuntime();
   const services: ServerServices = {
     agentRuns,
+    defaultModelId: "gemini-2.5-flash",
     messages,
+    projectSandboxes: new ProjectSandboxService({
+      agentRuns,
+      getSandboxRuntime: () => sandboxRuntime,
+      now: () => new Date(now),
+      sandboxLeases,
+    }),
     projects,
-    runCoordinator: coordinator,
+    runExecutions: coordinator,
+    sandboxRuntimeId: "fake",
     sandboxLeases,
   };
   let id = 0;
@@ -225,6 +346,37 @@ class InMemoryProjectRepository implements ProjectRepository {
 class InMemoryMessageRepository implements MessageRepository {
   readonly records: MessageRecord[] = [];
 
+  async appendAssistant(input: {
+    agentRunId: string;
+    content: string;
+    id: string;
+    now: string;
+    projectId: string;
+  }) {
+    const existing = this.records.find(
+      (message) => message.agentRunId === input.agentRunId && message.role === "assistant",
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const message: MessageRecord = {
+      agentRunId: input.agentRunId,
+      content: input.content,
+      createdAt: input.now,
+      id: input.id,
+      projectId: input.projectId,
+      role: "assistant",
+      sequence: this.records.filter((record) => record.projectId === input.projectId).length,
+    };
+    this.records.push(message);
+    return message;
+  }
+
+  async findById(messageId: string, projectId: string) {
+    return this.records.find((message) => message.id === messageId && message.projectId === projectId) ?? null;
+  }
+
   async listByProjectId(projectId: string) {
     return this.records
       .filter((message) => message.projectId === projectId)
@@ -234,6 +386,45 @@ class InMemoryMessageRepository implements MessageRepository {
 
 class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   readonly records = new Map<string, SandboxLeaseRecord>();
+
+  async claimForManualStop(
+    input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
+  ) {
+    const lease = this.records.get(input.leaseId);
+    if (
+      !lease ||
+      lease.providerRef !== input.expectedProviderRef ||
+      lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
+
+  async claimIdleForStop(input: Parameters<SandboxLeaseRepository["claimIdleForStop"]>[0]) {
+    const lease = this.records.get(input.leaseId);
+    if (
+      !lease ||
+      lease.status !== "idle" ||
+      lease.providerRef !== input.expectedProviderRef ||
+      lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
 
   async findByProjectId(projectId: string) {
     return [...this.records.values()].find((lease) => lease.projectId === projectId) ?? null;
@@ -304,6 +495,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       inputMessageId: input.inputMessageId,
       modelId: input.modelId,
       projectId: input.projectId,
+      providerProcessRef: null,
       sandboxLeaseId: input.sandboxLeaseId,
       sandboxRuntimeId: input.sandboxRuntimeId,
       startedAt: null,
@@ -321,6 +513,14 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     return this.records.get(agentRunId) ?? null;
   }
 
+  async findActiveByProjectId(projectId: string) {
+    return (
+      [...this.records.values()].find(
+        (run) => run.projectId === projectId && !isTerminalAgentRun(run.status),
+      ) ?? null
+    );
+  }
+
   async findActiveOwnedByProjectId(projectId: string, userId: string) {
     return (
       [...this.records.values()].find(
@@ -332,6 +532,49 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
   async findOwnedById(agentRunId: string, userId: string) {
     const run = this.records.get(agentRunId);
     return run?.userId === userId ? run : null;
+  }
+
+  async listRecentOwnedByProjectId(projectId: string, userId: string) {
+    return [...this.records.values()]
+      .filter((run) => run.projectId === projectId && run.userId === userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .slice(0, 50);
+  }
+
+  async setProviderProcessRef(runId: string, providerProcessRef: string) {
+    const run = this.records.get(runId);
+    if (!run || isTerminalAgentRun(run.status)) {
+      return null;
+    }
+
+    run.providerProcessRef = providerProcessRef;
+    return run;
+  }
+
+  async setSandboxDuration(runId: string, sandboxDurationMs: number) {
+    const run = this.records.get(runId);
+    if (!run || isTerminalAgentRun(run.status)) {
+      return null;
+    }
+
+    run.usage.sandboxDurationMs = Math.max(run.usage.sandboxDurationMs, sandboxDurationMs);
+    return run;
+  }
+
+  async addUsageDelta(runId: string, usage: AgentRunUsage) {
+    const run = this.records.get(runId);
+    if (!run || isTerminalAgentRun(run.status)) {
+      return null;
+    }
+
+    run.usage = {
+      inputTokens: run.usage.inputTokens + usage.inputTokens,
+      modelRequestCount: run.usage.modelRequestCount + usage.modelRequestCount,
+      outputTokens: run.usage.outputTokens + usage.outputTokens,
+      sandboxDurationMs: run.usage.sandboxDurationMs + usage.sandboxDurationMs,
+      totalTokens: run.usage.totalTokens + usage.totalTokens,
+    };
+    return run;
   }
 
   async transition(input: Parameters<AgentRunRepository["transition"]>[0]) {
@@ -360,17 +603,37 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
   }
 }
 
-class FakeRunCoordinator {
+class FakeRunCoordinator implements RunExecutionDispatcher {
   readonly starts: StartAgentRunInput[] = [];
 
-  async start(input: StartAgentRunInput): Promise<CoordinatedAgentRun> {
+  constructor(private readonly agentRuns: InMemoryAgentRunRepository) {}
+
+  async cancel(run: AgentRunRecord, now: Date) {
+    if (isTerminalAgentRun(run.status) || run.status === "cancelling") {
+      return run;
+    }
+
+    const targetStatus = run.status === "queued" ? "cancelled" : "cancelling";
+    return this.agentRuns.transition({
+      finishedAt: targetStatus === "cancelled" ? now.toISOString() : undefined,
+      from: run.status,
+      runId: run.id,
+      to: targetStatus,
+    });
+  }
+
+  async start(input: StartAgentRunInput) {
     this.starts.push(input);
-    return new FakeCoordinatedAgentRun();
+    return { completion: new FakeCoordinatedAgentRun().completion };
   }
 }
 
 class FakeCoordinatedAgentRun implements CoordinatedAgentRun {
   readonly completion = new Promise<AgentRunRecord>(() => undefined);
+
+  async cancel(): Promise<AgentRunRecord> {
+    return this.completion;
+  }
 }
 
 function emptyUsage(): AgentRunUsage {

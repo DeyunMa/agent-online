@@ -1,11 +1,24 @@
+export type AgentRunWorkflowPayload = {
+  kind: "execute" | "idle-cleanup";
+  projectId: string;
+  runId: string;
+};
+
 export interface AppBindings {
+  AGENT_RUN_WORKFLOW: Workflow<AgentRunWorkflowPayload>;
   ASSETS: Fetcher;
   ADMIN_EMAILS?: string;
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
   DB: D1Database;
+  DEFAULT_MODEL_ID?: string;
   E2B_API_KEY?: string;
+  E2B_TEMPLATE_ID?: string;
   GEMINI_API_KEY?: string;
+  MAX_RUN_WALL_SECONDS?: string;
+  MODEL_GATEWAY_BASE_URL?: string;
+  RUNTIME_IDLE_TTL_SECONDS?: string;
+  RUNTIME_PROVIDER?: string;
 }
 
 export interface AppVariables {

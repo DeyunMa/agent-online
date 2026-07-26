@@ -4,6 +4,7 @@ import type { AgentRunStatus } from "../domain/agent-run";
 import type {
   AgentRunRecord,
   AgentRunRepository,
+  MessageRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
@@ -16,13 +17,16 @@ export type Clock = {
 export type RunCoordinatorDependencies = {
   agentRunRepository: AgentRunRepository;
   clock: Clock;
+  createId(): string;
   getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
+  messageRepository: MessageRepository;
   sandboxLeaseRepository: SandboxLeaseRepository;
 };
 
 export type StartAgentRunInput = {
   agentRun: AgentRunRecord;
+  modelAccess?: NonNullable<Parameters<AgentRuntime["start"]>[1]["modelAccess"]>;
   prompt: string;
   sandboxLease: SandboxLeaseRecord;
   workingDirectory: string;
@@ -30,12 +34,12 @@ export type StartAgentRunInput = {
 
 export interface CoordinatedAgentRun {
   readonly completion: Promise<AgentRunRecord>;
+  cancel(reason: "cancelled" | "timed_out" | "failed"): Promise<AgentRunRecord>;
 }
 
 /**
  * Coordinates one already-authorized AgentRun. It owns no IDs and does not
- * persist Agent output. Fake P1 observes D1 lifecycle state from a separate
- * request instead of sharing request-bound stream objects across Workers.
+ * persist raw Agent output. It stores only the final user-visible reply.
  */
 export class RunCoordinator {
   constructor(private readonly dependencies: RunCoordinatorDependencies) {}
@@ -102,6 +106,7 @@ class ManagedRun implements CoordinatedAgentRun {
 
       await this.updateLease("starting");
       this.sandboxHandle = await this.sandboxRuntime.ensureLease({
+        providerRef: this.currentLease.providerRef,
         projectId: this.currentRun.projectId,
         sandboxLeaseId: this.currentLease.id,
       });
@@ -111,17 +116,30 @@ class ManagedRun implements CoordinatedAgentRun {
       }
 
       this.providerRef = this.sandboxHandle.id;
+      await this.updateLease("ready");
       this.execution = await this.agentRuntime.start({
+        files: {
+          write: (path, content) => this.sandboxRuntime!.writeFile(this.sandboxHandle!, path, content),
+        },
         processes: {
           start: (command) => this.sandboxRuntime!.startProcess(this.sandboxHandle!, command),
         },
       }, {
         agentRunId: this.currentRun.id,
+        modelAccess: this.input.modelAccess,
         projectId: this.currentRun.projectId,
         prompt: this.input.prompt,
         sandboxLeaseId: this.currentLease.id,
         workingDirectory: this.input.workingDirectory,
       });
+      const runWithProcessRef = await this.dependencies.agentRunRepository.setProviderProcessRef(
+        this.currentRun.id,
+        this.execution.providerProcessRef,
+      );
+      if (!runWithProcessRef) {
+        throw new Error("Unable to persist AgentRun process reference");
+      }
+      this.currentRun = runWithProcessRef;
 
       await this.updateLease("busy");
       await this.transition("starting", "running");
@@ -135,14 +153,68 @@ class ManagedRun implements CoordinatedAgentRun {
     }
   }
 
-  private async complete(status: "succeeded" | "failed" | "cancelled", failureReason?: string): Promise<AgentRunRecord> {
+  async cancel(reason: "cancelled" | "timed_out" | "failed"): Promise<AgentRunRecord> {
+    return this.serialized(async () => {
+      if (this.terminal) {
+        return this.currentRun;
+      }
+
+      await this.refreshCurrentRun();
+      if (isTerminalAgentRun(this.currentRun.status)) {
+        this.terminal = true;
+        this.resolve(this.currentRun);
+        return this.currentRun;
+      }
+
+      if (this.execution) {
+        if (this.currentRun.status === "starting" || this.currentRun.status === "running") {
+          await this.transition(this.currentRun.status, "cancelling");
+        }
+
+        await this.execution.cancel(reason);
+      }
+
+      if (reason === "failed") {
+        return this.fail("Agent run was terminated");
+      }
+
+      return this.complete(reason === "cancelled" ? "cancelled" : "timed_out");
+    });
+  }
+
+  private async complete(
+    status: "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted",
+    failureReason?: string,
+    finalText?: string | null,
+  ): Promise<AgentRunRecord> {
     if (this.terminal) {
       return this.currentRun;
     }
 
+    const finishedAt = this.timestamp();
+
+    if (status === "succeeded") {
+      const visibleReply = finalText?.trim();
+      if (!visibleReply && this.currentRun.sandboxRuntimeId !== "fake") {
+        return this.fail("Agent completed without a visible reply");
+      }
+
+      if (visibleReply) {
+        await this.dependencies.messageRepository.appendAssistant({
+          agentRunId: this.currentRun.id,
+          content: visibleReply,
+          id: this.dependencies.createId(),
+          now: finishedAt,
+          projectId: this.currentRun.projectId,
+        });
+      }
+    }
+
+    await this.recordSandboxDuration(finishedAt);
+
     const completedRun = await this.transition(this.currentRun.status, status, {
       failureReason: failureReason ?? null,
-      finishedAt: this.timestamp(),
+      finishedAt,
     });
     this.terminal = true;
 
@@ -183,7 +255,7 @@ class ManagedRun implements CoordinatedAgentRun {
           }
 
           if (event.exitCode === 0) {
-            await this.complete("succeeded");
+            await this.complete("succeeded", undefined, event.finalText);
             return;
           }
 
@@ -210,11 +282,20 @@ class ManagedRun implements CoordinatedAgentRun {
       return this.currentRun;
     }
 
+    await this.refreshCurrentRun();
+    if (isTerminalAgentRun(this.currentRun.status)) {
+      this.terminal = true;
+      this.resolve(this.currentRun);
+      return this.currentRun;
+    }
+
     await this.terminateExecution();
 
+    const finishedAt = this.timestamp();
+    await this.recordSandboxDuration(finishedAt);
     const failedRun = await this.transition(this.currentRun.status, "failed", {
       failureReason: reason,
-      finishedAt: this.timestamp(),
+      finishedAt,
     });
     this.terminal = true;
 
@@ -299,6 +380,26 @@ class ManagedRun implements CoordinatedAgentRun {
 
     this.currentRun = currentRun;
     return currentRun;
+  }
+
+  private async recordSandboxDuration(finishedAt: string) {
+    if (this.currentRun.sandboxRuntimeId === "fake" || !this.currentRun.startedAt) {
+      return;
+    }
+
+    const sandboxDurationMs = Math.max(
+      0,
+      new Date(finishedAt).getTime() - new Date(this.currentRun.startedAt).getTime(),
+    );
+    const updatedRun = await this.dependencies.agentRunRepository.setSandboxDuration(
+      this.currentRun.id,
+      sandboxDurationMs,
+    );
+    if (!updatedRun) {
+      throw new Error("Unable to record AgentRun sandbox duration");
+    }
+
+    this.currentRun = updatedRun;
   }
 
   private async updateLease(status: SandboxLeaseRecord["status"]) {

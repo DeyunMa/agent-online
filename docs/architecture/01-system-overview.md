@@ -1,7 +1,7 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D1 + fake P1 控制面已落地；真实 Pi、模型和沙箱仍是 D2
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
+> 状态：D2 真实执行纵切已在本地实现；远程 Workflow 与受控文件/终端/preview 待验收
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
 
@@ -20,11 +20,12 @@ flowchart LR
     H --> BA["Better Auth"]
     H --> D1["D1\n用户、Project、Message、Lease、AgentRun"]
     H --> MG["ModelGateway\n平台 Gemini Key 和 usage"]
-    H --> RC["RunCoordinator"]
+    H --> WF["AgentRunWorkflow\n一个 Run 一个 instance"]
+    WF --> RC["RunExecutionService / RunCoordinator"]
     RC --> AR["AgentRuntime\nPi now"]
     RC --> SR["SandboxRuntime\nfake / E2B / later CF"]
     AR -->|"run-scoped process session"| SR
-    SR --> SB["Linux Sandbox\nAgent process + shell + workspace + preview"]
+    SR --> SB["Linux Sandbox\nAgent process + shell + Project files"]
     SB -->|"opaque run-scoped model access"| MG
     MG --> GM["Gemini API"]
 ```
@@ -39,7 +40,7 @@ React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供�
 
 - Project 与用户可见消息；
 - 应用自己的 `sandboxLeaseId`、状态和可用能力；
-- 脱敏后的 Agent 事件、文件列表、终端流和受控 preview URL；
+- 脱敏后的 Agent 状态；文件列表、终端流和 preview 只有在对应受控 API 完成后才可见；
 - 自己的基础用量汇总。
 
 它不能看到真实供应商 ID、Provider Key、沙箱内部端口、调度密钥或 Gemini Key，也不能指定任意二进制、Provider 或 shell 命令。
@@ -52,9 +53,9 @@ Worker 能拿到对话和用量，是因为它明确拥有请求和事件协议�
 
 ### Linux 沙箱
 
-Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前真实沙箱尚未接入；`FakeSandboxRuntime` 只用于验证模块合同。
+Agent 进程、shell、Project 文件、终端和用户启动的开发服务都在沙箱中。沙箱是执行边界，而不只是一个目录。当前 `E2BSandboxRuntime` 已实现真实沙箱与进程合同；`FakeSandboxRuntime` 保留给无外部成本的控制面开发。
 
-沙箱磁盘是 V1 工作区的唯一副本。空闲 TTL、显式停止、Provider 过期或故障后，文件可以丢失；Project 的 D1 元数据和对话仍保留，但新沙箱从空工作区开始。
+沙箱磁盘是 V1 Project 文件的唯一副本。空闲 TTL、显式停止、Provider 过期或故障后，文件可以丢失；Project 的 D1 元数据和对话仍保留，但新沙箱从空目录开始。
 
 ## 4. 资源关系
 
@@ -67,7 +68,7 @@ Agent 进程、shell、Project 文件、终端和用户启动的开发服务都�
 一个 AgentRun  -> 一个短生命周期 AgentProcess
 ```
 
-`Project` 没有单独 Session 表，也不包含工作区快照。`SandboxLease` 是稳定的应用 ID，Provider 物理实例重建时更新同一行即可。多个连续 Run 可以复用仍存活的沙箱；AgentRun 结束时 AgentProcess 必须终结。
+`Project` 没有单独 Session 表，也不包含文件快照。`SandboxLease` 是稳定的应用 ID，Provider 物理实例重建时更新同一行即可。多个连续 Run 可以复用仍存活的沙箱；AgentRun 结束时 AgentProcess 必须终结。
 
 ## 5. 一次 AgentRun 的流程
 
@@ -75,8 +76,9 @@ Agent 进程、shell、Project 文件、终端和用户启动的开发服务都�
 sequenceDiagram
     actor User as 用户
     participant UI as React
-    participant API as Hono / RunCoordinator
+    participant API as Hono
     participant DB as D1
+    participant WF as AgentRunWorkflow
     participant SR as SandboxRuntime
     participant AG as Pi in Sandbox
     participant MG as ModelGateway
@@ -85,44 +87,46 @@ sequenceDiagram
     User->>UI: 提交任务
     UI->>API: POST Project AgentRun
     API->>DB: 校验所有权，写用户 Message 与 AgentRun
-    API->>SR: 取得或创建当前 SandboxLease
-    API->>AG: 用 AgentRuntime 启动受控进程
+    API->>WF: 创建 run.id Workflow
+    API-->>UI: 返回 queued Run
+    WF->>DB: 回读 Message/Run/Lease
+    WF->>SR: 取得或创建当前 SandboxLease
+    WF->>AG: 用 AgentRuntime 启动受控进程
     AG->>MG: 通过短时不透明通道请求模型
     MG->>GM: 使用 Worker 内 GEMINI_API_KEY
     GM-->>MG: 响应与实际 usage
     MG->>DB: 累加 AgentRun usage
-    AG-->>API: 公开事件和最终回复
-    API->>DB: 写 assistant Message，结束 AgentRun
-    API-->>UI: SSE 事件与最终状态
+    AG-->>WF: 最终公开回复
+    WF->>DB: 写 assistant Message，结束 AgentRun
+    UI->>API: 订阅状态 SSE
+    API-->>UI: D1 状态与最终 usage
 ```
 
-浏览器断线不取消 Run。真实 D2 的显式取消会先将 Run 变为 `cancelling`，再由 AgentRuntime 和 SandboxRuntime 终止对应进程，并写入终态。
+浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再通过 SandboxRuntime 的私有进程引用只终止当前 Pi 进程并写入终态；无法精确终止时才停止整个沙箱。
 
-当前 fake P1 已实现授权后的 Project/Message/Run 路由、当前活跃 Run 恢复、RunCoordinator 和脱敏 SSE。它只持久化用户输入与 Run 状态；由于尚未接入可信的 Pi RPC 最终回复和 ModelGateway，不能把 fake 进程输出写成 assistant Message 或真实用量。
-
-fake P1 的 SSE 在事件请求内轮询 D1，只发布 `run.status` 和 `run.completed`；取消只先写入 D1 的 `cancelling`，随后由原始协调请求在 fake 进程完成时写入 `cancelled`。它不传递原始 Agent 输出，也不证明跨 isolate 的进程终止。D2 启用真实长生命周期沙箱前，必须选择能处理 Worker 重启、跨 isolate 执行、事件重连和取消的持久协调机制。
+当前 SSE 在订阅请求内轮询 D1，只发布 `run.status` 和 `run.completed`。它不传递 raw Pi 输出、工具参数或私有推理；终态后页面重新读取可信的 Message 和 usage。执行所有权和恢复规则见 [ADR-0003](../adr/0003-agent-run-workflow.md)。
 
 ## 6. API 状态
 
-当前 P1 已实现以下同源 API：
+当前已实现以下同源 API：
 
 | 路径 | 作用 |
 | --- | --- |
 | `/api/auth/*` | Better Auth。 |
 | `/api/projects` 与 `/api/projects/:id` | 创建、列出、读取用户自己的 Project。 |
 | `/api/projects/:id/messages` | 读取 Project 的可见消息。 |
-| `/api/projects/:id/agent-runs` | 创建 AgentRun；必要时启动沙箱。 |
+| `/api/projects/:id/agent-runs` | 创建 AgentRun，或读取当前用户该 Project 最近 50 条 Run 事实。 |
 | `/api/projects/:id/agent-runs/active` | 读取该 Project 当前的非终态 Run，供页面恢复。 |
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
-| `/api/projects/:id/agent-runs/:runId/events` | fake P1 订阅 D1 轮询出的状态和终态；原始 Agent 输出待 D2。 |
+| `/api/projects/:id/agent-runs/:runId/events` | 订阅 D1 轮询出的状态和终态，不公开 raw Agent 输出。 |
 | `/api/projects/:id/agent-runs/:runId/cancel` | 取消当前 Run。 |
+| `/api/projects/:id/sandbox/stop` | 在没有非终态 Run 时原子脱离并停止当前沙箱；不公开 Provider ID。 |
 
 以下 API 留待真实 Runtime 或管理能力阶段实现：
 
 | 路径 | 作用 |
 | --- | --- |
 | `/api/projects/:id/sandbox` | 查看应用级 Lease 的公开状态。 |
-| `/api/projects/:id/sandbox/stop` | 停止当前沙箱；停止后工作区可丢失。 |
 | `/api/usage` | 当前用户的 AgentRun 聚合用量。 |
 | `/api/admin/usage` | 仅 `ADMIN_EMAILS` allowlist 使用的基础汇总。 |
 
@@ -130,7 +134,7 @@ fake P1 的 SSE 在事件请求内轮询 D1，只发布 `run.status` 和 `run.co
 
 ## 7. 非目标
 
-- R2 工作区快照、文件版本、回滚、沙箱历史和完整原始执行归档。
+- R2 Project 文件快照、文件版本、回滚、沙箱历史和完整原始执行归档。
 - 团队、组织、成员邀请、Tenant、支付、套餐或订阅 API。
 - 浏览器直接连接供应商终端 URL 或模型 API。
 - 在 Worker 或浏览器中运行 Agent。

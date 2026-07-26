@@ -1,18 +1,18 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1 + Better Auth 已接通；ModelGateway、真实 usage 和管理视图属于 D2/D3。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
+> 状态：D1、Better Auth、ModelGateway 与 Run 聚合 usage 已接通；用户/管理聚合视图待实现。
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
 
 | 位置 | 保存内容 | 不保存内容 |
 | --- | --- | --- |
-| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage。 | 工作区文件、原始 Agent 事件、完整终端日志、Provider 明文 Key、私有推理。 |
+| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage。 | Project 文件、原始 Agent 事件、完整终端日志、Provider 明文 Key、私有推理。 |
 | 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
 | Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
 | 可选 Sentry | 脱敏错误和稀疏的服务端追踪元数据。 | prompt、消息正文、代码文件、密钥、原始 Agent/终端流。 |
 
-V1 没有 R2 Binding。工作区只在沙箱存活期间存在；沙箱停止或故障后，Project 可以留下元数据和对话，但文件允许丢失。
+V1 没有 R2 Binding。Project 文件只在沙箱存活期间存在；沙箱停止或故障后，Project 可以留下元数据和对话，但文件允许丢失。
 
 ## 2. 认证与授权
 
@@ -37,9 +37,9 @@ Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth �
 | `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `created_at`, `updated_at` | 持久 Project 元数据和对话归属。 |
 | `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户消息和最终 assistant 消息。 |
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
-| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, 用量与时间字段 | 一次 Agent 执行的状态、关联和基础计量。 |
+| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、关联、当前私有进程引用和基础计量。 |
 
-`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。fake P1 只写零值；D2 取得真实值后可直接按这些列聚合，无需不可变事件账本。
+`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。ModelGateway 用原子 delta 累加模型 usage；沙箱时长用幂等 `MAX` 写入，避免 Workflow 重试重复累计。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。
 
 数据库需要两个约束：
 
@@ -56,18 +56,18 @@ CREATE UNIQUE INDEX agent_runs_one_active_per_project
 
 ## 4. 平台 Gemini 与 ModelGateway
 
-这一节是 D2 合同，不表示当前 Worker 已有模型代理实现。
-
 - `GEMINI_API_KEY` 只存在 Worker Secret 或本地 `.dev.vars`，不写入 AgentRuntime 配置、浏览器响应、D1 或沙箱环境。
 - Worker 的 `ModelGateway` 代表当前用户调用 Gemini，并从实际 API 响应提取 token 与请求数，累加到对应 `agent_runs` 行。
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
+短时能力令牌、Pi custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi + Gemini spike 已验证协议可行性；Cloudflare 远程 Workflow 仍需预览环境验收。
+
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 
 ## 5. 用量与管理，不是计费
 
-fake P1 只显示 Run 的零值结构。用户用量与内部管理视图等真实数据存在后再实现；不应把 fake 计量当成本信息。
+Project Inspector 可以显示所选 Run 的真实聚合值；fake Runtime 的值仍为零。跨 Run 的用户用量页与内部管理视图尚未实现。
 
 `AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。
 

@@ -166,8 +166,19 @@ export const browserApi = {
     return requestJson<MessageResponse[]>(`/api/projects/${encodeURIComponent(projectId)}/messages`);
   },
 
+  listAgentRuns(projectId: string) {
+    return requestJson<AgentRunResponse[]>(`/api/projects/${encodeURIComponent(projectId)}/agent-runs`);
+  },
+
   listProjects() {
     return requestJson<ProjectResponse[]>("/api/projects");
+  },
+
+  stopProjectSandbox(projectId: string) {
+    return requestJson<ProjectResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/sandbox/stop`,
+      { method: "POST" },
+    );
   },
 };
 

@@ -11,6 +11,8 @@
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "build:e2b-pi-template": "node templates/e2b/build-pi-runtime-template.mjs",
+    "test:e2e:e2b-pi": "RUN_E2E=1 vitest run --config vitest.config.ts src/integration/e2b-pi-gemini.e2e.test.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "cf-typegen": "wrangler types"
   },
@@ -18,6 +20,7 @@
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",
     "better-auth": "^1.6.25",
+    "e2b": "2.36.0",
     "hono": "^4.12.32",
     "lucide-react": "^1.26.0",
     "react": "^19.2.8",

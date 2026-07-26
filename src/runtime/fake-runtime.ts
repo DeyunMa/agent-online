@@ -19,11 +19,18 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
     private readonly sandboxLeaseId: string,
   ) {}
 
+  get providerProcessRef() {
+    return `fake-process-${this.command.agentRunId}`;
+  }
+
   async *events(): AsyncIterable<SandboxProcessEvent> {
-    const processId = `fake-process-${this.command.agentRunId}`;
     const invocation = [this.command.command, ...this.command.args].join(" ");
 
-    yield { processId, sandboxLeaseId: this.sandboxLeaseId, type: "process.started" };
+    yield {
+      processId: this.providerProcessRef,
+      sandboxLeaseId: this.sandboxLeaseId,
+      type: "process.started",
+    };
 
     if (this.completionDelayMs > 0) {
       await delay(this.completionDelayMs);
@@ -35,7 +42,14 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
     }
 
     yield {
-      chunk: `Started ${invocation} in ${this.command.cwd}`,
+      chunk: isPiRpcCommand(this.command)
+        ? [
+            JSON.stringify({ command: "prompt", success: true, type: "response" }),
+            JSON.stringify({ type: "agent_start" }),
+            JSON.stringify({ type: "agent_settled" }),
+            "",
+          ].join("\n")
+        : `Started ${invocation} in ${this.command.cwd}`,
       sandboxLeaseId: this.sandboxLeaseId,
       stream: "stdout",
       type: "process.output",
@@ -60,24 +74,49 @@ export class FakeSandboxRuntime implements SandboxRuntime {
   readonly kind = "fake" as const;
 
   private readonly handles = new Set<string>();
+  private readonly files = new Map<string, string>();
+  private readonly processes = new Map<string, FakeSandboxProcessSession>();
 
   constructor(private readonly options: FakeSandboxRuntimeOptions = {}) {}
 
   async ensureLease(input: EnsureLeaseInput): Promise<RuntimeHandle> {
-    const id = `fake-${input.sandboxLeaseId}`;
+    const id = input.providerRef ?? `fake-${input.sandboxLeaseId}`;
     this.handles.add(id);
-    return { id, kind: this.kind };
+    return { id, kind: this.kind, sandboxLeaseId: input.sandboxLeaseId };
   }
 
   async startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession> {
     this.assertHandle(handle);
-    const sandboxLeaseId = handle.id.replace(/^fake-/, "");
-    return new FakeSandboxProcessSession(command, this.options.completionDelayMs ?? 0, sandboxLeaseId);
+    const session = new FakeSandboxProcessSession(
+      command,
+      this.options.completionDelayMs ?? 0,
+      handle.sandboxLeaseId,
+    );
+    this.processes.set(session.providerProcessRef, session);
+    return session;
+  }
+
+  async terminateProcess(
+    handle: RuntimeHandle,
+    providerProcessRef: string,
+    reason: ProcessTerminationReason,
+  ) {
+    this.assertHandle(handle);
+    const session = this.processes.get(providerProcessRef);
+    if (!session) {
+      throw new Error(`Unknown fake process: ${providerProcessRef}`);
+    }
+    await session.terminate(reason);
   }
 
   async stop(handle: RuntimeHandle, _reason: SandboxStopReason) {
-    this.assertHandle(handle);
+    assertRuntimeHandle(handle, this.kind);
     this.handles.delete(handle.id);
+  }
+
+  async writeFile(handle: RuntimeHandle, path: string, content: string) {
+    this.assertHandle(handle);
+    this.files.set(`${handle.id}:${path}`, content);
   }
 
   private assertHandle(handle: RuntimeHandle) {
@@ -87,6 +126,19 @@ export class FakeSandboxRuntime implements SandboxRuntime {
   }
 }
 
+function assertRuntimeHandle(handle: RuntimeHandle, kind: "fake") {
+  if (handle.kind !== kind) {
+    throw new Error(
+      `Runtime handle kind ${handle.kind} does not match runtime ${kind}`,
+    );
+  }
+}
+
 function delay(milliseconds: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isPiRpcCommand(command: SandboxCommand) {
+  const modeIndex = command.args.indexOf("--mode");
+  return command.command === "pi" && modeIndex >= 0 && command.args[modeIndex + 1] === "rpc";
 }

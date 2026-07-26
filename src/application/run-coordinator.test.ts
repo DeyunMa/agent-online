@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { AgentEvent, AgentExecution, AgentRuntime } from "../agent/contract";
 import { piRuntime } from "../agent/pi-runtime";
 import { isTerminalAgentRun } from "../domain/agent-run";
-import type { AgentRunRecord, AgentRunRepository, SandboxLeaseRecord, SandboxLeaseRepository } from "./ports";
+import type {
+  AgentRunRecord,
+  AgentRunRepository,
+  MessageRecord,
+  MessageRepository,
+  SandboxLeaseRecord,
+  SandboxLeaseRepository,
+} from "./ports";
 import { RunCoordinator, type Clock, type RunCoordinatorDependencies } from "./run-coordinator";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 
@@ -29,7 +36,7 @@ describe("RunCoordinator", () => {
     const completedRun = await managedRun.completion;
 
     expect(completedRun).toMatchObject({
-      finishedAt: "2026-07-25T00:00:03.000Z",
+      finishedAt: "2026-07-25T00:00:04.000Z",
       startedAt: "2026-07-25T00:00:00.000Z",
       status: "succeeded",
     });
@@ -38,7 +45,12 @@ describe("RunCoordinator", () => {
       ["starting", "running"],
       ["running", "succeeded"],
     ]);
-    expect(fixture.sandboxLeaseRepository.states.map((state) => state.status)).toEqual(["starting", "busy", "idle"]);
+    expect(fixture.sandboxLeaseRepository.states.map((state) => state.status)).toEqual([
+      "starting",
+      "ready",
+      "busy",
+      "idle",
+    ]);
     expect(fixture.sandboxLeaseRepository.lease).toMatchObject({
       providerRef: "fake-lease_1",
       status: "idle",
@@ -56,6 +68,41 @@ describe("RunCoordinator", () => {
       failureReason: "Agent process exited with code 7",
       status: "failed",
     });
+    expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
+  });
+
+  it("persists one visible assistant reply before completing a successful Run", async () => {
+    const fixture = createFixture();
+    const coordinator = fixture.createCoordinator(completingRuntime(0, "Final visible reply"));
+
+    const managedRun = await coordinator.start(startInput(fixture));
+    const completedRun = await managedRun.completion;
+
+    expect(completedRun.status).toBe("succeeded");
+    expect(fixture.messageRepository.records).toMatchObject([
+      {
+        agentRunId: "run_1",
+        content: "Final visible reply",
+        role: "assistant",
+      },
+    ]);
+  });
+
+  it("lets the execution owner terminate the current Run without a process registry", async () => {
+    const fixture = createFixture();
+    const runtime = blockingRuntime();
+    const coordinator = fixture.createCoordinator(runtime.agentRuntime);
+
+    const managedRun = await coordinator.start(startInput(fixture));
+    const cancelledRun = await managedRun.cancel("cancelled");
+
+    expect(cancelledRun.status).toBe("cancelled");
+    expect(fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to])).toEqual([
+      ["queued", "starting"],
+      ["starting", "running"],
+      ["running", "cancelling"],
+      ["cancelling", "cancelled"],
+    ]);
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
   });
 
@@ -129,6 +176,7 @@ function startInput(fixture: ReturnType<typeof createFixture>) {
 
 function createFixture() {
   const agentRunRepository = new FakeAgentRunRepository(createAgentRun());
+  const messageRepository = new FakeMessageRepository();
   const sandboxLeaseRepository = new FakeSandboxLeaseRepository(createSandboxLease());
   const sandboxRuntime = new FakeSandboxRuntime();
 
@@ -138,12 +186,15 @@ function createFixture() {
       const dependencies: RunCoordinatorDependencies = {
         agentRunRepository,
         clock: new SequenceClock(),
+        createId: () => "assistant_message_1",
         getAgentRuntime: () => agentRuntime,
         getSandboxRuntime: () => sandboxRuntime,
+        messageRepository,
         sandboxLeaseRepository,
       };
       return new RunCoordinator(dependencies);
     },
+    messageRepository,
     sandboxLeaseRepository,
   };
 }
@@ -158,6 +209,7 @@ function createAgentRun(): AgentRunRecord {
     inputMessageId: "message_1",
     modelId: "gemini-2.5-flash",
     projectId: "project_1",
+    providerProcessRef: null,
     sandboxLeaseId: "lease_1",
     sandboxRuntimeId: "fake",
     startedAt: null,
@@ -185,12 +237,12 @@ function createSandboxLease(): SandboxLeaseRecord {
   };
 }
 
-function completingRuntime(exitCode: number): AgentRuntime {
+function completingRuntime(exitCode: number, finalText: string | null = null): AgentRuntime {
   return {
     capabilities,
     id: "pi",
     async start(context, input): Promise<AgentExecution> {
-      await context.processes.start({
+      const process = await context.processes.start({
         agentRunId: input.agentRunId,
         args: [],
         command: "pi",
@@ -201,8 +253,9 @@ function completingRuntime(exitCode: number): AgentRuntime {
         async cancel() {},
         async *events() {
           yield startedEvent(input);
-          yield completedEvent(input, exitCode);
+          yield completedEvent(input, exitCode, finalText);
         },
+        providerProcessRef: process.providerProcessRef,
       };
     },
   };
@@ -219,7 +272,7 @@ function blockingRuntime() {
       capabilities,
       id: "pi" as const,
       async start(context, input): Promise<AgentExecution> {
-        await context.processes.start({
+        const process = await context.processes.start({
           agentRunId: input.agentRunId,
           args: [],
           command: "pi",
@@ -233,6 +286,7 @@ function blockingRuntime() {
             await release;
             yield completedEvent(input, 143);
           },
+          providerProcessRef: process.providerProcessRef,
         };
       },
     } satisfies AgentRuntime,
@@ -251,6 +305,7 @@ function failingEventRuntime(): AgentRuntime {
           yield startedEvent(input);
           throw new Error("event stream failure");
         },
+        providerProcessRef: "process_1",
       };
     },
   };
@@ -265,11 +320,16 @@ function startedEvent(input: { agentRunId: string; sandboxLeaseId: string }): Ag
   };
 }
 
-function completedEvent(input: { agentRunId: string; sandboxLeaseId: string }, exitCode: number): AgentEvent {
+function completedEvent(
+  input: { agentRunId: string; sandboxLeaseId: string },
+  exitCode: number,
+  finalText: string | null = null,
+): AgentEvent {
   return {
     agentRuntimeId: "pi",
     agentRunId: input.agentRunId,
     exitCode,
+    finalText,
     sandboxLeaseId: input.sandboxLeaseId,
     type: "agent.completed",
   };
@@ -305,6 +365,10 @@ class FakeAgentRunRepository implements AgentRunRepository {
     return this.run.id === agentRunId ? this.run : null;
   }
 
+  async findActiveByProjectId(projectId: string) {
+    return this.run.projectId === projectId && !isTerminalAgentRun(this.run.status) ? this.run : null;
+  }
+
   async findActiveOwnedByProjectId(projectId: string, userId: string) {
     return this.run.projectId === projectId && this.run.userId === userId && !isTerminalAgentRun(this.run.status)
       ? this.run
@@ -313,6 +377,31 @@ class FakeAgentRunRepository implements AgentRunRepository {
 
   async findOwnedById(agentRunId: string, userId: string) {
     return this.run.id === agentRunId && this.run.userId === userId ? this.run : null;
+  }
+
+  async listRecentOwnedByProjectId(projectId: string, userId: string) {
+    return this.run.projectId === projectId && this.run.userId === userId ? [this.run] : [];
+  }
+
+  async setProviderProcessRef(runId: string, providerProcessRef: string) {
+    if (this.run.id !== runId || isTerminalAgentRun(this.run.status)) {
+      return null;
+    }
+
+    this.run.providerProcessRef = providerProcessRef;
+    return this.run;
+  }
+
+  async setSandboxDuration(_runId: string, sandboxDurationMs: number) {
+    this.run.usage.sandboxDurationMs = Math.max(
+      this.run.usage.sandboxDurationMs,
+      sandboxDurationMs,
+    );
+    return this.run;
+  }
+
+  async addUsageDelta() {
+    return this.run;
   }
 
   async transition(input: Parameters<AgentRunRepository["transition"]>[0]) {
@@ -327,6 +416,9 @@ class FakeAgentRunRepository implements AgentRunRepository {
       startedAt: input.startedAt ?? this.run.startedAt,
       status: input.to,
     });
+    if (isTerminalAgentRun(input.to)) {
+      this.run.providerProcessRef = null;
+    }
     return this.run;
   }
 
@@ -335,10 +427,79 @@ class FakeAgentRunRepository implements AgentRunRepository {
   }
 }
 
+class FakeMessageRepository implements MessageRepository {
+  readonly records: MessageRecord[] = [];
+
+  async appendAssistant(input: {
+    agentRunId: string;
+    content: string;
+    id: string;
+    now: string;
+    projectId: string;
+  }) {
+    const message: MessageRecord = {
+      agentRunId: input.agentRunId,
+      content: input.content,
+      createdAt: input.now,
+      id: input.id,
+      projectId: input.projectId,
+      role: "assistant",
+      sequence: this.records.length,
+    };
+    this.records.push(message);
+    return message;
+  }
+
+  async findById(messageId: string, projectId: string) {
+    return this.records.find((message) => message.id === messageId && message.projectId === projectId) ?? null;
+  }
+
+  async listByProjectId(projectId: string) {
+    return this.records.filter((message) => message.projectId === projectId);
+  }
+}
+
 class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
   readonly states: Array<Parameters<SandboxLeaseRepository["updateState"]>[0]> = [];
 
   constructor(readonly lease: SandboxLeaseRecord) {}
+
+  async claimForManualStop(
+    input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
+  ) {
+    if (
+      this.lease.id !== input.leaseId ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(this.lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
+
+  async claimIdleForStop(input: Parameters<SandboxLeaseRepository["claimIdleForStop"]>[0]) {
+    if (
+      this.lease.id !== input.leaseId ||
+      this.lease.status !== "idle" ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    ) {
+      return false;
+    }
+
+    Object.assign(this.lease, {
+      providerRef: null,
+      status: "stopped",
+      updatedAt: input.updatedAt,
+    });
+    return true;
+  }
 
   async findByProjectId(projectId: string) {
     return this.lease.projectId === projectId ? this.lease : null;

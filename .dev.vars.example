@@ -10,5 +10,17 @@ GEMINI_API_KEY=
 # Add only when the real E2B runtime adapter is enabled.
 # E2B_API_KEY=
 
+# Non-secret exact E2B template build reference, such as agent-online-pi-runtime:<build-id>.
+# E2B_TEMPLATE_ID=
+
+# Runtime configuration. Fake is the default when omitted.
+# RUNTIME_PROVIDER=e2b
+# DEFAULT_MODEL_ID=gemini-2.5-flash
+# RUNTIME_IDLE_TTL_SECONDS=600
+# MAX_RUN_WALL_SECONDS=1800
+
+# Public HTTPS origin used only when a local E2B sandbox cannot reach localhost.
+# MODEL_GATEWAY_BASE_URL=
+
 # Add only when the internal usage view is implemented.
 # ADMIN_EMAILS=

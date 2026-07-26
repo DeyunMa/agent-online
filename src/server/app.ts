@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { createAuth } from "./auth";
 import type { AppEnv } from "./env";
+import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
 
 export const app = new Hono<AppEnv>();
@@ -19,6 +20,8 @@ app.get("/api/health", (c) =>
     status: "ok",
   }),
 );
+
+app.post(modelGatewayEndpointPath, (c) => createWorkerModelGateway(c.env)(c.req.raw));
 
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
 
