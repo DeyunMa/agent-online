@@ -569,6 +569,23 @@ textarea:disabled {
   font-size: 12px;
 }
 
+.run-availability {
+  padding: 8px 18px 0;
+}
+
+.run-availability-paused {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-bottom: 1px solid #ebd39f;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .run-status-bar-empty {
   color: var(--text-faint);
 }

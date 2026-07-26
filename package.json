@@ -7,8 +7,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:preview": "CLOUDFLARE_ENV=preview vite build",
     "preview": "vite preview",
     "deploy": "vite build && wrangler deploy",
+    "validate:preview-config": "node scripts/validate-preview-config.mjs",
+    "deploy:preview": "pnpm validate:preview-config && CLOUDFLARE_ENV=preview vite build && wrangler deploy --env preview",
+    "deploy:preview:dry-run": "CLOUDFLARE_ENV=preview vite build && wrangler deploy --env preview --dry-run",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "build:e2b-pi-template": "node templates/e2b/build-pi-runtime-template.mjs",

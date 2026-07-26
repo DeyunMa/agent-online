@@ -1,0 +1,72 @@
+import { readFile } from "node:fs/promises";
+
+const configUrl = new URL("../wrangler.jsonc", import.meta.url);
+const config = JSON.parse(await readFile(configUrl, "utf8"));
+const preview = config.env?.preview;
+const errors = [];
+
+if (!preview) {
+  errors.push("wrangler.jsonc must define env.preview");
+} else {
+  const vars = preview.vars ?? {};
+  const database = preview.d1_databases?.find(
+    ({ binding }) => binding === "DB",
+  );
+
+  if (
+    !database?.database_id ||
+    database.database_id === "00000000-0000-0000-0000-000000000000"
+  ) {
+    errors.push("env.preview DB must use the real preview D1 database_id");
+  }
+
+  if (!isDeployableHttpsUrl(vars.BETTER_AUTH_URL)) {
+    errors.push(
+      "env.preview BETTER_AUTH_URL must be the final HTTPS Worker origin",
+    );
+  }
+
+  if (
+    typeof vars.E2B_TEMPLATE_ID !== "string" ||
+    vars.E2B_TEMPLATE_ID.trim() === "" ||
+    vars.E2B_TEMPLATE_ID.includes("replace-with")
+  ) {
+    errors.push(
+      "env.preview E2B_TEMPLATE_ID must be an exact E2B template build reference",
+    );
+  }
+
+  if (vars.ACCESS_MODE !== "allowlist") {
+    errors.push("env.preview ACCESS_MODE must remain allowlist");
+  }
+
+  if (vars.RUNTIME_PROVIDER !== "e2b") {
+    errors.push("env.preview RUNTIME_PROVIDER must be e2b");
+  }
+
+  if (vars.RUNS_ENABLED !== "true" && vars.RUNS_ENABLED !== "false") {
+    errors.push("env.preview RUNS_ENABLED must be true or false");
+  }
+}
+
+if (errors.length > 0) {
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  process.exitCode = 1;
+} else {
+  console.log("Preview deployment config is ready.");
+}
+
+function isDeployableHttpsUrl(value) {
+  if (typeof value !== "string" || value.includes("replace-me")) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.origin === value;
+  } catch {
+    return false;
+  }
+}

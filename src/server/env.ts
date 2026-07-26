@@ -5,6 +5,8 @@ export type AgentRunWorkflowPayload = {
 };
 
 export interface AppBindings {
+  ACCESS_ALLOWED_EMAILS?: string;
+  ACCESS_MODE?: string;
   AGENT_RUN_WORKFLOW: Workflow<AgentRunWorkflowPayload>;
   ASSETS: Fetcher;
   ADMIN_EMAILS?: string;
@@ -17,6 +19,7 @@ export interface AppBindings {
   GEMINI_API_KEY?: string;
   MAX_RUN_WALL_SECONDS?: string;
   MODEL_GATEWAY_BASE_URL?: string;
+  RUNS_ENABLED?: string;
   RUNTIME_IDLE_TTL_SECONDS?: string;
   RUNTIME_PROVIDER?: string;
 }

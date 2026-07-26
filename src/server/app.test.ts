@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { app } from "./app";
+import type { AppBindings } from "./env";
 
 describe("Worker API", () => {
   it("returns a health response", async () => {
@@ -8,5 +9,18 @@ describe("Worker API", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ name: "agent-online", status: "ok" });
+  });
+
+  it("publishes the safe Run creation capability", async () => {
+    const response = await app.request(
+      "http://agent-online.test/api/capabilities",
+      undefined,
+      { RUNS_ENABLED: "false" } as AppBindings,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      runCreationEnabled: false,
+    });
   });
 });

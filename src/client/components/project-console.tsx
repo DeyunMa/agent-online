@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, CirclePause, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
@@ -17,6 +17,7 @@ import {
   projectDetailQueryKey,
   projectMessagesQueryKey,
   projectQueryKey,
+  platformCapabilitiesQueryKey,
 } from "../query-keys";
 import { ProjectInspector } from "./project-inspector";
 import {
@@ -42,6 +43,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const project = useQuery({
     queryFn: () => browserApi.getProject(projectId),
     queryKey: projectDetailQueryKey(projectId),
+  });
+  const platformCapabilities = useQuery({
+    queryFn: browserApi.getPlatformCapabilities,
+    queryKey: platformCapabilitiesQueryKey,
+    staleTime: 30_000,
   });
   const messages = useQuery({
     enabled: project.isSuccess,
@@ -115,6 +121,10 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       !isTerminalAgentRun(recoveredActiveRun.status)) ||
     (activeRunId !== null &&
       (currentRun === undefined || !isTerminalAgentRun(currentRun.status)));
+  const runCreationUnavailable =
+    platformCapabilities.isPending ||
+    platformCapabilities.isError ||
+    !platformCapabilities.data.runCreationEnabled;
 
   useEffect(() => {
     setActiveRunId(null);
@@ -240,7 +250,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           </nav>
           <button
             className="new-run-action"
-            disabled={activeRunIsBlocking}
+            disabled={activeRunIsBlocking || runCreationUnavailable}
             onClick={() => composerRef.current?.focus()}
             type="button"
           >
@@ -250,31 +260,63 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
         </div>
       </AppHeaderSlot>
       <section className="project-console">
-      <main className="project-console-main">
-        <ProjectRunTabs onViewChange={setView} view={view} />
-        {view === "conversation" ? (
-          <>
-            <RunStatusBar
-              cancelError={cancelRun.error}
-              isCancelling={cancelRun.isPending}
-              loadError={activeAgentRun.error ?? agentRun.error}
-              onCancel={() => {
-                if (currentRun) {
-                  cancelRun.mutate(currentRun.id);
-                }
-              }}
-              run={currentRun}
-              streamError={streamError}
-            />
-            <RunMetrics run={currentRun} />
-            <div className="project-console-scroll">
-              <ConversationTimeline
-                error={messages.error}
-                isPending={messages.isPending}
-                messages={messages.data}
-                onRetry={() => void messages.refetch()}
-                streamOutput={streamOutput}
+        <main className="project-console-main">
+          <ProjectRunTabs onViewChange={setView} view={view} />
+          {platformCapabilities.isError ? (
+            <div className="run-availability">
+              <ErrorState
+                compact
+                error={platformCapabilities.error}
+                onRetry={() => void platformCapabilities.refetch()}
               />
+            </div>
+          ) : null}
+          {platformCapabilities.data?.runCreationEnabled === false ? (
+            <div className="run-availability run-availability-paused" role="status">
+              <CirclePause aria-hidden="true" size={15} />
+              <span>New Agent Runs are temporarily paused.</span>
+            </div>
+          ) : null}
+          {view === "conversation" ? (
+            <>
+              <RunStatusBar
+                cancelError={cancelRun.error}
+                isCancelling={cancelRun.isPending}
+                loadError={activeAgentRun.error ?? agentRun.error}
+                onCancel={() => {
+                  if (currentRun) {
+                    cancelRun.mutate(currentRun.id);
+                  }
+                }}
+                run={currentRun}
+                streamError={streamError}
+              />
+              <RunMetrics run={currentRun} />
+              <div className="project-console-scroll">
+                <ConversationTimeline
+                  error={messages.error}
+                  isPending={messages.isPending}
+                  messages={messages.data}
+                  onRetry={() => void messages.refetch()}
+                  streamOutput={streamOutput}
+                />
+                <RunHistory
+                  error={recentRuns.error}
+                  isPending={recentRuns.isPending}
+                  messages={messages.data}
+                  onRetry={() => void recentRuns.refetch()}
+                  onSelect={(runId) => {
+                    setActiveRunId(runId);
+                    setStreamOutput("");
+                    setStreamError(null);
+                  }}
+                  runs={recentRuns.data}
+                  selectedRunId={currentRunId}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="project-console-scroll project-console-runs-view">
               <RunHistory
                 error={recentRuns.error}
                 isPending={recentRuns.isPending}
@@ -282,47 +324,34 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                 onRetry={() => void recentRuns.refetch()}
                 onSelect={(runId) => {
                   setActiveRunId(runId);
-                  setStreamOutput("");
-                  setStreamError(null);
+                  setView("conversation");
                 }}
                 runs={recentRuns.data}
                 selectedRunId={currentRunId}
               />
             </div>
-          </>
-        ) : (
-          <div className="project-console-scroll project-console-runs-view">
-            <RunHistory
-              error={recentRuns.error}
-              isPending={recentRuns.isPending}
-              messages={messages.data}
-              onRetry={() => void recentRuns.refetch()}
-              onSelect={(runId) => {
-                setActiveRunId(runId);
-                setView("conversation");
-              }}
-              runs={recentRuns.data}
-              selectedRunId={currentRunId}
-            />
-          </div>
-        )}
-        <AgentComposer
-          disabled={createRun.isPending || activeRunIsBlocking}
-          error={createRun.error}
-          isSubmitting={createRun.isPending}
-          onSubmit={(content) => createRun.mutateAsync(content)}
-          textareaRef={composerRef}
-        />
-      </main>
+          )}
+          <AgentComposer
+            disabled={
+              createRun.isPending ||
+              activeRunIsBlocking ||
+              runCreationUnavailable
+            }
+            error={createRun.error}
+            isSubmitting={createRun.isPending}
+            onSubmit={(content) => createRun.mutateAsync(content)}
+            textareaRef={composerRef}
+          />
+        </main>
 
-      <ProjectInspector
-        hasActiveRun={activeRunIsBlocking}
-        isStopping={stopSandbox.isPending}
-        onStopSandbox={() => stopSandbox.mutate()}
-        project={project.data}
-        run={currentRun}
-        stopError={stopSandbox.error}
-      />
+        <ProjectInspector
+          hasActiveRun={activeRunIsBlocking}
+          isStopping={stopSandbox.isPending}
+          onStopSandbox={() => stopSandbox.mutate()}
+          project={project.data}
+          run={currentRun}
+          stopError={stopSandbox.error}
+        />
       </section>
     </>
   );

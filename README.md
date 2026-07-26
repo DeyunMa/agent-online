@@ -1,7 +1,7 @@
 # Agent Online
 
-> 状态：D2 真实执行纵切已在本地实现（2026-07-26）
-> 当前代码包含认证、Project、Run/Message、E2B、Pi RPC、Gemini ModelGateway、Workflow 执行所有权、取消、deadline、空闲 TTL 和聚合 usage；远程 Cloudflare 预览验证及文件/终端/preview 尚未完成。
+> 状态：D2 真实执行纵切与私有 Preview 护栏已在本地实现（2026-07-26）
+> 当前代码包含认证、Project、Run/Message、E2B、Pi RPC、Gemini ModelGateway、Workflow 执行所有权、取消、deadline、空闲 TTL、聚合 usage、部署邮箱白名单和 Run 总开关；远程 Cloudflare 预览验证及文件/终端/preview 尚未完成。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件和 preview。
 
@@ -26,6 +26,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消优先只终止当前 Pi 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
+- 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 
 远程 Cloudflare Workflows 免费层的 10ms step CPU 上限仍需预览部署验证。受控文件浏览、终端、preview、changes 和用户用量页属于后续纵切，UI 在对应 API 完成前必须保持禁用或不展示。
 
@@ -60,6 +61,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [环境变量](./docs/setup/environment-variables.md) | 当前需要的 Key、Binding 和可选配置。 |
 | [外部依赖与待补充项](./docs/setup/external-dependencies.md) | 代码之外的账号、Secret、远程资源和用户待确认事项。 |
 | [本地开发](./docs/setup/local-development.md) | 单 Worker 工程结构、模块边界和本地启动方式。 |
+| [Cloudflare 私有 Preview 部署](./docs/setup/preview-deployment.md) | Preview 白名单、Run 开关、D1/Secret/迁移和分阶段验收步骤。 |
 | [E2B + Pi + Gemini Spike](./docs/testing/e2b-pi-gemini-spike.md) | 显式启用的真实 Provider 可行性验证，不等同于 D2 产品实现。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 

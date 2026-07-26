@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 
 import { createAuth } from "./auth";
+import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
@@ -18,6 +19,12 @@ app.get("/api/health", (c) =>
     name: "agent-online",
     requestId: c.get("requestId"),
     status: "ok",
+  }),
+);
+
+app.get("/api/capabilities", (c) =>
+  c.json({
+    runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
   }),
 );
 

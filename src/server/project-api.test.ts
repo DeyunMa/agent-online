@@ -202,6 +202,37 @@ describe("Project API", () => {
     await expect(secondResponse.json()).resolves.toMatchObject({ error: "project_busy" });
   });
 
+  it("rejects new Runs before creating product state when Runs are paused", async () => {
+    const fixture = createFixture(testUser, { runsEnabled: false });
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "Build a demo" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "runs_disabled",
+    });
+    expect(fixture.agentRuns.records.size).toBe(0);
+    expect(fixture.messages.records).toHaveLength(0);
+    await expect(
+      fixture.sandboxLeases.findByProjectId("project_1"),
+    ).resolves.toBeNull();
+    expect(fixture.coordinator.starts).toHaveLength(0);
+  });
+
   it("streams terminal fake Run state from D1 without a live registry", async () => {
     const fixture = createFixture(testUser);
     await fixture.projects.create({
@@ -270,7 +301,10 @@ describe("Project API", () => {
   });
 });
 
-function createFixture(user: typeof testUser | null) {
+function createFixture(
+  user: typeof testUser | null,
+  options: { runsEnabled?: boolean } = {},
+) {
   const projects = new InMemoryProjectRepository();
   const messages = new InMemoryMessageRepository();
   const agentRuns = new InMemoryAgentRunRepository(messages);
@@ -304,6 +338,11 @@ function createFixture(user: typeof testUser | null) {
     createProjectApi({
       createId: () => `id_${++id}`,
       createServices: () => services,
+      getDeploymentPolicy: () => ({
+        accessMode: "open",
+        allowedEmails: null,
+        runsEnabled: options.runsEnabled ?? true,
+      }),
       getAuthenticatedUser: async () => user,
       now: () => new Date(now),
     }),

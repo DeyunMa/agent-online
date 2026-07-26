@@ -34,7 +34,7 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1 已完成。D2 已实现 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复和原子空闲回收；真实 E2B + Pi + Gemini spike 已通过。D2 剩余门槛是部署到 Cloudflare 预览环境验证 Workflows Free 的 CPU/subrequest 限额。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
+当前进度：D0/D1 已完成。D2 已实现 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、Preview 邮箱 allowlist 和全局 Run 开关；真实 E2B + Pi + Gemini spike 已通过。D2 剩余门槛是部署到 Cloudflare 私有 Preview 环境验证 Workflows Free 的 CPU/subrequest 限额。文件、终端、preview 和 changes 属于 D3，当前 UI 必须禁用。
 
 ## 3. 当前与未来 Runtime 的边界
 
@@ -46,14 +46,14 @@ flowchart LR
 
 ## 4. D2/D3 成本与滥用护栏
 
-以下是公开部署前的护栏。第 2 至 4 项已在 D2 实现，第 1 和第 5 项仍待 D3：
+以下是公开部署前的护栏。单 Run 生命周期、私有 Preview 访问和紧急停用已实现；每用户并发上限与管理聚合视图仍待 D3：
 
 1. 每个 User 默认最多一个活动 Lease，配置化而非硬编码。
 2. 每个 AgentRun 设置最大 wall-clock 时间；真实沙箱接入后记录 `sandbox_duration_ms`。
 3. 空闲 TTL 到期后停止沙箱，避免 Project 因打开标签页长期占用资源；停止不做快照。
 4. ModelGateway 从 Gemini 实际响应写入 token 和请求数，不把模型成本估算藏在 UI 状态中。
-5. 出现 Provider 错误或异常用量时，维护者能先通过 admin 用量视图关闭或暂停新 Run；精细配额以后再设计。
-6. 早期真实沙箱只对自己或受邀测试账号开放；开源不等于开放匿名计算资源。
+5. 出现 Provider 错误或异常用量时，维护者可用服务端 `RUNS_ENABLED` 总开关暂停新 Run；admin 用量视图和精细配额以后再设计。
+6. 早期真实沙箱通过部署邮箱 allowlist 只对自己或受邀测试账号开放；开源不等于开放匿名计算资源。
 7. 每个新 AgentRuntime 独立评估镜像体积、冷启动、模型请求路径、凭据持有方式和出网能力，不能沿用 Pi 的成本假设。
 8. Cloudflare Workflows Free 每 step 只有 10ms CPU、每 instance 最多 50 个外部 subrequest；预览环境必须验证典型 Pi Run，并在超限时停止公开注册。
 

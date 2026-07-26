@@ -29,6 +29,7 @@ worker/         Cloudflare Worker 入口
 - `FakeSandboxRuntime` 用于无外部成本的 UI/控制面开发；`E2BSandboxRuntime` 支持真实 Linux、进程重连、精确进程终止和沙箱停止。
 - Pi 是唯一已注册的 AgentRuntime，它把 `pi --mode rpc` JSONL 映射为统一 Agent 事件；fake runtime 不执行真实 Pi 二进制。
 - `AgentRunWorkflow`、ModelGateway、Run capability、真实 usage、deadline 和空闲 TTL 已实现。远程 Workflows Free 的 10ms step CPU 上限仍需预览部署验证。
+- 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
 - 文件浏览、终端、preview、changes 和每用户并发上限尚未实现。
 - Goose、Claude Code、Codex CLI 仅在 Runtime ID 合同中预留，尚未实现或暴露为选择项。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
@@ -43,3 +44,5 @@ worker/         Cloudflare Worker 入口
 6. 验证：`pnpm typecheck && pnpm test && pnpm build`，并在浏览器完成注册、创建 Project、启动/取消 Run 的 smoke。
 
 `wrangler.jsonc` 中的 D1 ID 是本地开发占位值。开始远程认证数据库迁移或部署前，只创建真实 D1 并替换 database ID；R2 不属于 V1。本项目不会自动创建任何云端资源。
+
+需要在本地模拟私有 Preview 时，设置 `ACCESS_MODE=allowlist`、`ACCESS_ALLOWED_EMAILS=<测试邮箱>` 和 `RUNS_ENABLED=false`。远程流程见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。

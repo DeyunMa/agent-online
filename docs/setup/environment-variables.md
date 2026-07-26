@@ -7,8 +7,8 @@
 
 | 类别 | 放置位置 | 示例 |
 | --- | --- | --- |
-| Secret | 本地 `.dev.vars`；生产 `wrangler secret put`。 | Better Auth Secret、Gemini Key、E2B Key。 |
-| 非敏感变量 | 真实 Runtime 实现后才按代码读取；部署后需要覆盖时使用 `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、以后 Sentry DSN。 |
+| Secret | 本地 `.dev.vars`；远程环境使用 `wrangler secret put --env <name>`。 | Better Auth Secret、Gemini Key、E2B Key、私有部署邮箱。 |
+| 非敏感变量 | `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、访问模式和 Run 开关。 |
 | Cloudflare Binding | `wrangler.jsonc`。 | `DB`、`ASSETS`、`AGENT_RUN_WORKFLOW`。 |
 
 不要把真实 Key 放进 `wrangler.jsonc`、Git、截图或聊天消息。`.dev.vars.example` 只保留变量名和示例值。
@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi + Gemini Spike](../testing/e2b-pi-gemini-spike.md) 时。 | 只供服务端创建和管理沙箱。 |
 | `E2B_TEMPLATE_ID` | `RUNTIME_PROVIDER=e2b` 或运行真实 spike 时。 | 非敏感的精确 E2B build reference；只由服务端创建沙箱时读取。 |
-| `ADMIN_EMAILS` | 接入内部用量页面时。 | 逗号分隔的维护者邮箱 allowlist，不是用户角色系统。 |
+| `ADMIN_EMAILS` | 接入内部用量页面时。 | 逗号分隔的维护者邮箱 allowlist，不是部署登录白名单或用户角色系统。 |
 | `SENTRY_DSN` | 安装 Sentry SDK 后。 | 可选 Worker 错误监控的项目 DSN；它不是 Gemini/E2B 那类服务端凭据，当前脚手架不读取它。 |
 
 `BETTER_AUTH_SECRET` 用 `openssl rand -base64 32` 独立生成，至少保持 32 个高熵字符。不要复用 Gemini 或 E2B Key。
@@ -51,7 +51,19 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 
 当前默认 AgentRuntime 固定为 `pi`，而不是对外环境变量。第二个适配器完成能力和安全验收后，再设计部署级默认值。
 
-## 5. Cloudflare Binding，不是环境变量
+## 5. 部署访问与执行开关
+
+| 变量 | 本地默认 | Preview 值 | 说明 |
+| --- | --- | --- | --- |
+| `ACCESS_MODE` | 未设置即 `open` | `allowlist` | 控制哪些邮箱能注册、登录和继续访问产品 API。 |
+| `ACCESS_ALLOWED_EMAILS` | 不需要 | 必填 Secret | 逗号分隔的邮箱；会 trim 并转小写比较。allowlist 模式缺失或为空时服务端拒绝启动受保护路径。 |
+| `RUNS_ENABLED` | 未设置即 `true` | 首次部署 `false` | 新建 AgentRun 的服务端总开关。关闭时不创建 Message、Lease 或 AgentRun。 |
+
+`ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
+
+浏览器通过 `/api/capabilities` 只读取 `runCreationEnabled`，不会得到白名单、Secret 或其他部署配置。前端禁用只是交互反馈，服务端创建 Run API 才是强制边界。
+
+## 6. Cloudflare Binding，不是环境变量
 
 这些由 `wrangler.jsonc` 绑定，在 Worker 中通过 `env` 访问；用户不应把它们填进 `.dev.vars`：
 
@@ -65,21 +77,24 @@ V1 不配置 `PROJECT_BUCKET`、R2 或 Durable Object Binding。`AGENT_RUN_WORKF
 
 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` 只在 Wrangler 自动化/CI 部署时需要，不是 Worker 运行时 Secret；本机交互式 `wrangler login` 时不必提供给应用。
 
-## 6. `.dev.vars` 与生产 Secret
+## 7. `.dev.vars` 与远程 Secret
 
 本地：复制示例文件为 `.dev.vars` 后填写当前必需值。该文件已在 `.gitignore` 中。
 
-生产：每个敏感变量用 Wrangler 单独写入，例如：
+Preview：每个敏感变量用 Wrangler 单独写入，例如：
 
 ```sh
-npx wrangler secret put GEMINI_API_KEY
-npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put E2B_API_KEY
+pnpm wrangler secret put GEMINI_API_KEY --env preview
+pnpm wrangler secret put BETTER_AUTH_SECRET --env preview
+pnpm wrangler secret put E2B_API_KEY --env preview
+pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 ```
 
 启用真实 E2B 才写入 E2B Secret。Sentry 集成启用后，`SENTRY_DSN` 可作为部署配置提供。不同环境的 Binding 和 `vars` 不会自动继承，部署 staging/production 前必须逐项配置和检查。
 
-## 7. 当前不需要的变量
+完整顺序见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。
+
+## 8. 当前不需要的变量
 
 - R2 Bucket、R2 S3 Access Key 或 Project 文件备份配置。
 - Stripe / 支付平台 Key，订阅、账单、发票或价格配置。
@@ -88,7 +103,7 @@ npx wrangler secret put E2B_API_KEY
 - `CREDENTIAL_ENCRYPTION_KEY`，直到明确开始实现 BYOK 写入。
 - Goose、Claude Code 或 Codex CLI 的凭据。它们没有适配器和单独安全设计前不接入应用。
 
-## 8. 外部依据
+## 9. 外部依据
 
 - [Better Auth 环境变量](https://better-auth.com/docs/installation)
 - [Better Auth 邮箱密码登录](https://better-auth.com/docs/authentication/email-password)

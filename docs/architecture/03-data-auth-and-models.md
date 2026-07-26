@@ -18,13 +18,16 @@ V1 没有 R2 Binding。Project 文件只在沙箱存活期间存在；沙箱停�
 
 Better Auth 负责 `user`、`account`、`session` 和 `verification`。第一版只启用邮箱密码注册/登录：`emailAndPassword.enabled = true`；不配置 Google OAuth、邮件验证、找回密码或邮件发送服务。
 
+私有 Preview 额外使用部署级邮箱 allowlist。它在 Better Auth 邮箱注册/登录前拒绝未受邀邮箱，并在业务请求解析 Session 后再次校验，避免旧 Session 绕过部署策略。该 allowlist 不创建团队、邀请表或角色模型。
+
 每个业务请求：
 
 1. 从 Better Auth Cookie 取得当前 `user_id`。
 2. 任何 Project 查询都按 `WHERE project.id = ? AND project.user_id = ?` 执行。
 3. 从 Project 推导 Message、SandboxLease、AgentRun、终端和 preview 的访问权。
 4. 创建 AgentRun 时由服务端解析已注册的 `agent_runtime_id` 与 `sandbox_runtime_id`；浏览器提交的任意 Runtime/命令都不可信。
-5. 内部管理端点先以 `ADMIN_EMAILS` Worker allowlist 保护，不为此预建角色、组织或团队模型。
+5. 创建 AgentRun 前检查部署级 `RUNS_ENABLED`；关闭时必须先于 Message、Lease 和 AgentRun 写入返回。
+6. 内部管理端点以后以独立的 `ADMIN_EMAILS` Worker allowlist 保护，不为此预建角色、组织或团队模型。
 
 必须固定 `BETTER_AUTH_URL` 并设置受信任 origin；React 和 API 同域可避免 CORS 与跨域 Cookie 的复杂度。开放公共注册前，需要重新审阅邮箱验证、注册限流、滥用处理和找回密码。
 

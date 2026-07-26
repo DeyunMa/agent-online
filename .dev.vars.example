@@ -4,6 +4,11 @@
 BETTER_AUTH_SECRET=replace-with-a-unique-high-entropy-secret
 BETTER_AUTH_URL=http://localhost:5173
 
+# Deployment guardrails. Omitted locally means open access and enabled Runs.
+# ACCESS_MODE=allowlist
+# ACCESS_ALLOWED_EMAILS=owner@example.com
+# RUNS_ENABLED=false
+
 # Platform model
 GEMINI_API_KEY=
 

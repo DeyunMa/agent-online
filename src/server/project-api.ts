@@ -18,6 +18,10 @@ import type {
   SandboxLeaseResponse,
 } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
+import {
+  getDeploymentPolicy,
+  type DeploymentPolicy,
+} from "./deployment-policy";
 import type { AppBindings, AppEnv } from "./env";
 import { createServerServices, type ServerServices } from "./services";
 import { defaultWorkingDirectory } from "./runtime-config";
@@ -35,6 +39,7 @@ type AppContext = Context<AppEnv>;
 export type ProjectApiDependencies = {
   createId: () => string;
   createServices: (env: AppBindings) => ServerServices;
+  getDeploymentPolicy: (env: AppBindings) => DeploymentPolicy;
   getAuthenticatedUser: (env: AppBindings, headers: Headers) => Promise<AuthenticatedUser | null>;
   now: () => Date;
 };
@@ -42,6 +47,7 @@ export type ProjectApiDependencies = {
 const defaultDependencies: ProjectApiDependencies = {
   createId: () => crypto.randomUUID(),
   createServices: createServerServices,
+  getDeploymentPolicy,
   getAuthenticatedUser,
   now: () => new Date(),
 };
@@ -162,6 +168,9 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
+    }
+    if (!dependencies.getDeploymentPolicy(c.env).runsEnabled) {
+      return runsDisabled(c);
     }
 
     const now = dependencies.now().toISOString();
@@ -447,6 +456,10 @@ function notFound(c: AppContext) {
 
 function projectBusy(c: AppContext) {
   return apiError(c, "project_busy", 409);
+}
+
+function runsDisabled(c: AppContext) {
+  return apiError(c, "runs_disabled", 503);
 }
 
 function internalError(c: AppContext, status: 500 | 503 = 500) {

@@ -23,5 +23,40 @@
       "name": "agent-online-run",
       "class_name": "AgentRunWorkflow"
     }
-  ]
+  ],
+  "env": {
+    "preview": {
+      "workers_dev": true,
+      "assets": {
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*"]
+      },
+      "vars": {
+        "ACCESS_MODE": "allowlist",
+        "BETTER_AUTH_URL": "https://agent-online-preview.replace-me.workers.dev",
+        "DEFAULT_MODEL_ID": "gemini-2.5-flash",
+        "E2B_TEMPLATE_ID": "replace-with-exact-e2b-template-build-id",
+        "MAX_RUN_WALL_SECONDS": "1800",
+        "RUNTIME_IDLE_TTL_SECONDS": "600",
+        "RUNTIME_PROVIDER": "e2b",
+        "RUNS_ENABLED": "false"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "agent-online-preview-db",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "./migrations"
+        }
+      ],
+      "workflows": [
+        {
+          "binding": "AGENT_RUN_WORKFLOW",
+          "name": "agent-online-preview-run",
+          "class_name": "AgentRunWorkflow"
+        }
+      ]
+    }
+  }
 }

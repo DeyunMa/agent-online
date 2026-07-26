@@ -1,4 +1,5 @@
 export const projectQueryKey = ["projects"] as const;
+export const platformCapabilitiesQueryKey = ["platform-capabilities"] as const;
 
 export function projectDetailQueryKey(projectId: string) {
   return ["project", projectId] as const;

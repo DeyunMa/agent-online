@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：用于跟踪代码之外的账号、Secret、Binding 和远程资源。本文只记录变量名和状态，不记录任何真实凭据值。
+> 状态：Preview 代码、环境骨架和本地 dry-run 已就绪；远程资源尚未创建。本文只记录变量名和状态，不记录任何真实凭据值。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -24,13 +24,14 @@
 | 待办 | 用户需要提供或确认 | 项目侧动作 |
 | --- | --- | --- |
 | Cloudflare 身份 | 确认当前 Wrangler 登录账号和目标 Account。 | 检查登录状态，不把凭据写入应用。 |
-| 远程 D1 | 确认创建 `agent-online-db`。 | 创建数据库、替换 `wrangler.jsonc` 占位 `database_id`、应用远程迁移。 |
+| 远程 D1 | 确认创建 `agent-online-preview-db`。 | 创建数据库、替换 `env.preview` 的占位 `database_id`、应用远程迁移。 |
 | Worker 地址 | 确认使用 `workers.dev` 还是自定义域名。 | 设置生产 `BETTER_AUTH_URL` 并检查同源 Cookie。 |
-| 生产 Secret | 为预览/生产分别准备 `BETTER_AUTH_SECRET`。 | 通过 `wrangler secret put` 写入，不进入 Git。 |
+| Preview Secret | 为 Preview 独立准备 `BETTER_AUTH_SECRET`。 | 通过带 `--env preview` 的 `wrangler secret put` 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 确认预览环境允许使用现有 Gemini/E2B 账号。 | 写入 `GEMINI_API_KEY`、`E2B_API_KEY` 和非敏感 `E2B_TEMPLATE_ID`。 |
+| 私有访问 | 提供一个或多个受邀邮箱。 | 以 `ACCESS_ALLOWED_EMAILS` Preview Secret 写入；保持 `ACCESS_MODE=allowlist`。 |
 | Cloudflare Workflow | 确认预览环境启用 Workflows。 | 部署已声明的 `AGENT_RUN_WORKFLOW`，验证 Free 计划 10ms step CPU 与 subrequest 限额；不创建第二个服务。 |
 
-首次远程部署前还必须重新核对 Cloudflare、E2B 和 Gemini 当时的免费额度、计价与限额。公开注册保持关闭或限制为受邀账号，直到真实成本护栏完成。
+首次远程部署前还必须重新核对 Cloudflare、E2B 和 Gemini 当时的免费额度、计价与限额。第一次部署保持 `RUNS_ENABLED=false`，通过认证和 Project smoke 后才为受邀账号打开真实 Run。执行步骤见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。
 
 ## 3. 功能推进到对应阶段才需要
 

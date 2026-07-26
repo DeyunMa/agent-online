@@ -9,6 +9,10 @@ export type HealthResponse = {
   status: "ok";
 };
 
+export type PlatformCapabilitiesResponse = {
+  runCreationEnabled: boolean;
+};
+
 export type SandboxLeaseResponse = {
   id: string;
   runtimeId: RuntimeKind;
@@ -72,6 +76,13 @@ export type AgentRunStreamEvent =
   | { sequence: number; type: "run.completed"; usage: AgentRunUsageResponse };
 
 export type ApiErrorResponse = {
-  error: "forbidden" | "internal_error" | "not_found" | "project_busy" | "unauthorized" | "validation_error";
+  error:
+    | "forbidden"
+    | "internal_error"
+    | "not_found"
+    | "project_busy"
+    | "runs_disabled"
+    | "unauthorized"
+    | "validation_error";
   requestId: string;
 };

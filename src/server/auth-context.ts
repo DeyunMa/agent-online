@@ -1,4 +1,8 @@
 import { createAuth } from "./auth";
+import {
+  getDeploymentPolicy,
+  isEmailAllowed,
+} from "./deployment-policy";
 import type { AppBindings } from "./env";
 
 export type AuthenticatedUser = {
@@ -17,6 +21,10 @@ export async function getAuthenticatedUser(
   const session = await createAuth(env).api.getSession({ headers });
 
   if (!session) {
+    return null;
+  }
+
+  if (!isEmailAllowed(getDeploymentPolicy(env), session.user.email)) {
     return null;
   }
 

@@ -6,6 +6,7 @@ import type {
   CreateProjectRequest,
   HealthResponse,
   MessageResponse,
+  PlatformCapabilitiesResponse,
   ProjectResponse,
 } from "../shared/api";
 
@@ -116,6 +117,8 @@ function messageForApiError(error: ApiErrorResponse["error"]) {
       return "未找到请求的项目或执行记录。";
     case "project_busy":
       return "该项目已有正在执行的任务。";
+    case "runs_disabled":
+      return "Agent Run 当前已由维护者暂停。";
     case "validation_error":
       return "输入内容不符合要求，请检查后重试。";
     case "internal_error":
@@ -156,6 +159,10 @@ export const browserApi = {
 
   getHealth() {
     return requestJson<HealthResponse>("/api/health");
+  },
+
+  getPlatformCapabilities() {
+    return requestJson<PlatformCapabilitiesResponse>("/api/capabilities");
   },
 
   getProject(projectId: string) {

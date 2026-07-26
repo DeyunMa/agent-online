@@ -512,6 +512,15 @@ function authErrorMessage(error: unknown) {
   if (
     typeof error === "object" &&
     error !== null &&
+    "message" in error &&
+    error.message === "This deployment is invite-only."
+  ) {
+    return "This deployment is invite-only.";
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
     "code" in error &&
     typeof error.code === "string"
   ) {
