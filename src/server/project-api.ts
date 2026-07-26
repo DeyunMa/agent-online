@@ -26,7 +26,6 @@ import {
 } from "./deployment-policy";
 import type { AppBindings, AppEnv } from "./env";
 import { createServerServices, type ServerServices } from "./services";
-import { defaultWorkingDirectory } from "./runtime-config";
 
 const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -219,57 +218,21 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return agentRuntimeUnavailable(c);
     }
 
-    const now = dependencies.now().toISOString();
-    const sandboxLease = await services.sandboxLeases.getOrCreate({
-      id: dependencies.createId(),
-      now,
-      projectId: project.id,
-      runtimeId: services.sandboxRuntimeId,
-    });
-    if (sandboxLease.runtimeId !== services.sandboxRuntimeId) {
-      return internalError(c);
-    }
-    const created = await services.agentRuns.createQueuedWithInput({
-      agentRunId: dependencies.createId(),
+    const created = await services.createAgentRuns.create({
       agentRuntimeId,
       content: input.content,
-      inputMessageId: dependencies.createId(),
-      modelId: services.defaultModelId,
-      now,
       projectId: project.id,
-      sandboxLeaseId: sandboxLease.id,
-      sandboxRuntimeId: sandboxLease.runtimeId,
       userId: user.id,
     });
 
     if (created.kind === "project_busy") {
       return projectBusy(c);
     }
-
-    try {
-      const execution = await services.runExecutions.start({
-        agentRun: created.run,
-        prompt: input.content,
-        sandboxLease,
-        workingDirectory: defaultWorkingDirectory,
-      });
-
-      if (execution.completion) {
-        keepRunAlive(c, execution.completion);
-      }
-    } catch (_error) {
-      const failed = await services.agentRuns.transition({
-        failureReason: "Agent run could not be started",
-        finishedAt: dependencies.now().toISOString(),
-        from: "queued",
-        runId: created.run.id,
-        to: "failed",
-      });
-      const current = failed ?? (await services.agentRuns.findById(created.run.id));
-      if (!current || current.status === "queued") {
-        return internalError(c);
-      }
-      return c.json(toAgentRunResponse(current), 201);
+    if (created.kind === "runtime_mismatch") {
+      return internalError(c);
+    }
+    if (created.completion) {
+      keepRunAlive(c, created.completion);
     }
 
     return c.json(toAgentRunResponse(created.run), 201);

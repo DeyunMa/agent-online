@@ -14,6 +14,7 @@ import type {
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "../application/ports";
+import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
@@ -444,8 +445,21 @@ function createFixture(
   const sandboxLeases = new InMemorySandboxLeaseRepository();
   const coordinator = new FakeRunCoordinator(agentRuns);
   const sandboxRuntime = new PersistentFakeSandboxRuntime();
+  let id = 0;
+  const createId = () => `id_${++id}`;
+  const createAgentRuns = new CreateAgentRunService({
+    agentRuns,
+    clock: { now: () => new Date(now) },
+    createId,
+    defaultModelId: "gemini-3.6-flash",
+    runExecutions: coordinator,
+    sandboxLeases,
+    sandboxRuntimeId: "fake",
+    workingDirectory: "/workspace",
+  });
   const services: ServerServices = {
     agentRuns,
+    createAgentRuns,
     defaultModelId: "gemini-3.6-flash",
     enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
     messages,
@@ -466,7 +480,6 @@ function createFixture(
     sandboxRuntimeId: "fake",
     sandboxLeases,
   };
-  let id = 0;
   const app = new Hono<AppEnv>();
 
   app.use("*", async (c, next) => {
@@ -476,7 +489,7 @@ function createFixture(
   app.route(
     "/api",
     createProjectApi({
-      createId: () => `id_${++id}`,
+      createId,
       createServices: () => services,
       getDeploymentPolicy: () => ({
         accessMode: "open",

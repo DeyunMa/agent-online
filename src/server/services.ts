@@ -7,16 +7,15 @@ import type {
   SandboxLeaseRepository,
 } from "../application/ports";
 import {
-  ProjectFilesService,
-} from "../application/project-files";
+  CreateAgentRunService,
+  type AgentRunExecutionStarter,
+} from "../application/create-agent-run";
+import { ProjectFilesService } from "../application/project-files";
 import {
   ProjectSandboxService,
   type StopProjectSandboxResult,
 } from "../application/project-sandbox";
-import {
-  RunCoordinator,
-  type StartAgentRunInput,
-} from "../application/run-coordinator";
+import { RunCoordinator } from "../application/run-coordinator";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
@@ -37,13 +36,9 @@ import {
   type InstalledSandboxRuntimeId,
 } from "./runtime-config";
 
-export type RunExecutionStartResult = {
-  completion: Promise<AgentRunRecord> | null;
-};
-
-export interface RunExecutionDispatcher {
+export interface RunExecutionDispatcher
+  extends AgentRunExecutionStarter {
   cancel(run: AgentRunRecord, now: Date): Promise<AgentRunRecord | null>;
-  start(input: StartAgentRunInput): Promise<RunExecutionStartResult>;
 }
 
 export interface ProjectSandboxController {
@@ -52,6 +47,7 @@ export interface ProjectSandboxController {
 
 export type ServerServices = {
   agentRuns: AgentRunRepository;
+  createAgentRuns: CreateAgentRunService;
   defaultModelId: string;
   enabledAgentRuntimeIds: readonly AgentRuntimeId[];
   messages: MessageRepository;
@@ -99,6 +95,16 @@ export function createServerServices(env: AppBindings): ServerServices {
 
   return {
     agentRuns,
+    createAgentRuns: new CreateAgentRunService({
+      agentRuns,
+      clock: { now: () => new Date() },
+      createId: () => crypto.randomUUID(),
+      defaultModelId: getDefaultModelId(env),
+      runExecutions,
+      sandboxLeases,
+      sandboxRuntimeId,
+      workingDirectory: defaultWorkingDirectory,
+    }),
     defaultModelId: getDefaultModelId(env),
     enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
     messages,
