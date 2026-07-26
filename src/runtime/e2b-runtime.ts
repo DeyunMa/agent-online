@@ -343,41 +343,55 @@ export class E2BSandboxRuntime
   ) {
     assertPreviewStartInput(input);
     const preset = vitePreviewPreset(input.contentBasePath);
-    let sandbox = await this.attachSandbox(handle);
-    if (!sandbox.trafficAccessToken) {
-      sandbox = await this.client.connect(handle.id, {
-        apiKey: this.options.apiKey,
-      });
-      this.sandboxes.set(sandbox.sandboxId, sandbox);
-    }
-    requireTrafficAccessToken(sandbox);
-    await sandbox.files.write(previewConfigPath, previewConfig);
-
-    const process = await sandbox.commands.run(
-      toShellCommand(preset),
-      {
-        background: true,
-        cwd: preset.cwd,
-        envs: { ...preset.env },
-        timeoutMs: input.processTimeoutMs,
-      },
-    );
-
+    let process: E2BCommandHandle | undefined;
+    let sandbox: E2BSandbox | undefined;
+    let stage:
+      | "attach"
+      | "command_start"
+      | "disconnect"
+      | "traffic_token"
+      | "wait_ready"
+      | "write_config" = "attach";
     try {
+      sandbox = await this.attachSandbox(handle);
+      stage = "traffic_token";
+      if (!sandbox.trafficAccessToken) {
+        sandbox = await this.client.connect(handle.id, {
+          apiKey: this.options.apiKey,
+        });
+        this.sandboxes.set(sandbox.sandboxId, sandbox);
+      }
+      requireTrafficAccessToken(sandbox);
+      stage = "write_config";
+      await sandbox.files.write(previewConfigPath, previewConfig);
+      stage = "command_start";
+      const startedProcess = await sandbox.commands.run(
+        toShellCommand(preset),
+        {
+          background: true,
+          cwd: preset.cwd,
+          envs: { ...preset.env },
+          timeoutMs: input.processTimeoutMs,
+        },
+      );
+      process = startedProcess;
+      stage = "wait_ready";
       await waitForPreviewReady(
         sandbox,
-        process.pid,
+        startedProcess.pid,
         input.port,
         input.contentBasePath,
         input.startupTimeoutMs,
       );
-      await process.disconnect();
+      stage = "disconnect";
+      await startedProcess.disconnect();
+      return { providerProcessRef: String(startedProcess.pid) };
     } catch (error) {
-      await sandbox.commands.kill(process.pid).catch(() => false);
-      throw error;
+      if (sandbox && process) {
+        await sandbox.commands.kill(process.pid).catch(() => false);
+      }
+      throw toPreviewStartError(stage, error);
     }
-
-    return { providerProcessRef: String(process.pid) };
   }
 
   async isPreviewRunning(
@@ -833,6 +847,16 @@ function requireTrafficAccessToken(sandbox: E2BSandbox) {
     throw new Error("E2B Preview traffic access token is unavailable");
   }
   return sandbox.trafficAccessToken;
+}
+
+function toPreviewStartError(stage: string, error: unknown) {
+  const sourceName =
+    error instanceof Error ? error.name : "UnknownError";
+  const result = new Error("E2B Preview start failed", {
+    cause: error,
+  });
+  result.name = `E2BPreviewStartError.${stage}.${sourceName}`;
+  return result;
 }
 
 async function waitForPreviewReady(
