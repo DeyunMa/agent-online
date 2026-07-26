@@ -136,6 +136,32 @@ describe("Preview API", () => {
     );
   });
 
+  it("replaces only Vite's client module with a no-network style runtime", async () => {
+    const fixture = createFixture();
+    const statusResponse = await fixture.app.request(
+      "https://agent-online.test/api/projects/project-1/preview",
+      undefined,
+      fixture.env,
+    );
+    const status = await statusResponse.json<ProjectPreviewResponse>();
+    const response = await fixture.app.request(
+      `https://agent-online.test${status.contentUrl}@vite/client`,
+      undefined,
+      fixture.env,
+    );
+    const source = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain(
+      "text/javascript",
+    );
+    expect(source).toContain("export function createHotContext()");
+    expect(source).toContain("export function updateStyle(id, content)");
+    expect(source).toContain("export function removeStyle(id)");
+    expect(source).not.toContain("sandbox-provider");
+    expect(fixture.fetchPreview).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects a tampered or stopped content capability", async () => {
     const fixture = createFixture();
     const statusResponse = await fixture.app.request(

@@ -52,6 +52,46 @@ const previewContentCsp = [
   "worker-src blob:",
 ].join("; ");
 
+const viteClientStub = `
+const styles = new Map();
+
+export function createHotContext() {
+  return {
+    accept() {},
+    acceptExports() {},
+    decline() {},
+    dispose() {},
+    invalidate() {},
+    on() {},
+    prune() {},
+    send() {},
+  };
+}
+
+export function injectQuery(url) {
+  return url;
+}
+
+export function updateStyle(id, content) {
+  let style = styles.get(id);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("data-vite-dev-id", id);
+    document.head.appendChild(style);
+    styles.set(id, style);
+  }
+  style.textContent = content;
+}
+
+export function removeStyle(id) {
+  const style = styles.get(id);
+  if (style) {
+    style.remove();
+    styles.delete(id);
+  }
+}
+`.trim();
+
 export function createPreviewApi(
   overrides: Partial<PreviewApiDependencies> = {},
 ) {
@@ -184,6 +224,9 @@ export function createPreviewApi(
       projectId,
       token,
     );
+    if (isViteClientResourcePath(upstreamPath, baseUrl)) {
+      return createViteClientStubResponse(c.req.method === "HEAD");
+    }
     return preparePreviewResponse(result.response, baseUrl);
   };
 
@@ -436,6 +479,20 @@ export function isViteClientResourcePath(
     ? value.slice(baseUrl.length)
     : value.replace(/^\/+/, "");
   return withoutBase.split(/[?#]/, 1)[0] === "@vite/client";
+}
+
+function createViteClientStubResponse(headOnly: boolean) {
+  return new Response(headOnly ? null : viteClientStub, {
+    headers: {
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store",
+      "content-security-policy": previewContentCsp,
+      "content-type": "text/javascript; charset=utf-8",
+      "cross-origin-resource-policy": "cross-origin",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 function rewriteRootRelativeUrl(value: string, baseUrl: string) {
