@@ -349,9 +349,11 @@ export class E2BSandboxRuntime
       | "attach"
       | "command_start"
       | "disconnect"
+      | "reconnect_after_write"
       | "traffic_token"
       | "wait_ready"
-      | "write_config" = "attach";
+      | "write_config"
+      | "write_config_retry" = "attach";
     try {
       sandbox = await this.attachSandbox(handle);
       stage = "traffic_token";
@@ -363,7 +365,18 @@ export class E2BSandboxRuntime
       }
       requireTrafficAccessToken(sandbox);
       stage = "write_config";
-      await sandbox.files.write(previewConfigPath, previewConfig);
+      try {
+        await sandbox.files.write(previewConfigPath, previewConfig);
+      } catch {
+        stage = "reconnect_after_write";
+        sandbox = await this.client.connect(handle.id, {
+          apiKey: this.options.apiKey,
+        });
+        this.sandboxes.set(sandbox.sandboxId, sandbox);
+        requireTrafficAccessToken(sandbox);
+        stage = "write_config_retry";
+        await sandbox.files.write(previewConfigPath, previewConfig);
+      }
       stage = "command_start";
       const startedProcess = await sandbox.commands.run(
         toShellCommand(preset),

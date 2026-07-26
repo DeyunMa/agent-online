@@ -214,6 +214,48 @@ describe("E2BSandboxRuntime", () => {
     }
   });
 
+  it("reconnects once when writing the Preview config transiently fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<h1>Ready</h1>", {
+            headers: { "content-type": "text/html" },
+          }),
+      ),
+    );
+    try {
+      const sandbox = new FakeE2BSandbox("sandbox-existing");
+      sandbox.fileWriteErrorsRemaining = 1;
+      const client = new FakeE2BClient(sandbox);
+      const runtime = createRuntime(client);
+      const handle = await runtime.ensureLease({
+        projectId: "project-1",
+        providerRef: "sandbox-existing",
+        sandboxLeaseId: "lease-1",
+      });
+
+      await expect(
+        runtime.startPreview(handle, {
+          contentBasePath:
+            "/api/projects/project-1/preview/content/capability/",
+          port: 3000,
+          preset: "vite-v1",
+          processTimeoutMs: 30_000,
+          startupTimeoutMs: 2_000,
+        }),
+      ).resolves.toEqual({ providerProcessRef: "42" });
+
+      expect(client.connected).toEqual([
+        "sandbox-existing",
+        "sandbox-existing",
+      ]);
+      expect(sandbox.fileWrites).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("terminates a persisted PTY reference through the terminal capability", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
     const runtime = createRuntime(new FakeE2BClient(sandbox));
@@ -377,6 +419,7 @@ class FakeE2BClient implements E2BSandboxClient {
 class FakeE2BSandbox {
   command = "";
   commandOptions: (CommandStartOpts & { background: true }) | null = null;
+  fileWriteErrorsRemaining = 0;
   killed = false;
   processKillResult = true;
   terminalKillResult = true;
@@ -413,6 +456,10 @@ class FakeE2BSandbox {
     read: async (_path: string, _options: { format: "bytes" }) =>
       new TextEncoder().encode("example"),
     write: async (path: string, content: string) => {
+      if (this.fileWriteErrorsRemaining > 0) {
+        this.fileWriteErrorsRemaining -= 1;
+        throw new Error("Transient file write failure");
+      }
       this.fileWrites.push({ content, path });
     },
   };
