@@ -59,7 +59,9 @@ describe("Run capability codec", () => {
   });
 
   it("rejects excessive capability lifetimes and weak signing secrets", async () => {
-    expect(() => createRunCapabilityCodec({ secret: "too-short" })).toThrow("at least 32 characters");
+    expect(() => createRunCapabilityCodec({ secret: "too-short" })).toThrow(
+      "at least 32 characters",
+    );
 
     const codec = createRunCapabilityCodec({ secret });
     await expect(

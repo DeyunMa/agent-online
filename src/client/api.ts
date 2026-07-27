@@ -160,10 +160,7 @@ function projectFilesPath(projectId: string, path: string, content = false) {
   return `/api/projects/${encodeURIComponent(projectId)}/files${suffix}${search}`;
 }
 
-function projectChangesPath(
-  projectId: string,
-  path?: string,
-) {
+function projectChangesPath(projectId: string, path?: string) {
   const query = new URLSearchParams();
   if (path !== undefined) {
     query.set("path", path);
@@ -179,10 +176,13 @@ export const browserApi = {
   },
 
   createAgentRun(projectId: string, input: CreateAgentRunRequest) {
-    return requestJson<AgentRunResponse>(`/api/projects/${encodeURIComponent(projectId)}/agent-runs`, {
-      body: JSON.stringify(input),
-      method: "POST",
-    });
+    return requestJson<AgentRunResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
+      {
+        body: JSON.stringify(input),
+        method: "POST",
+      },
+    );
   },
 
   createProject(input: CreateProjectRequest) {
@@ -197,7 +197,9 @@ export const browserApi = {
   },
 
   getActiveAgentRun(projectId: string) {
-    return requestJson<AgentRunResponse | null>(`/api/projects/${encodeURIComponent(projectId)}/agent-runs/active`);
+    return requestJson<AgentRunResponse | null>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-runs/active`,
+    );
   },
 
   getHealth() {
@@ -217,11 +219,15 @@ export const browserApi = {
   },
 
   listMessages(projectId: string) {
-    return requestJson<MessageResponse[]>(`/api/projects/${encodeURIComponent(projectId)}/messages`);
+    return requestJson<MessageResponse[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/messages`,
+    );
   },
 
   listAgentRuns(projectId: string) {
-    return requestJson<AgentRunResponse[]>(`/api/projects/${encodeURIComponent(projectId)}/agent-runs`);
+    return requestJson<AgentRunResponse[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
+    );
   },
 
   listProjects() {
@@ -233,15 +239,11 @@ export const browserApi = {
   },
 
   listProjectChanges(projectId: string) {
-    return requestJson<ProjectChangesResponse>(
-      projectChangesPath(projectId),
-    );
+    return requestJson<ProjectChangesResponse>(projectChangesPath(projectId));
   },
 
   readProjectChange(projectId: string, path: string) {
-    return requestJson<ProjectChangeDiffResponse>(
-      projectChangesPath(projectId, path),
-    );
+    return requestJson<ProjectChangeDiffResponse>(projectChangesPath(projectId, path));
   },
 
   readProjectFile(projectId: string, path: string) {

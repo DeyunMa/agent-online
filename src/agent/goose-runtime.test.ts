@@ -5,40 +5,50 @@ import type {
   SandboxProcessEvent,
   SandboxProcessSession,
 } from "../runtime/contract";
-import type {
-  AgentEvent,
-  AgentExecutionContext,
-  AgentRunInput,
-} from "./contract";
+import type { AgentEvent, AgentExecutionContext, AgentRunInput } from "./contract";
 import { gooseRuntime } from "./goose-runtime";
 
 describe("gooseRuntime", () => {
   it("configures a Run-scoped provider and maps Goose stream-json events", async () => {
     const session = new TestSandboxProcessSession([
-      output(`${JSON.stringify(messageRecord({
-        content: [{ text: "Working", type: "text" }],
-        id: "message_1",
-      }))}\n${JSON.stringify(messageRecord({
-        content: [{
-          id: "tool_1",
-          toolCall: {
-            status: "success",
-            value: {
-              arguments: { path: "demo.txt" },
-              name: "developer__shell",
-            },
-          },
-          type: "toolRequest",
-        }],
-        id: "message_2",
-      }))}\n`),
-      output(`${JSON.stringify(messageRecord({
-        content: [{ text: "Done", type: "text" }],
-        id: "message_3",
-      }))}\n${JSON.stringify(messageRecord({
-        content: [{ text: " completely", type: "text" }],
-        id: "message_4",
-      }))}\n${JSON.stringify({ total_tokens: 42, type: "complete" })}\n`),
+      output(
+        `${JSON.stringify(
+          messageRecord({
+            content: [{ text: "Working", type: "text" }],
+            id: "message_1",
+          }),
+        )}\n${JSON.stringify(
+          messageRecord({
+            content: [
+              {
+                id: "tool_1",
+                toolCall: {
+                  status: "success",
+                  value: {
+                    arguments: { path: "demo.txt" },
+                    name: "developer__shell",
+                  },
+                },
+                type: "toolRequest",
+              },
+            ],
+            id: "message_2",
+          }),
+        )}\n`,
+      ),
+      output(
+        `${JSON.stringify(
+          messageRecord({
+            content: [{ text: "Done", type: "text" }],
+            id: "message_3",
+          }),
+        )}\n${JSON.stringify(
+          messageRecord({
+            content: [{ text: " completely", type: "text" }],
+            id: "message_4",
+          }),
+        )}\n${JSON.stringify({ total_tokens: 42, type: "complete" })}\n`,
+      ),
       {
         exitCode: 0,
         sandboxLeaseId: "lease_1",
@@ -97,28 +107,19 @@ describe("gooseRuntime", () => {
     const providerWrite = context.fileWrites.find((write) =>
       write.path.endsWith("/agent_online.json"),
     );
-    const promptWrite = context.fileWrites.find((write) =>
-      write.path.endsWith("/prompt.md"),
-    );
+    const promptWrite = context.fileWrites.find((write) => write.path.endsWith("/prompt.md"));
     expect(providerWrite?.content).toContain(
       "https://agent-online.test/api/model-gateway/v1/chat/completions",
     );
-    expect(providerWrite?.content).toContain(
-      '"api_key_env":"AGENT_ONLINE_GATEWAY_TOKEN"',
-    );
+    expect(providerWrite?.content).toContain('"api_key_env":"AGENT_ONLINE_GATEWAY_TOKEN"');
     expect(providerWrite?.content).not.toContain("run-capability");
     expect(promptWrite?.content).toBe("Inspect and update the project.");
-    expect(JSON.stringify(context.command?.args)).not.toContain(
-      "Inspect and update the project.",
-    );
+    expect(JSON.stringify(context.command?.args)).not.toContain("Inspect and update the project.");
   });
 
   it("terminates the Goose process without writing to stdin when cancelled", async () => {
     const session = new TestSandboxProcessSession([]);
-    const execution = await gooseRuntime.start(
-      new TestAgentExecutionContext(session),
-      runInput(),
-    );
+    const execution = await gooseRuntime.start(new TestAgentExecutionContext(session), runInput());
 
     await execution.cancel("cancelled");
 
@@ -128,38 +129,37 @@ describe("gooseRuntime", () => {
 
   it("fails closed when Goose exits without its completion record", async () => {
     const session = new TestSandboxProcessSession([
-      output(`${JSON.stringify(messageRecord({
-        content: [{ text: "Incomplete", type: "text" }],
-        id: "message_1",
-      }))}\n`),
+      output(
+        `${JSON.stringify(
+          messageRecord({
+            content: [{ text: "Incomplete", type: "text" }],
+            id: "message_1",
+          }),
+        )}\n`,
+      ),
       {
         exitCode: 0,
         sandboxLeaseId: "lease_1",
         type: "process.completed",
       },
     ]);
-    const execution = await gooseRuntime.start(
-      new TestAgentExecutionContext(session),
-      runInput(),
-    );
+    const execution = await gooseRuntime.start(new TestAgentExecutionContext(session), runInput());
 
-    await expect(collect(execution.events())).rejects.toThrow(
-      "without a stream completion event",
-    );
+    await expect(collect(execution.events())).rejects.toThrow("without a stream completion event");
   });
 
   it("rejects non-HTTPS ModelGateway URLs outside local development", async () => {
     const input = runInput();
+    if (!input.modelAccess) {
+      throw new Error("Test input requires ModelGateway access");
+    }
     input.modelAccess = {
-      ...input.modelAccess!,
+      ...input.modelAccess,
       baseUrl: "http://agent-online.test/api/model-gateway/v1",
     };
 
     await expect(
-      gooseRuntime.start(
-        new TestAgentExecutionContext(new TestSandboxProcessSession([])),
-        input,
-      ),
+      gooseRuntime.start(new TestAgentExecutionContext(new TestSandboxProcessSession([])), input),
     ).rejects.toThrow("must use HTTPS");
   });
 });

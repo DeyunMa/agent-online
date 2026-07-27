@@ -1,8 +1,4 @@
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-} from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { createPortal } from "react-dom";
 
 const AppHeaderSlotContext = createContext<HTMLElement | null>(null);
@@ -14,11 +10,7 @@ export function AppHeaderSlotProvider({
   children: ReactNode;
   target: HTMLElement | null;
 }) {
-  return (
-    <AppHeaderSlotContext.Provider value={target}>
-      {children}
-    </AppHeaderSlotContext.Provider>
-  );
+  return <AppHeaderSlotContext.Provider value={target}>{children}</AppHeaderSlotContext.Provider>;
 }
 
 export function AppHeaderSlot({ children }: { children: ReactNode }) {

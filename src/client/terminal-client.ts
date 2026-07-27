@@ -56,25 +56,16 @@ export function connectProjectTerminal(
       return;
     }
 
-    const { chunk, remaining } = takeUtf8Prefix(
-      pendingInput,
-      terminalInputChunkBytes,
-    );
+    const { chunk, remaining } = takeUtf8Prefix(pendingInput, terminalInputChunkBytes);
     pendingInput = remaining;
     sendMessage(socket, { data: chunk, type: "input" });
     if (pendingInput) {
-      inputFlushTimer = setTimeout(
-        flushInput,
-        terminalInputFlushDelayMs,
-      );
+      inputFlushTimer = setTimeout(flushInput, terminalInputFlushDelayMs);
     }
   };
   const scheduleInputFlush = () => {
     if (!inputFlushTimer) {
-      inputFlushTimer = setTimeout(
-        flushInput,
-        terminalInputFlushDelayMs,
-      );
+      inputFlushTimer = setTimeout(flushInput, terminalInputFlushDelayMs);
     }
   };
   const clearForceCloseTimer = () => {
@@ -89,17 +80,12 @@ export function connectProjectTerminal(
     }
     forceCloseTimer = setTimeout(() => {
       forceCloseTimer = null;
-      if (
-        socket.readyState === WebSocket.OPEN ||
-        socket.readyState === WebSocket.CONNECTING
-      ) {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.close();
       }
     }, 5_000);
   };
-  const reportError = (
-    code: TerminalServerErrorCode | "network_error",
-  ) => {
+  const reportError = (code: TerminalServerErrorCode | "network_error") => {
     if (errorReported || deliberateClose || serverClosed) {
       return;
     }
@@ -179,10 +165,7 @@ export function connectProjectTerminal(
       clearInputFlushTimer();
       pendingInput = "";
       clearForceCloseTimer();
-      if (
-        socket.readyState === WebSocket.OPEN ||
-        socket.readyState === WebSocket.CONNECTING
-      ) {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.close();
       }
     },
@@ -222,9 +205,7 @@ export function takeUtf8Prefix(source: string, maxBytes: number) {
   };
 }
 
-export function parseTerminalServerMessage(
-  source: string,
-): TerminalServerMessage | null {
+export function parseTerminalServerMessage(source: string): TerminalServerMessage | null {
   let value: unknown;
   try {
     value = JSON.parse(source);
@@ -242,29 +223,20 @@ export function parseTerminalServerMessage(
   ) {
     return { expiresAt: value.expiresAt, type: "ready" };
   }
-  if (
-    value.type === "closed" &&
-    Number.isSafeInteger(value.exitCode)
-  ) {
+  if (value.type === "closed" && Number.isSafeInteger(value.exitCode)) {
     return {
       exitCode: value.exitCode as number,
       type: "closed",
     };
   }
-  if (
-    value.type === "error" &&
-    isTerminalServerErrorCode(value.code)
-  ) {
+  if (value.type === "error" && isTerminalServerErrorCode(value.code)) {
     return { code: value.code, type: "error" };
   }
 
   return null;
 }
 
-function sendMessage(
-  socket: WebSocket,
-  message: TerminalClientMessage,
-) {
+function sendMessage(socket: WebSocket, message: TerminalClientMessage) {
   socket.send(JSON.stringify(message));
 }
 
@@ -281,9 +253,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isTerminalServerErrorCode(
-  value: unknown,
-): value is TerminalServerErrorCode {
+function isTerminalServerErrorCode(value: unknown): value is TerminalServerErrorCode {
   return (
     value === "invalid_message" ||
     value === "project_busy" ||
@@ -292,9 +262,7 @@ function isTerminalServerErrorCode(
   );
 }
 
-function messageForTerminalError(
-  code: TerminalServerErrorCode | "network_error",
-) {
+function messageForTerminalError(code: TerminalServerErrorCode | "network_error") {
   switch (code) {
     case "invalid_message":
       return "终端协议请求无效，请重新连接。";

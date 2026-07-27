@@ -1,7 +1,6 @@
 # 本地开发基线
 
-> 状态：D2 本地代码、真实 E2B spike 及远程 Workflow happy path、取消、deadline 和空闲 TTL 已完成
-> 当前阶段：受控只读 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview、只读 Changes 与 Goose 私有 Cloudflare spike 已通过远端验收。Goose 仍受公开门控。
+> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-27 已加入真实 D1、Biome、凭据扫描和 Playwright 核心 smoke 门禁。Goose 仍受公开门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -12,7 +11,8 @@ Agent Online 只有一个可部署产品：React SPA 静态资源和 Hono API �
 
 ```text
 src/client/     React、TanStack Router/Query、界面
-src/server/     Hono、Better Auth、HTTP 边界、配置
+src/server/     Hono、Better Auth、HTTP 边界、配置与服务装配
+  persistence/  按 Project/Lease/Run/Terminal/Preview/Usage 拆分的 D1 adapter
 src/domain/     Project、SandboxLease、AgentRun 的纯业务规则
 src/application/ Project 与 AgentRun 用例、ports、RunCoordinator
 src/runtime/    SandboxRuntime 合同与 fake/E2B/Container Adapter
@@ -42,14 +42,24 @@ worker/         Cloudflare Worker 入口
 ## 运行步骤
 
 1. 安装依赖：`pnpm install`。
-2. 在根目录创建本地 `.dev.vars`，填写 `BETTER_AUTH_SECRET`、`BETTER_AUTH_URL` 和 `GEMINI_API_KEY`。
+2. 在根目录创建本地 `.dev.vars`。fake 模式只填写 `BETTER_AUTH_SECRET` 和 `BETTER_AUTH_URL`；真实 E2B Run 再填写 `GEMINI_API_KEY`、`E2B_API_KEY` 和模板配置。
 3. 应用本地 D1 迁移：`pnpm wrangler d1 migrations apply DB --local`。
 4. 启动：`pnpm dev`，Vite/Workers 本地地址为 `http://localhost:5173`。
 5. 默认 `RUNTIME_PROVIDER` 为空时使用 fake；真实链路设置 `RUNTIME_PROVIDER=e2b`、`E2B_API_KEY`、`E2B_TEMPLATE_ID`，并为本地 E2B 提供可访问的 `MODEL_GATEWAY_BASE_URL`。
-6. 验证：`pnpm check`，并在浏览器完成注册、创建 Project、启动/取消 Run 的 smoke。该命令依次执行 import boundary、typecheck、非外部测试和 production build；GitHub Actions 使用同一门禁。真实 Preview 还要求当前 E2B `/workspace` 已有项目本地 `./node_modules/.bin/vite`；平台不会通过 `npx` 下载或执行 Project 自定义 script。
+6. 首次运行浏览器门禁前安装 Chromium：`pnpm exec playwright install chromium`。
+7. 验证：`pnpm check`。该命令依次执行 import boundary、源码凭据扫描、Biome lint/format、typecheck、Node 测试、真实 Workers/D1 迁移测试、production build/产物扫描，以及独立本地 D1 上的浏览器核心 smoke；GitHub Actions 使用同一门禁。真实 Preview 还要求当前 E2B `/workspace` 已有项目本地 `./node_modules/.bin/vite`；平台不会通过 `npx` 下载或执行 Project 自定义 script。
 
-`pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*` 或 `.env*` 文件。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。需要本地 Secret 的运行流程使用 `pnpm dev`，不依赖构建目录。
+`pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*`、`.env*` 或可识别的凭据内容。`validate:source-secrets` 同时扫描 Git tracked 和未忽略的工作树文件，但不打印匹配值。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。
 
-`wrangler.jsonc` 顶层的 D1 ID 是本地开发占位值，`preview` 环境使用独立的真实 D1 ID。新增远程环境时只创建目标 D1 并配置对应环境；R2 不属于 V1。本项目不会自动创建任何云端资源。
+Playwright 使用 `tests/browser/wrangler.jsonc` 和 `.wrangler/browser-smoke`，启动前会重建这份独立本地 D1，并在进程内随机生成测试 Better Auth Secret。它不读取产品 D1、不调用 E2B/Gemini，也不修改远程资源。
+
+真实部署另使用 `playwright.preview.config.ts` 和
+[Hosted Preview E2E](../testing/hosted-preview-e2e.md)。该流程必须显式提供受邀账号，
+只在发布后人工触发，不属于默认检查，也不会读取 `.dev.vars`。
+
+`wrangler.jsonc` 顶层的 D1 ID 是本地开发占位值，通用 `pnpm deploy` 会被 production
+guard 拒绝。`preview` 环境固定目标 Account 并使用独立的真实 D1 ID；本机
+`CLOUDFLARE_ACCOUNT_ID` 若与配置冲突，Preview deploy/preflight 也会拒绝。新增远程
+环境时只创建目标 D1 并配置对应环境；R2 不属于 V1。本项目不会自动创建任何云端资源。
 
 需要在本地模拟私有 Preview 时，设置 `ACCESS_MODE=allowlist`、`ACCESS_ALLOWED_EMAILS=<测试邮箱>` 和 `RUNS_ENABLED=false`。远程流程见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。

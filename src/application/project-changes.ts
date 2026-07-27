@@ -46,14 +46,9 @@ export type ReadProjectChangeResult =
 
 export type ProjectChangesServiceOptions = {
   agentRuns: Pick<AgentRunRepository, "findActiveByProjectId">;
-  getSandboxRuntime(
-    id: RuntimeKind,
-  ): SandboxChangesRuntime | null;
+  getSandboxRuntime(id: RuntimeKind): SandboxChangesRuntime | null;
   sandboxLeases: Pick<SandboxLeaseRepository, "findByProjectId">;
-  terminalSessions: Pick<
-    TerminalSessionRepository,
-    "findByProjectId"
-  >;
+  terminalSessions: Pick<TerminalSessionRepository, "findByProjectId">;
 };
 
 export class ProjectChangesService {
@@ -66,9 +61,7 @@ export class ProjectChangesService {
     }
 
     try {
-      const changes = await access.runtime.listChanges(
-        access.handle,
-      );
+      const changes = await access.runtime.listChanges(access.handle);
       return {
         changes: {
           ...changes,
@@ -92,14 +85,8 @@ export class ProjectChangesService {
     }
   }
 
-  async read(
-    projectId: string,
-    rawPath: string | undefined,
-  ): Promise<ReadProjectChangeResult> {
-    if (
-      rawPath === undefined ||
-      !isSupportedSandboxChangePath(rawPath)
-    ) {
+  async read(projectId: string, rawPath: string | undefined): Promise<ReadProjectChangeResult> {
+    if (rawPath === undefined || !isSupportedSandboxChangePath(rawPath)) {
       return { kind: "unsupported_path" };
     }
 
@@ -109,20 +96,13 @@ export class ProjectChangesService {
     }
 
     try {
-      const snapshot = await access.runtime.listChanges(
-        access.handle,
-      );
-      const change = snapshot.entries.find(
-        (entry) => entry.path === rawPath,
-      );
+      const snapshot = await access.runtime.listChanges(access.handle);
+      const change = snapshot.entries.find((entry) => entry.path === rawPath);
       if (!change) {
         return { kind: "path_not_found" };
       }
 
-      const diff = await access.runtime.readChangeDiff(
-        access.handle,
-        change,
-      );
+      const diff = await access.runtime.readChangeDiff(access.handle, change);
       return {
         details: {
           change,
@@ -138,9 +118,7 @@ export class ProjectChangesService {
     }
   }
 
-  private async getAccess(
-    projectId: string,
-  ): Promise<
+  private async getAccess(projectId: string): Promise<
     | {
         handle: RuntimeHandle;
         kind: "ok";
@@ -149,11 +127,7 @@ export class ProjectChangesService {
     | Extract<
         ProjectChangesFailure,
         {
-          kind:
-            | "project_busy"
-            | "provider_error"
-            | "runtime_mismatch"
-            | "sandbox_unavailable";
+          kind: "project_busy" | "provider_error" | "runtime_mismatch" | "sandbox_unavailable";
         }
       >
   > {
@@ -164,9 +138,7 @@ export class ProjectChangesService {
       return { kind: "project_busy" };
     }
 
-    const lease = await this.options.sandboxLeases.findByProjectId(
-      projectId,
-    );
+    const lease = await this.options.sandboxLeases.findByProjectId(projectId);
     if (!lease?.providerRef) {
       return { kind: "sandbox_unavailable" };
     }

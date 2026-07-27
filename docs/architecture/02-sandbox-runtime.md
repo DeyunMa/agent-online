@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose、模型通道、进程取消、deadline、Workflow 空闲回收、只读 Files、受控 Terminal、受控 Project Preview 与只读 Changes 均已通过私有 Cloudflare 环境验收；Goose 公开产品路径仍受门控。
+> 状态：E2B、Pi/Goose 私有 spike、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-27 已补强协议分层和真实 D1/浏览器门禁。Goose 公开产品路径仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -281,10 +281,7 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 - 固定 `vite-v1` Preview、同源 GET/HEAD 内容网关、D1 临时所有权、30 分钟 expiry 与停止后的 idle cleanup。
 - 固定 Git status/diff、危险 repository 配置拒绝、输出截断、no-store 和桌面/移动端 Project Inspector。
 
-待完成：
-
-- 每用户并发上限和基础 usage 管理视图。
-- Cloudflare 远程环境中更复杂任务对 Workflow Free CPU 和 subrequest 上限的持续验证。
+当前仍需持续观察 Cloudflare 远程环境中复杂任务对 Workflow Free CPU、steps 和 subrequest 上限的影响。每用户全局配额和管理视图不属于当前实现，不能被文档或 UI 当作已有护栏。
 
 执行协调设计见 [ADR-0003](../adr/0003-agent-run-workflow.md)。在受控 API 完成前，不得向浏览器开放 Provider ID、内部端口或任意 shell 命令。
 

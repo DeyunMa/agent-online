@@ -1,6 +1,6 @@
 # Cloudflare Preview 资源台账
 
-> 状态：2026-07-26 已创建私有 Cloudflare 环境，`RUNS_ENABLED=true`，Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止均已通过受控验收。
+> 状态：本文记录 2026-07-26 已部署的私有 Cloudflare 环境。该环境的 D1 当前只应用至 `0005_preview_sessions.sql`；2026-07-27 本地架构加固和 `0006_integrity_guards.sql` 尚未部署。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -47,13 +47,21 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 | Worker Binding | `DB` |
 | Dashboard | [D1 Metrics](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/d1/databases/f5b3193a-298b-4a61-a07b-24f5fc26c28e/metrics) |
 
-已应用迁移：
+远程 Preview 当前已应用迁移：
 
 - `0001_app.sql`
 - `0002_d2_run_execution.sql`
 - `0003_provider_process_ref.sql`
 - `0004_terminal_sessions.sql`
 - `0005_preview_sessions.sql`
+
+本地待下一次获批部署应用：
+
+- `0006_integrity_guards.sql`
+
+应用 `0006` 时必须先部署 `RUNS_ENABLED=false` 的当前新代码，等待旧 Run/Workflow 和
+Terminal/Preview 活动全部收敛，通过只读完整性预检后再迁移；不能让旧 Worker 在新
+trigger 下继续完成 Run。具体顺序见[私有 Preview 部署](./preview-deployment.md)。
 
 D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage，以及当前 Terminal/Preview 的临时协调行。Terminal/Preview 停止后对应行删除；Changes 不新增表，不保存 Git status/diff/history。没有创建 R2、KV、Durable Object 或文件快照。
 
@@ -173,6 +181,14 @@ env -u CLOUDFLARE_API_TOKEN \
   pnpm wrangler d1 migrations apply DB --remote --env preview
 ```
 
+迁移前只读预检：
+
+```sh
+env -u CLOUDFLARE_API_TOKEN \
+  CLOUDFLARE_ACCOUNT_ID=66a06222aa0acd9ea509abad73fa02fb \
+  pnpm release:preview:preflight
+```
+
 部署 Preview：
 
 ```sh
@@ -184,3 +200,6 @@ env -u CLOUDFLARE_API_TOKEN \
 配置变更部署后，Worker binding 会先显示新值，Workflow 执行版本仍可能存在短暂传播窗口。涉及 timeout、TTL 或成本护栏的变更，不要立即以第一个实例下结论；先在 Workflow 实例详情核对 `step.do` 配置，再开始正式验收。
 
 出现成本、授权或 Provider 异常时，把仓库中的 `RUNS_ENABLED` 改回 `"false"` 并重新部署。不要通过删除 Worker、D1 或 Workflow 处理普通故障。
+
+顶层 production D1 和变量尚未配置。`pnpm deploy` 会被 production config guard 拒绝；
+当前远程发布只能使用带显式 Account guard 的 `pnpm deploy:preview`。

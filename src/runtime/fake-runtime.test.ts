@@ -5,7 +5,11 @@ import { FakeSandboxRuntime } from "./fake-runtime";
 describe("FakeSandboxRuntime", () => {
   it("executes a generic command with a stable process event sequence", async () => {
     const runtime = new FakeSandboxRuntime();
-    const handle = await runtime.ensureLease({ projectId: "project_1", providerRef: null, sandboxLeaseId: "lease_1" });
+    const handle = await runtime.ensureLease({
+      projectId: "project_1",
+      providerRef: null,
+      sandboxLeaseId: "lease_1",
+    });
     const session = await runtime.startProcess(handle, {
       agentRunId: "run_1",
       args: ["--mode", "rpc"],
@@ -23,7 +27,11 @@ describe("FakeSandboxRuntime", () => {
 
   it("terminates a process session without stopping the whole lease", async () => {
     const runtime = new FakeSandboxRuntime();
-    const handle = await runtime.ensureLease({ projectId: "project_1", providerRef: null, sandboxLeaseId: "lease_1" });
+    const handle = await runtime.ensureLease({
+      projectId: "project_1",
+      providerRef: null,
+      sandboxLeaseId: "lease_1",
+    });
     const session = await runtime.startProcess(handle, {
       agentRunId: "run_1",
       args: [],
@@ -41,17 +49,23 @@ describe("FakeSandboxRuntime", () => {
     expect(events.map((event) => event.type)).toEqual(["process.started", "process.completed"]);
     expect(events.at(-1)).toMatchObject({ exitCode: 143, type: "process.completed" });
 
-    await expect(runtime.startProcess(handle, {
-      agentRunId: "run_2",
-      args: [],
-      command: "pi",
-      cwd: "/workspace",
-    })).resolves.toBeDefined();
+    await expect(
+      runtime.startProcess(handle, {
+        agentRunId: "run_2",
+        args: [],
+        command: "pi",
+        cwd: "/workspace",
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("observes cancellation while a delayed fake process is still active", async () => {
     const runtime = new FakeSandboxRuntime({ completionDelayMs: 20 });
-    const handle = await runtime.ensureLease({ projectId: "project_1", providerRef: null, sandboxLeaseId: "lease_1" });
+    const handle = await runtime.ensureLease({
+      projectId: "project_1",
+      providerRef: null,
+      sandboxLeaseId: "lease_1",
+    });
     const session = await runtime.startProcess(handle, {
       agentRunId: "run_1",
       args: [],
@@ -64,7 +78,9 @@ describe("FakeSandboxRuntime", () => {
     const completion = iterator.next();
     await session.terminate("cancelled");
 
-    await expect(completion).resolves.toMatchObject({ value: { exitCode: 143, type: "process.completed" } });
+    await expect(completion).resolves.toMatchObject({
+      value: { exitCode: 143, type: "process.completed" },
+    });
   });
 
   it("reuses the private provider reference supplied by the current Lease", async () => {

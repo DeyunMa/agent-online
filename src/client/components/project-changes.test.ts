@@ -17,15 +17,12 @@ describe("ProjectChanges", () => {
         },
       },
     });
-    queryClient.setQueryData(
-      projectChangesQueryKey(projectId),
-      {
-        entries: [],
-        repository: true,
-        truncated: false,
-        unsupportedEntries: true,
-      } satisfies ProjectChangesResponse,
-    );
+    queryClient.setQueryData(projectChangesQueryKey(projectId), {
+      entries: [],
+      repository: true,
+      truncated: false,
+      unsupportedEntries: true,
+    } satisfies ProjectChangesResponse);
 
     const markup = renderToStaticMarkup(
       createElement(
@@ -52,15 +49,12 @@ describe("ProjectChanges", () => {
         },
       },
     });
-    queryClient.setQueryData(
-      projectChangesQueryKey(projectId),
-      {
-        entries: [],
-        repository: true,
-        truncated: true,
-        unsupportedEntries: false,
-      } satisfies ProjectChangesResponse,
-    );
+    queryClient.setQueryData(projectChangesQueryKey(projectId), {
+      entries: [],
+      repository: true,
+      truncated: true,
+      unsupportedEntries: false,
+    } satisfies ProjectChangesResponse);
 
     const markup = renderToStaticMarkup(
       createElement(

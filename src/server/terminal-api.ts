@@ -3,23 +3,15 @@ import { WSContext, type WSEvents } from "hono/ws";
 import { z } from "zod";
 
 import type { ProjectTerminalConnection } from "../application/project-terminal";
-import {
-  maxTerminalInputBytes,
-} from "../application/project-terminal";
+import { maxTerminalInputBytes } from "../application/project-terminal";
 import type {
   TerminalClientMessage,
   TerminalServerErrorCode,
   TerminalServerMessage,
 } from "../shared/terminal";
-import {
-  getAuthenticatedUser,
-  type AuthenticatedUser,
-} from "./auth-context";
+import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
-import {
-  createServerServices,
-  type ServerServices,
-} from "./services";
+import { createServerServices, type ServerServices } from "./services";
 
 const terminalClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
@@ -44,17 +36,11 @@ const maxTerminalFrameBytes = maxTerminalInputBytes + 1_024;
 
 type AppContext = Context<AppEnv>;
 
-type TerminalWebSocketUpgrade = (
-  c: AppContext,
-  events: WSEvents<WebSocket>,
-) => Promise<Response>;
+type TerminalWebSocketUpgrade = (c: AppContext, events: WSEvents<WebSocket>) => Promise<Response>;
 
 export type TerminalApiDependencies = {
   createServices(env: AppBindings): ServerServices;
-  getAuthenticatedUser(
-    env: AppBindings,
-    headers: Headers,
-  ): Promise<AuthenticatedUser | null>;
+  getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
   upgrade: TerminalWebSocketUpgrade;
 };
 
@@ -64,17 +50,12 @@ const defaultDependencies: TerminalApiDependencies = {
   upgrade: upgradeCloudflareWebSocket,
 };
 
-export function createTerminalApi(
-  overrides: Partial<TerminalApiDependencies> = {},
-) {
+export function createTerminalApi(overrides: Partial<TerminalApiDependencies> = {}) {
   const dependencies = { ...defaultDependencies, ...overrides };
   const api = new Hono<AppEnv>();
 
   api.get("/projects/:projectId/terminal", async (c) => {
-    const user = await dependencies.getAuthenticatedUser(
-      c.env,
-      c.req.raw.headers,
-    );
+    const user = await dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
     if (!user) {
       return apiError(c, "unauthorized", 401);
     }
@@ -83,31 +64,21 @@ export function createTerminalApi(
     }
 
     const services = dependencies.createServices(c.env);
-    const project = await services.projects.findOwnedById(
-      c.req.param("projectId"),
-      user.id,
-    );
+    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return apiError(c, "not_found", 404);
     }
 
     return dependencies.upgrade(
       c,
-      createTerminalSocketEvents(
-        services.projectTerminals,
-        project.id,
-        getWaitUntil(c),
-      ),
+      createTerminalSocketEvents(services.projectTerminals, project.id, getWaitUntil(c)),
     );
   });
 
   return api;
 }
 
-async function upgradeCloudflareWebSocket(
-  c: AppContext,
-  events: WSEvents<WebSocket>,
-) {
+async function upgradeCloudflareWebSocket(c: AppContext, events: WSEvents<WebSocket>) {
   if (c.req.header("Upgrade")?.toLowerCase() !== "websocket") {
     return new Response(null, { status: 426 });
   }
@@ -129,19 +100,13 @@ async function upgradeCloudflareWebSocket(
   });
 
   if (events.onClose) {
-    server.addEventListener("close", (event) =>
-      events.onClose?.(event, ws),
-    );
+    server.addEventListener("close", (event) => events.onClose?.(event, ws));
   }
   if (events.onMessage) {
-    server.addEventListener("message", (event) =>
-      events.onMessage?.(event, ws),
-    );
+    server.addEventListener("message", (event) => events.onMessage?.(event, ws));
   }
   if (events.onError) {
-    server.addEventListener("error", (event) =>
-      events.onError?.(event, ws),
-    );
+    server.addEventListener("error", (event) => events.onError?.(event, ws));
   }
   server.accept();
   events.onOpen?.(new Event("open"), ws);
@@ -202,10 +167,7 @@ function createTerminalSocketEvents(
     closeSocketBestEffort(ws, closeCode, code);
   };
 
-  const handleMessage = async (
-    raw: MessageEvent["data"],
-    ws: WSContext<WebSocket>,
-  ) => {
+  const handleMessage = async (raw: MessageEvent["data"], ws: WSContext<WebSocket>) => {
     const message = parseTerminalClientMessage(raw);
     if (!message) {
       await failSocket(ws, "invalid_message");
@@ -282,17 +244,13 @@ function createTerminalSocketEvents(
     onClose() {
       clearAttachTimer();
       socketClosed = true;
-      operations = operations
-        .then(() => closeConnection("client_closed"))
-        .catch(() => undefined);
+      operations = operations.then(() => closeConnection("client_closed")).catch(() => undefined);
       schedule(operations);
     },
     onError() {
       clearAttachTimer();
       socketClosed = true;
-      operations = operations
-        .then(() => closeConnection("failed"))
-        .catch(() => undefined);
+      operations = operations.then(() => closeConnection("failed")).catch(() => undefined);
       schedule(operations);
     },
     onMessage(event, ws) {
@@ -318,10 +276,7 @@ function createTerminalSocketEvents(
   };
 }
 
-async function pumpTerminalEvents(
-  connection: ProjectTerminalConnection,
-  ws: WSContext<WebSocket>,
-) {
+async function pumpTerminalEvents(connection: ProjectTerminalConnection, ws: WSContext<WebSocket>) {
   for await (const event of connection.events()) {
     if (event.type === "terminal.output") {
       const output = new Uint8Array(event.chunk.byteLength);
@@ -338,9 +293,7 @@ async function pumpTerminalEvents(
   }
 }
 
-function parseTerminalClientMessage(
-  raw: MessageEvent["data"],
-): TerminalClientMessage | null {
+function parseTerminalClientMessage(raw: MessageEvent["data"]): TerminalClientMessage | null {
   if (typeof raw !== "string") {
     return null;
   }
@@ -349,9 +302,7 @@ function parseTerminalClientMessage(
   }
 
   try {
-    const parsed = terminalClientMessageSchema.safeParse(
-      JSON.parse(raw),
-    );
+    const parsed = terminalClientMessageSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
@@ -379,10 +330,7 @@ function toTerminalErrorCode(
   }
 }
 
-function sendControlBestEffort(
-  ws: WSContext<WebSocket>,
-  message: TerminalServerMessage,
-) {
+function sendControlBestEffort(ws: WSContext<WebSocket>, message: TerminalServerMessage) {
   try {
     ws.send(JSON.stringify(message));
   } catch {
@@ -390,11 +338,7 @@ function sendControlBestEffort(
   }
 }
 
-function closeSocketBestEffort(
-  ws: WSContext<WebSocket>,
-  code: number,
-  reason: string,
-) {
+function closeSocketBestEffort(ws: WSContext<WebSocket>, code: number, reason: string) {
   try {
     ws.close(code, reason);
   } catch {

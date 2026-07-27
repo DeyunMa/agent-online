@@ -1,18 +1,15 @@
-export const agentRunStatuses = [
-  "queued",
-  "starting",
-  "running",
-  "cancelling",
+import type { AgentRunStatus } from "../shared/protocol";
+
+export { agentRunStatuses } from "../shared/protocol";
+export type { AgentRunStatus } from "../shared/protocol";
+
+const terminalStatuses = new Set<AgentRunStatus>([
   "succeeded",
   "failed",
   "cancelled",
   "timed_out",
   "interrupted",
-] as const;
-
-export type AgentRunStatus = (typeof agentRunStatuses)[number];
-
-const terminalStatuses = new Set<AgentRunStatus>(["succeeded", "failed", "cancelled", "timed_out", "interrupted"]);
+]);
 
 const allowedTransitions: Readonly<Record<AgentRunStatus, readonly AgentRunStatus[]>> = {
   queued: ["starting", "cancelled", "failed"],

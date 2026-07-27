@@ -1,28 +1,36 @@
 import { describe, expect, it } from "vitest";
 
-import type { SandboxCommand, SandboxProcessEvent, SandboxProcessSession } from "../runtime/contract";
+import type {
+  SandboxCommand,
+  SandboxProcessEvent,
+  SandboxProcessSession,
+} from "../runtime/contract";
 import type { AgentEvent, AgentExecutionContext } from "./contract";
 import { piRuntime } from "./pi-runtime";
 
 describe("piRuntime", () => {
   it("configures the Run-scoped model gateway and maps Pi JSONL to normalized events", async () => {
     const session = new TestSandboxProcessSession([
-      output([
-        JSON.stringify({ command: "prompt", success: true, type: "response" }),
-        JSON.stringify({
-          assistantMessageEvent: { delta: "Hello ", type: "text_delta" },
-          type: "message_update",
-        }),
-      ].join("\n") + "\n"),
+      output(
+        [
+          JSON.stringify({ command: "prompt", success: true, type: "response" }),
+          JSON.stringify({
+            assistantMessageEvent: { delta: "Hello ", type: "text_delta" },
+            type: "message_update",
+          }),
+        ].join("\n") + "\n",
+      ),
       output(JSON.stringify({ toolName: "bash", type: "tool_execution_start" }) + "\n"),
-      output([
-        JSON.stringify({
-          assistantMessageEvent: { delta: "world", type: "text_delta" },
-          type: "message_update",
-        }),
-        JSON.stringify({ type: "agent_settled" }),
-        "",
-      ].join("\n")),
+      output(
+        [
+          JSON.stringify({
+            assistantMessageEvent: { delta: "world", type: "text_delta" },
+            type: "message_update",
+          }),
+          JSON.stringify({ type: "agent_settled" }),
+          "",
+        ].join("\n"),
+      ),
     ]);
     const context = new TestAgentExecutionContext(session);
     const execution = await piRuntime.start(context, {
@@ -73,10 +81,10 @@ describe("piRuntime", () => {
       },
     });
     expect(context.fileWrites).toHaveLength(1);
-    expect(context.fileWrites[0]?.path).toBe(
-      "/tmp/agent-online-pi/run_1/models.json",
+    expect(context.fileWrites[0]?.path).toBe("/tmp/agent-online-pi/run_1/models.json");
+    expect(context.fileWrites[0]?.content).toContain(
+      "https://agent-online.test/api/model-gateway/v1",
     );
-    expect(context.fileWrites[0]?.content).toContain("https://agent-online.test/api/model-gateway/v1");
     expect(context.fileWrites[0]?.content).toContain("$AGENT_ONLINE_GATEWAY_TOKEN");
     expect(context.fileWrites[0]?.content).not.toContain("run-capability");
     expect(session.writes[0]).toBe(

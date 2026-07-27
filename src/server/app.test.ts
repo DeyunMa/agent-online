@@ -12,11 +12,9 @@ describe("Worker API", () => {
   });
 
   it("publishes the safe Run creation capability", async () => {
-    const response = await app.request(
-      "http://agent-online.test/api/capabilities",
-      undefined,
-      { RUNS_ENABLED: "false" } as AppBindings,
-    );
+    const response = await app.request("http://agent-online.test/api/capabilities", undefined, {
+      RUNS_ENABLED: "false",
+    } as AppBindings);
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -30,14 +28,10 @@ describe("Worker API", () => {
   });
 
   it("keeps Goose private in spike mode and publishes it only in public E2B mode", async () => {
-    const spike = await app.request(
-      "http://agent-online.test/api/capabilities",
-      undefined,
-      {
-        GOOSE_RUNTIME_MODE: "spike",
-        RUNTIME_PROVIDER: "e2b",
-      } as AppBindings,
-    );
+    const spike = await app.request("http://agent-online.test/api/capabilities", undefined, {
+      GOOSE_RUNTIME_MODE: "spike",
+      RUNTIME_PROVIDER: "e2b",
+    } as AppBindings);
     const publicResponse = await app.request(
       "http://agent-online.test/api/capabilities",
       undefined,

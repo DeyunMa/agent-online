@@ -107,18 +107,14 @@ export class ProjectPreviewService {
   private readonly startupTimeoutMs: number;
 
   constructor(private readonly options: ProjectPreviewServiceOptions) {
-    this.sessionDurationMs =
-      options.sessionDurationMs ?? defaultPreviewSessionDurationMs;
-    this.startupTimeoutMs =
-      options.startupTimeoutMs ?? defaultPreviewStartupTimeoutMs;
+    this.sessionDurationMs = options.sessionDurationMs ?? defaultPreviewSessionDurationMs;
+    this.startupTimeoutMs = options.startupTimeoutMs ?? defaultPreviewStartupTimeoutMs;
     requirePositiveDuration(this.sessionDurationMs, "Preview session duration");
     requirePositiveDuration(this.startupTimeoutMs, "Preview startup timeout");
   }
 
   async start(projectId: string): Promise<StartProjectPreviewResult> {
-    const current = await this.options.previewSessions.findByProjectId(
-      projectId,
-    );
+    const current = await this.options.previewSessions.findByProjectId(projectId);
     if (current) {
       return { kind: "project_busy" };
     }
@@ -130,10 +126,7 @@ export class ProjectPreviewService {
     }
 
     const lease = await this.options.sandboxLeases.findByProjectId(projectId);
-    if (
-      !lease?.providerRef ||
-      (lease.status !== "idle" && lease.status !== "ready")
-    ) {
+    if (!lease?.providerRef || (lease.status !== "idle" && lease.status !== "ready")) {
       return { kind: "sandbox_unavailable" };
     }
     if (lease.runtimeId !== this.options.sandboxRuntimeId) {
@@ -155,9 +148,7 @@ export class ProjectPreviewService {
     const claimed = await this.options.previewSessions.claim({
       expectedLeaseProviderRef: lease.providerRef,
       expectedLeaseUpdatedAt: lease.updatedAt,
-      expiresAt: new Date(
-        now.getTime() + this.sessionDurationMs,
-      ).toISOString(),
+      expiresAt: new Date(now.getTime() + this.sessionDurationMs).toISOString(),
       id: this.options.createId(),
       now: now.toISOString(),
       port: projectPreviewPort,
@@ -180,16 +171,14 @@ export class ProjectPreviewService {
       return { kind: "provider_error" };
     }
 
-    let stage: "content_base" | "mark_running" | "runtime_start" =
-      "content_base";
+    let stage: "content_base" | "mark_running" | "runtime_start" = "content_base";
     try {
-      const contentBasePath =
-        await this.options.createContentBasePath({
-          expiresAt: claimed.session.expiresAt,
-          issuedAt: claimed.session.createdAt,
-          previewSessionId: claimed.session.id,
-          projectId,
-        });
+      const contentBasePath = await this.options.createContentBasePath({
+        expiresAt: claimed.session.expiresAt,
+        issuedAt: claimed.session.createdAt,
+        previewSessionId: claimed.session.id,
+        projectId,
+      });
       stage = "runtime_start";
       const started = await runtime.startPreview(
         toRuntimeHandle(claimed.session, lease.runtimeId),
@@ -237,21 +226,17 @@ export class ProjectPreviewService {
   }
 
   private reportFailure(
-    stage: Parameters<
-      NonNullable<ProjectPreviewServiceOptions["reportFailure"]>
-    >[0]["stage"],
+    stage: Parameters<NonNullable<ProjectPreviewServiceOptions["reportFailure"]>>[0]["stage"],
     error?: unknown,
   ) {
     this.options.reportFailure?.({
-      errorName:
-        error instanceof Error ? error.name : "UnknownError",
+      errorName: error instanceof Error ? error.name : "UnknownError",
       stage,
     });
   }
 
   async inspect(projectId: string): Promise<InspectProjectPreviewResult> {
-    const session =
-      await this.options.previewSessions.findByProjectId(projectId);
+    const session = await this.options.previewSessions.findByProjectId(projectId);
     if (!session) {
       return { expiresAt: null, kind: "stopped" };
     }
@@ -300,8 +285,7 @@ export class ProjectPreviewService {
   }
 
   async stop(projectId: string): Promise<StopProjectPreviewResult> {
-    const session =
-      await this.options.previewSessions.findByProjectId(projectId);
+    const session = await this.options.previewSessions.findByProjectId(projectId);
     if (!session) {
       return { kind: "stopped" };
     }
@@ -346,8 +330,7 @@ export class ProjectPreviewService {
   }
 
   async expire(projectId: string, previewSessionId: string) {
-    const session =
-      await this.options.previewSessions.findById(previewSessionId);
+    const session = await this.options.previewSessions.findById(previewSessionId);
     if (!session || session.projectId !== projectId) {
       return { released: false };
     }
@@ -381,9 +364,7 @@ export class ProjectPreviewService {
     return {
       released: await this.releaseAndScheduleIdle(
         session,
-        lease?.providerRef === session.providerSandboxRef
-          ? lease.updatedAt
-          : null,
+        lease?.providerRef === session.providerSandboxRef ? lease.updatedAt : null,
       ),
     };
   }
@@ -393,8 +374,7 @@ export class ProjectPreviewService {
     previewSessionId: string,
     request: SandboxPreviewRequest,
   ): Promise<FetchProjectPreviewResult> {
-    const session =
-      await this.options.previewSessions.findById(previewSessionId);
+    const session = await this.options.previewSessions.findById(previewSessionId);
     if (
       !session ||
       session.projectId !== projectId ||
@@ -475,10 +455,7 @@ export class ProjectPreviewService {
   }
 }
 
-function toRuntimeHandle(
-  session: PreviewSessionRecord,
-  runtimeId: RuntimeKind,
-): RuntimeHandle {
+function toRuntimeHandle(session: PreviewSessionRecord, runtimeId: RuntimeKind): RuntimeHandle {
   return {
     id: session.providerSandboxRef,
     kind: runtimeId,

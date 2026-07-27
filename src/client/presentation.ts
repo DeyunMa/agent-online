@@ -1,8 +1,5 @@
 import { isTerminalAgentRun, type AgentRunStatus } from "../domain/agent-run";
-import type {
-  AgentRunResponse,
-  SandboxLeaseResponse,
-} from "../shared/api";
+import type { AgentRunResponse, SandboxLeaseResponse } from "../shared/api";
 
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -40,9 +37,7 @@ export function sandboxStatusLabel(status: SandboxLeaseResponse["status"]) {
   return labels[status];
 }
 
-export function sandboxStatusTone(
-  status: SandboxLeaseResponse["status"] | undefined,
-) {
+export function sandboxStatusTone(status: SandboxLeaseResponse["status"] | undefined) {
   if (status === "idle" || status === "ready") {
     return "tone-success";
   }
@@ -98,11 +93,7 @@ export function formatRunDuration(run: AgentRunResponse) {
 
   if (run.startedAt && run.finishedAt) {
     return formatDuration(
-      Math.max(
-        0,
-        new Date(run.finishedAt).getTime() -
-          new Date(run.startedAt).getTime(),
-      ),
+      Math.max(0, new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()),
     );
   }
 

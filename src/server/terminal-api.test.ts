@@ -5,10 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ProjectTerminalConnection } from "../application/project-terminal";
 import type { ProjectRecord } from "../application/ports";
 import type { AppEnv } from "./env";
-import {
-  createTerminalApi,
-  type TerminalApiDependencies,
-} from "./terminal-api";
+import { createTerminalApi, type TerminalApiDependencies } from "./terminal-api";
 import type { ServerServices } from "./services";
 
 const user = { email: "user@example.test", id: "user-1" };
@@ -43,10 +40,7 @@ describe("Terminal API", () => {
     );
 
     await vi.waitFor(() => {
-      expect(socket.close).toHaveBeenCalledWith(
-        1000,
-        "terminal_exited",
-      );
+      expect(socket.close).toHaveBeenCalledWith(1000, "terminal_exited");
     });
     expect(fixture.open).toHaveBeenCalledWith("project-1", {
       cols: 100,
@@ -57,9 +51,7 @@ describe("Terminal API", () => {
       expiresAt: "2026-07-26T08:30:00.000Z",
       type: "ready",
     });
-    expect(socket.sent[1]).toEqual(
-      new TextEncoder().encode("terminal output"),
-    );
+    expect(socket.sent[1]).toEqual(new TextEncoder().encode("terminal output"));
     expect(JSON.parse(socket.sent[2] as string)).toEqual({
       exitCode: 0,
       type: "closed",
@@ -87,10 +79,7 @@ describe("Terminal API", () => {
     );
 
     await vi.waitFor(() => {
-      expect(socket.close).toHaveBeenCalledWith(
-        1008,
-        "project_busy",
-      );
+      expect(socket.close).toHaveBeenCalledWith(1008, "project_busy");
     });
     expect(JSON.parse(socket.sent[0] as string)).toEqual({
       code: "project_busy",
@@ -111,10 +100,7 @@ describe("Terminal API", () => {
     );
 
     await vi.waitFor(() => {
-      expect(socket.close).toHaveBeenCalledWith(
-        1008,
-        "invalid_message",
-      );
+      expect(socket.close).toHaveBeenCalledWith(1008, "invalid_message");
     });
     expect(fixture.open).not.toHaveBeenCalled();
   });
@@ -132,10 +118,7 @@ describe("Terminal API", () => {
     );
 
     await vi.waitFor(() => {
-      expect(socket.close).toHaveBeenCalledWith(
-        1008,
-        "invalid_message",
-      );
+      expect(socket.close).toHaveBeenCalledWith(1008, "invalid_message");
     });
     expect(fixture.open).not.toHaveBeenCalled();
   });
@@ -152,10 +135,7 @@ describe("Terminal API", () => {
 
       await vi.advanceTimersByTimeAsync(10_000);
 
-      expect(socket.close).toHaveBeenCalledWith(
-        1008,
-        "invalid_message",
-      );
+      expect(socket.close).toHaveBeenCalledWith(1008, "invalid_message");
       expect(fixture.open).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -202,34 +182,25 @@ describe("Terminal API", () => {
       expect(fixture.open).toHaveBeenCalled();
     });
 
-    fixture.events?.onClose?.(
-      {} as CloseEvent,
-      socket.context,
-    );
+    fixture.events?.onClose?.({} as CloseEvent, socket.context);
 
     await vi.waitFor(() => {
-      expect(connection.close).toHaveBeenCalledWith(
-        "client_closed",
-      );
+      expect(connection.close).toHaveBeenCalledWith("client_closed");
     });
   });
 });
 
 function createFixture(options: {
   authenticated?: boolean;
-  openResult: Awaited<
-    ReturnType<ServerServices["projectTerminals"]["open"]>
-  >;
+  openResult: Awaited<ReturnType<ServerServices["projectTerminals"]["open"]>>;
   origin?: string;
 }) {
   let events: WSEvents<WebSocket> | null = null;
   const open = vi.fn(async () => options.openResult);
-  const upgrade = vi.fn<TerminalApiDependencies["upgrade"]>(
-    async (_context, nextEvents) => {
-      events = nextEvents;
-      return new Response(null, { status: 200 });
-    },
-  );
+  const upgrade = vi.fn<TerminalApiDependencies["upgrade"]>(async (_context, nextEvents) => {
+    events = nextEvents;
+    return new Response(null, { status: 200 });
+  });
   const services = {
     projectTerminals: { open },
     projects: {
@@ -245,8 +216,7 @@ function createFixture(options: {
     "/api",
     createTerminalApi({
       createServices: () => services,
-      getAuthenticatedUser: async () =>
-        options.authenticated === false ? null : user,
+      getAuthenticatedUser: async () => (options.authenticated === false ? null : user),
       upgrade,
     }),
   );
@@ -257,16 +227,12 @@ function createFixture(options: {
     },
     open,
     request: () =>
-      app.request(
-        "https://agent-online.test/api/projects/project-1/terminal",
-        {
-          headers: {
-            origin:
-              options.origin ?? "https://agent-online.test",
-            upgrade: "websocket",
-          },
+      app.request("https://agent-online.test/api/projects/project-1/terminal", {
+        headers: {
+          origin: options.origin ?? "https://agent-online.test",
+          upgrade: "websocket",
         },
-      ),
+      }),
     upgrade,
   };
 }

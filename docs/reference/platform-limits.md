@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现限制基准
 >
-> 校准日期：2026-07-26
+> 校准日期：2026-07-27
 >
 > 目标：说明每一类限制约束什么对象、当前值、由哪一层执行，以及达到限制后的行为
 
@@ -25,6 +25,9 @@
 | Terminal | 每个 Project 最多一个 TerminalSession | `UNIQUE(project_id)` | WebSocket 返回 `project_busy` 后关闭。 |
 | Preview | 每个 Project 最多一个 PreviewSession | `UNIQUE(project_id)` | `409 project_busy`。 |
 | assistant Message | 每个 AgentRun 最多一条最终回复 | D1 部分唯一索引 | 重复完成不会写第二条。 |
+| Run 跨表归属 | User、Project、Lease、Runtime、输入 Message 必须一致 | D1 trigger | 整个创建 batch 回滚。 |
+| Run 状态迁移 | 只能走领域状态机，终态不可变 | application + D1 trigger | 非法更新中止。 |
+| Terminal/Preview Lease | 临时行必须引用同 Project Lease；Preview Provider ref 还必须匹配 Lease | D1 trigger | claim/insert 中止。 |
 
 ### 1.1 操作互斥矩阵
 
@@ -73,7 +76,7 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 
 当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 无分页适合个人阶段，但数据变大后会增加响应和 D1 扫描成本。
 
-Worker 没有自定义的全局请求体字节上限；除字段校验外，仍受 Cloudflare Worker 平台请求限制。公开部署前应增加明确的 body/rate limit，而不是依赖外部隐式上限。
+普通产品 JSON API 还没有统一的全局请求体字节中间件，主要依靠字段上限和 Cloudflare 平台请求限制。内部 ModelGateway 已单独设置 4 MiB 实际读取上限；公开注册前仍需重新评估普通 API 的 body/rate limit。
 
 ## 4. AgentRun、Workflow 和沙箱时间
 
@@ -106,6 +109,9 @@ Worker 没有自定义的全局请求体字节上限；除字段校验外，仍�
 | capability 生命周期 | 与 Run deadline 对齐，最长 3,600 秒 | 过期、Run 非活动或模型不匹配即拒绝。 |
 | capability token 长度 | 最长 4,096 字符 | 超限视为无效。 |
 | future clock skew | 最多 30 秒 | capability 校验。 |
+| ModelGateway 请求体 | 最多 4 MiB | 先检查 `Content-Length`，并对实际 stream 字节数再次设限。 |
+| ModelGateway 成功响应 | 最多缓冲 8 MiB | 超限或非法 UTF-8 返回通用 `502`。 |
+| ModelGateway 错误诊断 | 最多读取 64 KiB | 只记录分类、上游状态和受控协议摘要。 |
 
 ModelGateway 的 OpenAI 兼容请求限制：
 
@@ -288,5 +294,7 @@ Cloudflare、E2B 和 Gemini 的免费额度、并发、CPU、存储、日志保�
 | Project 文件无备份 | 当前明确接受；停止沙箱前用户需自行理解数据可丢失。 |
 | import boundary 检查不覆盖未来 path alias/计算式动态导入 | 当前 tsconfig 无 alias，现有生产代码满足边界；引入 alias 时需同步门禁。 |
 | 浏览器 tab ARIA 模式未覆盖完整 roving/arrow-key 规范 | 不影响当前数据安全；属于后续可访问性完善项。 |
+| 浏览器自动化只覆盖核心 smoke | 当前覆盖注册、Project、fake Run 取消和刷新恢复；真实 Terminal/Preview/Changes 仍依赖显式 E2B E2E。 |
+| 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；重复漂移按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
 
 接口结构见 [HTTP、SSE 与 WebSocket 接口](./http-api.md)，数据所有权见 [D1 表设计](./database-schema.md)。

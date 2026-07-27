@@ -1,7 +1,6 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-26 已完成锁定部署、Pi/Goose 真实 AgentRun、Files、Usage、Terminal、Project Preview、只读 Changes、远程取消、deadline、空闲回收和手动停止。
-> D2 与 D3 的 Files/Usage/Terminal/Preview/Changes，以及 Goose 私有 spike 已完成；Goose 仍不公开。
+> 状态：2026-07-26 已完成 D2/D3 与 Goose 私有 spike。2026-07-27 本地代码新增 `0006_integrity_guards.sql` 和统一质量门禁；远程 Preview 尚未应用本轮迁移或代码，下一次部署仍需单独授权。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -13,19 +12,19 @@ Preview 是用于验证真实 Cloudflare Workflow、E2B 和 Pi 链路的受控�
 - 首次部署保持 `RUNS_ENABLED=false`。先验证认证、Project 和页面，再单独打开真实 AgentRun。
 - 浏览器仍然不能得到 Gemini/E2B Key、Provider sandbox ID、内部端口或进程引用。
 - Preview 与本地配置不共享 Binding、变量或 Secret；所有远程值都必须显式配置。
+- 顶层 production 配置仍是占位状态，当前唯一允许的远程目标是 `env.preview`。
+  `pnpm deploy` 会先执行 production guard 并拒绝误部署。
 
 ## 2. 提交前本地检查
 
 以下命令不创建远程资源：
 
 ```sh
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm check
 pnpm deploy:preview:dry-run
 ```
 
-生产和 Preview 构建都会先清理旧 `dist`，再执行 `validate:build-artifacts`。门禁发现 `.dev.vars*` 或 `.env*` 路径会立即失败；本地 `.dev.vars` 只供 `pnpm dev` 使用，不会进入可部署产物。
+`pnpm check` 还执行源码凭据扫描、Biome、真实 Workers/D1 migration 测试和独立 fake 浏览器 smoke。生产和 Preview 构建都会先清理旧 `dist`，再执行内容型 `validate:build-artifacts`；Cloudflare 插件可能在本地构建时探测 `.dev.vars`，但 build 配置不要求本地 Secret，也不会把该文件或其中的凭据序列化进可部署产物。
 
 `pnpm deploy:preview:dry-run` 允许配置中保留远程占位值，以便先验证构建包和 Binding 结构。真实部署前，`pnpm validate:preview-config` 会拒绝：
 
@@ -36,6 +35,11 @@ pnpm deploy:preview:dry-run
 - 启用 Goose 时仍使用非组合 E2B Template；
 - 非 allowlist 的 Preview 访问模式；
 - 非 E2B 的 Preview SandboxRuntime。
+
+真实 `pnpm deploy:preview` 还会执行 `pnpm validate:preview-account`。
+`wrangler.jsonc` 的 `env.preview.account_id` 固定目标 Account；调用方若设置了
+`CLOUDFLARE_ACCOUNT_ID`，它必须与配置一致，避免本机其他 Cloudflare 环境变量把
+命令指向错误 Account。dry-run 不访问远程资源。
 
 ## 3. 创建远程资源
 
@@ -79,14 +83,43 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 
 `ACCESS_ALLOWED_EMAILS` 是逗号分隔的受邀邮箱。Preview 使用独立的 `BETTER_AUTH_SECRET`；`BETTER_AUTH_URL` 和 `E2B_TEMPLATE_ID` 是非敏感部署变量，不通过 Secret 写入。
 
-## 5. 迁移并锁定部署
+## 5. 锁定、排空并迁移
 
-先应用远程迁移，再在 Run 关闭状态部署：
+`0006_integrity_guards.sql` 的 assistant Message trigger 要求关联 Run 已经是
+`succeeded`。旧 Worker 的完成顺序不满足这个约束，因此不能把 `0006` 先应用到仍
+可能由旧 Workflow 写入的数据库。必须使用以下顺序：
+
+1. 在 `wrangler.jsonc` 中把 Preview 的 `RUNS_ENABLED` 改为 `"false"`，先部署当前
+   新代码。当前代码兼容 `0005` schema，并会在任何 Message、Lease 或 Run 写入前拒绝
+   新执行：
 
 ```sh
-pnpm wrangler d1 migrations apply DB --remote --env preview
-pnpm deploy:preview
+env -u CLOUDFLARE_API_TOKEN \
+  CLOUDFLARE_ACCOUNT_ID=66a06222aa0acd9ea509abad73fa02fb \
+  pnpm deploy:preview
 ```
+
+2. 确认 `/api/capabilities` 返回 `runCreationEnabled: false`，等待所有旧的非终态 Run
+   和旧版本 Workflow 收敛，并显式关闭当前 Terminal、Preview 和沙箱活动。
+3. 执行只读预检。脚本只返回九组计数，不读取 prompt、文件、Provider 引用或 Secret；
+   所有计数必须为 `0`：
+
+```sh
+env -u CLOUDFLARE_API_TOKEN \
+  CLOUDFLARE_ACCOUNT_ID=66a06222aa0acd9ea509abad73fa02fb \
+  pnpm release:preview:preflight
+```
+
+4. 预检通过后再应用迁移，并确认输出包含 `0006_integrity_guards.sql`：
+
+```sh
+env -u CLOUDFLARE_API_TOKEN \
+  CLOUDFLARE_ACCOUNT_ID=66a06222aa0acd9ea509abad73fa02fb \
+  pnpm wrangler d1 migrations apply DB --remote --env preview
+```
+
+5. 保持 `RUNS_ENABLED=false` 完成锁定 smoke。若预检不为零，不迁移、不直接改远程
+   数据；先按[协调状态恢复](../operations/coordination-recovery.md)诊断并重新排空。
 
 锁定部署必须验证：
 
@@ -98,7 +131,9 @@ pnpm deploy:preview
 
 ## 6. 打开真实 Run
 
-锁定验收通过后，将 `env.preview.vars.RUNS_ENABLED` 改为 `"true"` 并再次执行 `pnpm deploy:preview`。随后只用受邀账号完成：
+锁定验收和迁移都通过后，将 `env.preview.vars.RUNS_ENABLED` 改为 `"true"` 并再次
+执行带显式 Account guard 的 `pnpm deploy:preview`。随后先执行
+[Hosted Preview E2E](../testing/hosted-preview-e2e.md)，再按需做更长的人工成本探针：
 
 1. 创建 Project 并运行一个最小 Pi 任务。
 2. 确认 Workflow 从 `queued` 收敛到终态，最终 assistant Message 和真实 usage 写入 D1。
@@ -111,8 +146,9 @@ pnpm deploy:preview
 
 受控 Project Preview 另按以下顺序验收：
 
-1. 应用 `0005_preview_sessions.sql`，确认 `/api/capabilities` 仅公开
-   `previewEnabled=true`，不公开内部端口或 Provider 字段。
+1. 确认数据库已包含 `0005_preview_sessions.sql`；新建环境应一次应用全部迁移，现有
+   Preview 则按第 5 节先补 `0006_integrity_guards.sql`。随后确认
+   `/api/capabilities` 仅公开 `previewEnabled=true`，不公开内部端口或 Provider 字段。
 2. 在已有空闲 E2B Lease 且 `/workspace/node_modules/.bin/vite` 存在时启动 Preview；
    无 Lease、活动 Run/Terminal、缺少 Vite 或 Provider 故障必须返回明确状态。
 3. 在 iframe 加载真实 HTML/JS/CSS，保持 Preview 运行后执行 Pi 修改同一 Project，

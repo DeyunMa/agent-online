@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  createPreviewCapabilityCodec,
-  previewCapabilityAudience,
-} from "./preview-capability";
+import { createPreviewCapabilityCodec, previewCapabilityAudience } from "./preview-capability";
 
 const secret = "test-secret-with-at-least-thirty-two-characters";
 const issuedAt = new Date("2026-07-26T00:00:00.000Z");
@@ -52,12 +49,10 @@ describe("Preview capability codec", () => {
         secret,
       }).verify(token),
     ).resolves.toBeNull();
-    await expect(
-      issuer.verify(`${payload}x.${signature}`),
-    ).resolves.toBeNull();
-    expect(() =>
-      createPreviewCapabilityCodec({ secret: "too-short" }),
-    ).toThrow("at least 32 characters");
+    await expect(issuer.verify(`${payload}x.${signature}`)).resolves.toBeNull();
+    expect(() => createPreviewCapabilityCodec({ secret: "too-short" })).toThrow(
+      "at least 32 characters",
+    );
     await expect(
       issuer.issue({
         expiresAt: new Date("2026-07-26T00:31:00.000Z"),

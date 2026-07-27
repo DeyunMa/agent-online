@@ -1,8 +1,5 @@
 import { createAuth } from "./auth";
-import {
-  getDeploymentPolicy,
-  isEmailAllowed,
-} from "./deployment-policy";
+import { getDeploymentPolicy, isEmailAllowed } from "./deployment-policy";
 import type { AppBindings } from "./env";
 
 export type AuthenticatedUser = {

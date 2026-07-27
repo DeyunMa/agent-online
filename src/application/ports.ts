@@ -85,20 +85,14 @@ export type PreviewSessionRecord = {
 };
 
 export interface ProjectRepository {
-  create(input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string }): Promise<ProjectRecord>;
-  deleteOwned(projectId: string, userId: string): Promise<boolean>;
+  create(
+    input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string },
+  ): Promise<ProjectRecord>;
   findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null>;
   listOwned(userId: string): Promise<ProjectRecord[]>;
 }
 
 export interface MessageRepository {
-  appendAssistant(input: {
-    agentRunId: string;
-    content: string;
-    id: string;
-    now: string;
-    projectId: string;
-  }): Promise<MessageRecord>;
   findById(messageId: string, projectId: string): Promise<MessageRecord | null>;
   listByProjectId(projectId: string): Promise<MessageRecord[]>;
 }
@@ -239,10 +233,7 @@ export interface PreviewSessionRepository {
     providerProcessRef: string,
     now: string,
   ): Promise<PreviewSessionRecord | null>;
-  release(input: {
-    expectedProviderSandboxRef: string;
-    sessionId: string;
-  }): Promise<boolean>;
+  release(input: { expectedProviderSandboxRef: string; sessionId: string }): Promise<boolean>;
 }
 
 export type CreateQueuedAgentRunResult =
@@ -280,6 +271,20 @@ export interface AgentRunRepository {
   setSandboxDuration(runId: string, sandboxDurationMs: number): Promise<AgentRunRecord | null>;
   /** Atomically adds real usage while a Run is non-terminal. */
   addUsageDelta(runId: string, usage: AgentRunUsageDelta): Promise<AgentRunRecord | null>;
+  /**
+   * Atomically completes a running AgentRun, records its sandbox duration,
+   * appends at most one final assistant Message, and touches the Project.
+   * Returns null when the Run is no longer running.
+   */
+  completeSucceeded(input: {
+    assistantMessage: {
+      content: string;
+      id: string;
+    } | null;
+    finishedAt: string;
+    runId: string;
+    sandboxDurationMs: number;
+  }): Promise<AgentRunRecord | null>;
   transition(input: {
     failureReason?: string | null;
     finishedAt?: string | null;
@@ -288,5 +293,4 @@ export interface AgentRunRepository {
     startedAt?: string | null;
     to: AgentRunStatus;
   }): Promise<AgentRunRecord | null>;
-  updateUsage(runId: string, usage: AgentRunUsage): Promise<AgentRunRecord | null>;
 }

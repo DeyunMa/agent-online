@@ -18,10 +18,7 @@ export type ModelGatewayOptions = {
   fetchImplementation?: typeof fetch;
   geminiApiKey: string;
   modelApiBaseUrl?: string;
-  onUsage?(
-    usage: ModelGatewayUsage,
-    capability: ModelGatewayCapability,
-  ): Promise<void> | void;
+  onUsage?(usage: ModelGatewayUsage, capability: ModelGatewayCapability): Promise<void> | void;
 };
 
 type OpenAiCompletionRequest = {
@@ -35,6 +32,9 @@ type OpenAiCompletionRequest = {
 
 const defaultEndpointPath = "/v1/chat/completions";
 const defaultModelApiBaseUrl = "https://generativelanguage.googleapis.com";
+const maxCompletionRequestBytes = 4 * 1_024 * 1_024;
+const maxUpstreamErrorResponseBytes = 64 * 1_024;
+const maxUpstreamResponseBytes = 8 * 1_024 * 1_024;
 
 /**
  * Proxies the narrow OpenAI Chat Completions surface used by Pi to Gemini's
@@ -42,29 +42,19 @@ const defaultModelApiBaseUrl = "https://generativelanguage.googleapis.com";
  * the platform key, binds each request to one Run/model, caps output, and
  * records usage before returning the buffered upstream response.
  */
-export function createOpenAiCompatibleModelGateway(
-  options: ModelGatewayOptions,
-) {
+export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions) {
   if (!options.geminiApiKey) {
     throw new Error("GEMINI_API_KEY is required for the ModelGateway");
   }
 
   const endpointPath = options.endpointPath ?? defaultEndpointPath;
   const fetchImplementation = options.fetchImplementation ?? fetch;
-  const modelApiBaseUrl = (
-    options.modelApiBaseUrl ?? defaultModelApiBaseUrl
-  ).replace(/\/$/, "");
+  const modelApiBaseUrl = (options.modelApiBaseUrl ?? defaultModelApiBaseUrl).replace(/\/$/, "");
 
-  return async function handleOpenAiChatCompletion(
-    request: Request,
-  ): Promise<Response> {
+  return async function handleOpenAiChatCompletion(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method !== "POST" || url.pathname !== endpointPath) {
-      return gatewayError(
-        404,
-        "not_found",
-        "The requested ModelGateway endpoint does not exist.",
-      );
+      return gatewayError(404, "not_found", "The requested ModelGateway endpoint does not exist.");
     }
 
     let capability: ModelGatewayCapability | null;
@@ -86,14 +76,22 @@ export function createOpenAiCompatibleModelGateway(
       );
     }
 
-    const parsed = await parseOpenAiCompletionRequest(request);
-    if (!parsed) {
+    const parsedRequest = await parseOpenAiCompletionRequest(request);
+    if (parsedRequest.kind === "too_large") {
+      return gatewayError(
+        413,
+        "invalid_request_error",
+        "The completion request exceeds the ModelGateway byte limit.",
+      );
+    }
+    if (parsedRequest.kind === "invalid") {
       return gatewayError(
         400,
         "invalid_request_error",
         "The completion request is not supported by this ModelGateway.",
       );
     }
+    const parsed = parsedRequest.value;
 
     if (parsed.model !== capability.modelId) {
       return gatewayError(
@@ -103,10 +101,7 @@ export function createOpenAiCompatibleModelGateway(
       );
     }
 
-    const upstreamRequest = toUpstreamRequest(
-      parsed,
-      capability.maxOutputTokens,
-    );
+    const upstreamRequest = toUpstreamRequest(parsed, capability.maxOutputTokens);
     if (!upstreamRequest) {
       return gatewayError(
         400,
@@ -122,9 +117,7 @@ export function createOpenAiCompatibleModelGateway(
         {
           body: JSON.stringify(upstreamRequest),
           headers: {
-            accept: parsed.stream
-              ? "text/event-stream"
-              : "application/json",
+            accept: parsed.stream ? "text/event-stream" : "application/json",
             authorization: `Bearer ${options.geminiApiKey}`,
             "content-type": "application/json",
           },
@@ -132,29 +125,31 @@ export function createOpenAiCompatibleModelGateway(
         },
       );
     } catch (_error) {
-      return gatewayError(
-        502,
-        "model_unavailable",
-        "The upstream model request failed.",
-      );
+      return gatewayError(502, "model_unavailable", "The upstream model request failed.");
     }
 
     if (!upstreamResponse.ok) {
       console.error("ModelGateway upstream request rejected", {
-        ...await readUpstreamErrorDiagnostic(upstreamResponse),
+        ...(await readUpstreamErrorDiagnostic(upstreamResponse)),
         ...summarizeToolProtocol(upstreamRequest.messages),
         runId: capability.runId,
       });
-      return gatewayError(
-        502,
-        "model_unavailable",
-        "The upstream model request was rejected.",
-      );
+      return gatewayError(502, "model_unavailable", "The upstream model request was rejected.");
     }
 
     let upstreamBody: string;
     try {
-      upstreamBody = await upstreamResponse.text();
+      const body = await readBoundedText(upstreamResponse.body, maxUpstreamResponseBytes);
+      if (body.kind !== "ok") {
+        return gatewayError(
+          502,
+          "invalid_model_response",
+          body.kind === "too_large"
+            ? "The upstream model response exceeded the gateway limit."
+            : "The upstream model response was invalid.",
+        );
+      }
+      upstreamBody = body.value;
     } catch (_error) {
       return gatewayError(
         502,
@@ -190,9 +185,7 @@ export function createOpenAiCompatibleModelGateway(
         "cache-control": "no-store",
         "content-type":
           upstreamResponse.headers.get("content-type") ??
-          (parsed.stream
-            ? "text/event-stream; charset=utf-8"
-            : "application/json; charset=utf-8"),
+          (parsed.stream ? "text/event-stream; charset=utf-8" : "application/json; charset=utf-8"),
       },
       status: upstreamResponse.status,
     });
@@ -211,24 +204,23 @@ async function readUpstreamErrorDiagnostic(response: Response) {
   };
 
   try {
-    const payload: unknown = await response.json();
+    const body = await readBoundedText(response.body, maxUpstreamErrorResponseBytes);
+    if (body.kind !== "ok") {
+      return diagnostic;
+    }
+    const payload: unknown = JSON.parse(body.value);
     if (!isRecord(payload) || !isRecord(payload.error)) {
       return diagnostic;
     }
 
-    if (
-      typeof payload.error.code === "number" ||
-      typeof payload.error.code === "string"
-    ) {
+    if (typeof payload.error.code === "number" || typeof payload.error.code === "string") {
       diagnostic.upstreamErrorCode = payload.error.code;
     }
     if (typeof payload.error.status === "string") {
       diagnostic.upstreamErrorStatus = payload.error.status;
     }
     if (typeof payload.error.message === "string") {
-      diagnostic.errorCategory = categorizeUpstreamError(
-        payload.error.message,
-      );
+      diagnostic.errorCategory = categorizeUpstreamError(payload.error.message);
     }
   } catch (_error) {
     // The public response stays generic even when the upstream error is not JSON.
@@ -249,10 +241,7 @@ function categorizeUpstreamError(message: string) {
   ) {
     return "rate_limited";
   }
-  if (
-    normalized.includes("context window") ||
-    normalized.includes("token limit")
-  ) {
+  if (normalized.includes("context window") || normalized.includes("token limit")) {
     return "context_limit";
   }
   if (normalized.includes("model") && normalized.includes("not found")) {
@@ -323,8 +312,7 @@ function normalizeStreamingToolProtocol(body: string) {
         }
 
         const index =
-          typeof rawChoice.index === "number" &&
-          Number.isSafeInteger(rawChoice.index)
+          typeof rawChoice.index === "number" && Number.isSafeInteger(rawChoice.index)
             ? rawChoice.index
             : 0;
         if (
@@ -333,9 +321,7 @@ function normalizeStreamingToolProtocol(body: string) {
           rawChoice.delta.tool_calls.length > 0
         ) {
           choicesWithToolCalls.add(index);
-          const reasoningDetails = Array.isArray(
-            rawChoice.delta.reasoning_details,
-          )
+          const reasoningDetails = Array.isArray(rawChoice.delta.reasoning_details)
             ? [...rawChoice.delta.reasoning_details]
             : [];
           for (const rawToolCall of rawChoice.delta.tool_calls) {
@@ -368,10 +354,7 @@ function normalizeStreamingToolProtocol(body: string) {
           }
         }
 
-        if (
-          choicesWithToolCalls.has(index) &&
-          rawChoice.finish_reason === "stop"
-        ) {
+        if (choicesWithToolCalls.has(index) && rawChoice.finish_reason === "stop") {
           rawChoice.finish_reason = "tool_calls";
           changed = true;
         }
@@ -384,12 +367,24 @@ function normalizeStreamingToolProtocol(body: string) {
 
 async function parseOpenAiCompletionRequest(
   request: Request,
-): Promise<OpenAiCompletionRequest | null> {
+): Promise<
+  { kind: "invalid" } | { kind: "ok"; value: OpenAiCompletionRequest } | { kind: "too_large" }
+> {
+  const declaredLength = readContentLength(request.headers);
+  if (declaredLength !== null && declaredLength > maxCompletionRequestBytes) {
+    return { kind: "too_large" };
+  }
+
+  const body = await readBoundedText(request.body, maxCompletionRequestBytes);
+  if (body.kind !== "ok") {
+    return body;
+  }
+
   let payload: unknown;
   try {
-    payload = await request.json();
+    payload = JSON.parse(body.value);
   } catch (_error) {
-    return null;
+    return { kind: "invalid" };
   }
 
   if (
@@ -399,15 +394,14 @@ async function parseOpenAiCompletionRequest(
     payload.messages.length === 0 ||
     payload.messages.length > 256
   ) {
-    return null;
+    return { kind: "invalid" };
   }
 
   if (
-    (payload.stream !== undefined &&
-      typeof payload.stream !== "boolean") ||
+    (payload.stream !== undefined && typeof payload.stream !== "boolean") ||
     (payload.n !== undefined && payload.n !== 1)
   ) {
-    return null;
+    return { kind: "invalid" };
   }
 
   const messages: Array<Record<string, unknown>> = [];
@@ -417,21 +411,15 @@ async function parseOpenAiCompletionRequest(
       !isOpenAiRole(rawMessage.role) ||
       !isOpenAiContent(rawMessage.content)
     ) {
-      return null;
+      return { kind: "invalid" };
     }
 
-    if (
-      rawMessage.tool_calls !== undefined &&
-      !Array.isArray(rawMessage.tool_calls)
-    ) {
-      return null;
+    if (rawMessage.tool_calls !== undefined && !Array.isArray(rawMessage.tool_calls)) {
+      return { kind: "invalid" };
     }
 
-    if (
-      rawMessage.role === "tool" &&
-      typeof rawMessage.tool_call_id !== "string"
-    ) {
-      return null;
+    if (rawMessage.role === "tool" && typeof rawMessage.tool_call_id !== "string") {
+      return { kind: "invalid" };
     }
 
     messages.push(rawMessage);
@@ -444,7 +432,7 @@ async function parseOpenAiCompletionRequest(
       payload.tools.length > 128 ||
       payload.tools.some((tool) => !isRecord(tool))
     ) {
-      return null;
+      return { kind: "invalid" };
     }
     tools = payload.tools;
   }
@@ -454,39 +442,96 @@ async function parseOpenAiCompletionRequest(
     typeof payload.tool_choice !== "string" &&
     !isRecord(payload.tool_choice)
   ) {
-    return null;
+    return { kind: "invalid" };
   }
 
   if (
     payload.parallel_tool_calls !== undefined &&
     typeof payload.parallel_tool_calls !== "boolean"
   ) {
-    return null;
+    return { kind: "invalid" };
   }
 
   return {
-    messages,
-    model: payload.model,
-    ...(typeof payload.parallel_tool_calls === "boolean"
-      ? { parallelToolCalls: payload.parallel_tool_calls }
-      : {}),
-    stream: payload.stream === true,
-    ...(payload.tool_choice !== undefined
-      ? { toolChoice: payload.tool_choice }
-      : {}),
-    ...(tools ? { tools } : {}),
+    kind: "ok",
+    value: {
+      messages,
+      model: payload.model,
+      ...(typeof payload.parallel_tool_calls === "boolean"
+        ? { parallelToolCalls: payload.parallel_tool_calls }
+        : {}),
+      stream: payload.stream === true,
+      ...(payload.tool_choice !== undefined ? { toolChoice: payload.tool_choice } : {}),
+      ...(tools ? { tools } : {}),
+    },
   };
 }
 
-function toUpstreamRequest(
-  request: OpenAiCompletionRequest,
-  maxOutputTokens: number,
-) {
-  if (
-    !Number.isSafeInteger(maxOutputTokens) ||
-    maxOutputTokens < 1 ||
-    maxOutputTokens > 65_536
-  ) {
+type BoundedTextResult =
+  | { kind: "invalid" }
+  | { kind: "ok"; value: string }
+  | { kind: "too_large" };
+
+async function readBoundedText(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number,
+): Promise<BoundedTextResult> {
+  if (!body) {
+    return { kind: "ok", value: "" };
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { kind: "too_large" };
+      }
+      chunks.push(chunk.value);
+    }
+  } catch (_error) {
+    return { kind: "invalid" };
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return {
+      kind: "ok",
+      value: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    };
+  } catch (_error) {
+    return { kind: "invalid" };
+  }
+}
+
+function readContentLength(headers: Headers) {
+  const rawValue = headers.get("content-length");
+  if (rawValue === null) {
+    return null;
+  }
+
+  const value = Number(rawValue);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function toUpstreamRequest(request: OpenAiCompletionRequest, maxOutputTokens: number) {
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 65_536) {
     return null;
   }
 
@@ -498,28 +543,19 @@ function toUpstreamRequest(
       ? { parallel_tool_calls: request.parallelToolCalls }
       : {}),
     stream: request.stream,
-    ...(request.stream
-      ? { stream_options: { include_usage: true } }
-      : {}),
-    ...(request.toolChoice !== undefined
-      ? { tool_choice: request.toolChoice }
-      : {}),
+    ...(request.stream ? { stream_options: { include_usage: true } } : {}),
+    ...(request.toolChoice !== undefined ? { tool_choice: request.toolChoice } : {}),
     ...(request.tools ? { tools: request.tools } : {}),
   };
 }
 
-function toGeminiOpenAiMessages(
-  messages: Array<Record<string, unknown>>,
-) {
+function toGeminiOpenAiMessages(messages: Array<Record<string, unknown>>) {
   return messages.map((message) => {
     if (message.role !== "assistant") {
       return message;
     }
 
-    const {
-      reasoning_details: rawReasoningDetails,
-      ...forwardedMessage
-    } = message;
+    const { reasoning_details: rawReasoningDetails, ...forwardedMessage } = message;
     if (!Array.isArray(message.tool_calls)) {
       return forwardedMessage;
     }
@@ -551,12 +587,8 @@ function toGeminiOpenAiMessages(
           return rawToolCall;
         }
 
-        const extraContent = isRecord(rawToolCall.extra_content)
-          ? rawToolCall.extra_content
-          : {};
-        const google = isRecord(extraContent.google)
-          ? extraContent.google
-          : {};
+        const extraContent = isRecord(rawToolCall.extra_content) ? rawToolCall.extra_content : {};
+        const google = isRecord(extraContent.google) ? extraContent.google : {};
         return {
           ...rawToolCall,
           extra_content: {
@@ -573,10 +605,7 @@ function toGeminiOpenAiMessages(
 }
 
 function readGoogleThoughtSignature(toolCall: Record<string, unknown>) {
-  if (
-    !isRecord(toolCall.extra_content) ||
-    !isRecord(toolCall.extra_content.google)
-  ) {
+  if (!isRecord(toolCall.extra_content) || !isRecord(toolCall.extra_content.google)) {
     return null;
   }
 
@@ -584,10 +613,7 @@ function readGoogleThoughtSignature(toolCall: Record<string, unknown>) {
   return typeof signature === "string" && signature ? signature : null;
 }
 
-function readOpenAiUsage(
-  body: string,
-  streaming: boolean,
-): ModelGatewayUsage | null {
+function readOpenAiUsage(body: string, streaming: boolean): ModelGatewayUsage | null {
   if (!streaming) {
     try {
       return toModelGatewayUsage(JSON.parse(body));
@@ -622,12 +648,8 @@ function toModelGatewayUsage(payload: unknown): ModelGatewayUsage | null {
     return null;
   }
 
-  const inputTokens = readNonNegativeInteger(
-    payload.usage.prompt_tokens,
-  );
-  const outputTokens = readNonNegativeInteger(
-    payload.usage.completion_tokens,
-  );
+  const inputTokens = readNonNegativeInteger(payload.usage.prompt_tokens);
+  const outputTokens = readNonNegativeInteger(payload.usage.completion_tokens);
   const totalTokens = readNonNegativeInteger(payload.usage.total_tokens);
   if (
     inputTokens === null ||
@@ -657,12 +679,7 @@ function gatewayError(status: number, code: string, message: string) {
 }
 
 function isOpenAiContent(value: unknown) {
-  return (
-    value === undefined ||
-    value === null ||
-    typeof value === "string" ||
-    Array.isArray(value)
-  );
+  return value === undefined || value === null || typeof value === "string" || Array.isArray(value);
 }
 
 function isOpenAiRole(value: unknown) {
@@ -676,9 +693,7 @@ function isOpenAiRole(value: unknown) {
 }
 
 function readNonNegativeInteger(value: unknown) {
-  return typeof value === "number" &&
-    Number.isFinite(value) &&
-    value >= 0
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : null;
 }

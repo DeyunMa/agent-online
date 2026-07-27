@@ -41,9 +41,7 @@ describe("Changes API", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe(
-      "private, no-store",
-    );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(body).toEqual({
       entries: [
         {
@@ -68,10 +66,7 @@ describe("Changes API", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fixture.read).toHaveBeenCalledWith(
-      "project-1",
-      "src/index.ts",
-    );
+    expect(fixture.read).toHaveBeenCalledWith("project-1", "src/index.ts");
     const body = await response.json();
     expect(body).toMatchObject({
       change: { path: "src/index.ts" },
@@ -97,10 +92,7 @@ describe("Changes API", () => {
 
     expect(response.status).toBe(status);
     expect(body).toMatchObject({
-      error:
-        kind === "provider_error" || kind === "runtime_mismatch"
-          ? "internal_error"
-          : kind,
+      error: kind === "provider_error" || kind === "runtime_mismatch" ? "internal_error" : kind,
     });
     expect(JSON.stringify(body)).not.toContain("provider");
   });
@@ -155,15 +147,10 @@ function createFixture(
       ({
         projectChanges: { list, read },
         projects: {
-          findOwnedById: async () =>
-            options.projectFound === false ? null : project,
+          findOwnedById: async () => (options.projectFound === false ? null : project),
         },
-      }) as unknown as Pick<
-        ServerServices,
-        "projectChanges" | "projects"
-      >,
-    getAuthenticatedUser: async () =>
-      options.authenticated === false ? null : user,
+      }) as unknown as Pick<ServerServices, "projectChanges" | "projects">,
+    getAuthenticatedUser: async () => (options.authenticated === false ? null : user),
   });
 
   return { api, list, read };

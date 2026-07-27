@@ -46,9 +46,7 @@ describe("runtime config", () => {
       }),
     );
 
-    expect(config.modelGatewayBaseUrl).toBe(
-      "https://local-tunnel.example/api/model-gateway/v1",
-    );
+    expect(config.modelGatewayBaseUrl).toBe("https://local-tunnel.example/api/model-gateway/v1");
   });
 
   it("rejects unsupported providers and capability lifetimes over one hour", () => {

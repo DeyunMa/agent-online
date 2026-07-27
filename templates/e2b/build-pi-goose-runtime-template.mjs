@@ -12,9 +12,7 @@ if (existsSync(".dev.vars")) {
 }
 
 if (!process.env.E2B_API_KEY) {
-  throw new Error(
-    "E2B_API_KEY must be set before building the E2B Pi + Goose runtime template.",
-  );
+  throw new Error("E2B_API_KEY must be set before building the E2B Pi + Goose runtime template.");
 }
 
 const templateAlias = `${piGooseRuntimeTemplate.name}:${piGooseRuntimeTemplate.tag}`;

@@ -11,28 +11,16 @@ import type {
   ProjectChangeEntryResponse,
   ProjectChangesResponse,
 } from "../shared/api";
-import {
-  getAuthenticatedUser,
-  type AuthenticatedUser,
-} from "./auth-context";
+import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
-import {
-  createServerServices,
-  type ServerServices,
-} from "./services";
+import { createServerServices, type ServerServices } from "./services";
 
 type AppContext = Context<AppEnv>;
-type ChangesServices = Pick<
-  ServerServices,
-  "projectChanges" | "projects"
->;
+type ChangesServices = Pick<ServerServices, "projectChanges" | "projects">;
 
 export type ChangesApiDependencies = {
   createServices(env: AppBindings): ChangesServices;
-  getAuthenticatedUser(
-    env: AppBindings,
-    headers: Headers,
-  ): Promise<AuthenticatedUser | null>;
+  getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
 };
 
 const defaultDependencies: ChangesApiDependencies = {
@@ -40,9 +28,7 @@ const defaultDependencies: ChangesApiDependencies = {
   getAuthenticatedUser,
 };
 
-export function createChangesApi(
-  overrides: Partial<ChangesApiDependencies> = {},
-) {
+export function createChangesApi(overrides: Partial<ChangesApiDependencies> = {}) {
   const dependencies = { ...defaultDependencies, ...overrides };
   const api = new Hono<AppEnv>();
 
@@ -57,15 +43,11 @@ export function createChangesApi(
       return accessError(c, access.kind);
     }
 
-    const result = await access.services.projectChanges.list(
-      access.projectId,
-    );
+    const result = await access.services.projectChanges.list(access.projectId);
     if (result.kind !== "ok") {
       return changesError(c, result);
     }
-    return c.json<ProjectChangesResponse>(
-      toProjectChangesResponse(result.changes),
-    );
+    return c.json<ProjectChangesResponse>(toProjectChangesResponse(result.changes));
   });
 
   api.get("/projects/:projectId/changes/content", async (c) => {
@@ -74,29 +56,18 @@ export function createChangesApi(
       return accessError(c, access.kind);
     }
 
-    const result = await access.services.projectChanges.read(
-      access.projectId,
-      c.req.query("path"),
-    );
+    const result = await access.services.projectChanges.read(access.projectId, c.req.query("path"));
     if (result.kind !== "ok") {
       return changesError(c, result);
     }
-    return c.json<ProjectChangeDiffResponse>(
-      toProjectChangeDiffResponse(result.details),
-    );
+    return c.json<ProjectChangeDiffResponse>(toProjectChangeDiffResponse(result.details));
   });
 
   return api;
 }
 
-async function getOwnedProject(
-  c: AppContext,
-  dependencies: ChangesApiDependencies,
-) {
-  const user = await dependencies.getAuthenticatedUser(
-    c.env,
-    c.req.raw.headers,
-  );
+async function getOwnedProject(c: AppContext, dependencies: ChangesApiDependencies) {
+  const user = await dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
   if (!user) {
     return { kind: "unauthorized" as const };
   }
@@ -106,28 +77,17 @@ async function getOwnedProject(
   if (!projectId) {
     return { kind: "not_found" as const };
   }
-  const project = await services.projects.findOwnedById(
-    projectId,
-    user.id,
-  );
+  const project = await services.projects.findOwnedById(projectId, user.id);
   return project
     ? { kind: "ok" as const, projectId: project.id, services }
     : { kind: "not_found" as const };
 }
 
-function accessError(
-  c: AppContext,
-  kind: "not_found" | "unauthorized",
-) {
-  return kind === "unauthorized"
-    ? apiError(c, "unauthorized", 401)
-    : apiError(c, "not_found", 404);
+function accessError(c: AppContext, kind: "not_found" | "unauthorized") {
+  return kind === "unauthorized" ? apiError(c, "unauthorized", 401) : apiError(c, "not_found", 404);
 }
 
-function changesError(
-  c: AppContext,
-  failure: ProjectChangesFailure,
-) {
+function changesError(c: AppContext, failure: ProjectChangesFailure) {
   switch (failure.kind) {
     case "path_not_found":
       return apiError(c, failure.kind, 404);
@@ -158,9 +118,7 @@ function apiError(
   );
 }
 
-function toProjectChangesResponse(
-  changes: ProjectChangesSnapshot,
-): ProjectChangesResponse {
+function toProjectChangesResponse(changes: ProjectChangesSnapshot): ProjectChangesResponse {
   return {
     entries: changes.entries.map(toProjectChangeEntryResponse),
     repository: changes.repository,
@@ -169,9 +127,7 @@ function toProjectChangesResponse(
   };
 }
 
-function toProjectChangeDiffResponse(
-  details: ProjectChangeDetails,
-): ProjectChangeDiffResponse {
+function toProjectChangeDiffResponse(details: ProjectChangeDetails): ProjectChangeDiffResponse {
   return {
     change: toProjectChangeEntryResponse(details.change),
     staged: details.staged

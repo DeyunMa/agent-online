@@ -1,13 +1,5 @@
-import type {
-  AgentEvent,
-  AgentExecution,
-  AgentRunInput,
-  AgentRuntime,
-} from "./contract";
-import type {
-  ProcessTerminationReason,
-  SandboxProcessSession,
-} from "../runtime/contract";
+import type { AgentEvent, AgentExecution, AgentRunInput, AgentRuntime } from "./contract";
+import type { ProcessTerminationReason, SandboxProcessSession } from "../runtime/contract";
 
 const modelProviderId = "agent_online";
 const gooseConfigRoot = "/tmp/agent-online-goose";
@@ -234,9 +226,7 @@ function createGooseArguments(input: AgentRunInput, promptPath: string) {
   ];
 }
 
-function createProviderConfiguration(
-  modelAccess: NonNullable<AgentRunInput["modelAccess"]>,
-) {
+function createProviderConfiguration(modelAccess: NonNullable<AgentRunInput["modelAccess"]>) {
   return {
     api_key_env: "AGENT_ONLINE_GATEWAY_TOKEN",
     base_url: modelGatewayChatCompletionsUrl(modelAccess.baseUrl),

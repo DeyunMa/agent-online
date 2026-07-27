@@ -119,11 +119,7 @@ describe("CreateAgentRunService", () => {
   });
 });
 
-function createService(
-  overrides: Partial<
-    ConstructorParameters<typeof CreateAgentRunService>[0]
-  >,
-) {
+function createService(overrides: Partial<ConstructorParameters<typeof CreateAgentRunService>[0]>) {
   let id = 0;
   return new CreateAgentRunService({
     agentRuns: agentRunRepository(),
@@ -138,14 +134,13 @@ function createService(
   });
 }
 
-function agentRunRepository(
-  overrides: Partial<AgentRunRepository> = {},
-): AgentRunRepository {
+function agentRunRepository(overrides: Partial<AgentRunRepository> = {}): AgentRunRepository {
   const unsupported = async () => {
     throw new Error("Unexpected AgentRunRepository call");
   };
   return {
     addUsageDelta: unsupported,
+    completeSucceeded: unsupported,
     createQueuedWithInput: unsupported,
     findActiveByProjectId: unsupported,
     findActiveOwnedByProjectId: unsupported,
@@ -155,7 +150,6 @@ function agentRunRepository(
     setProviderProcessRef: unsupported,
     setSandboxDuration: unsupported,
     transition: unsupported,
-    updateUsage: unsupported,
     ...overrides,
   } as AgentRunRepository;
 }

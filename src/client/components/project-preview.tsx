@@ -1,11 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  LoaderCircle,
-  Monitor,
-  Play,
-  RefreshCw,
-  Square,
-} from "lucide-react";
+import { LoaderCircle, Monitor, Play, RefreshCw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { ProjectPreviewResponse } from "../../shared/api";
@@ -34,8 +28,7 @@ export function ProjectPreview({
     queryFn: () => browserApi.getProjectPreview(projectId),
     queryKey: projectPreviewQueryKey(projectId),
     refetchInterval: (query) =>
-      query.state.data?.status === "running" ||
-      query.state.data?.status === "starting"
+      query.state.data?.status === "running" || query.state.data?.status === "starting"
         ? 5_000
         : false,
     retry: false,
@@ -43,61 +36,49 @@ export function ProjectPreview({
   const start = useMutation({
     mutationFn: () => browserApi.startProjectPreview(projectId),
     onSuccess: (status) => {
-      queryClient.setQueryData(
-        projectPreviewQueryKey(projectId),
-        status,
-      );
+      queryClient.setQueryData(projectPreviewQueryKey(projectId), status);
       setReloadVersion((version) => version + 1);
     },
   });
   const stop = useMutation({
     mutationFn: () => browserApi.stopProjectPreview(projectId),
     onSuccess: (status) => {
-      queryClient.setQueryData(
-        projectPreviewQueryKey(projectId),
-        status,
-      );
+      queryClient.setQueryData(projectPreviewQueryKey(projectId), status);
     },
   });
   const status = preview.data?.status ?? "stopped";
   const mutationError = start.error ?? stop.error;
   const starting = start.isPending || status === "starting";
-  const activity =
-    starting || status === "running";
+  const activity = starting || status === "running";
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity must release the previous activity signal.
   useEffect(() => {
     onActivityChange(activity);
     return () => onActivityChange(false);
   }, [activity, onActivityChange, projectId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity must release the previous starting signal.
   useEffect(() => {
     onStartingChange(starting);
     return () => onStartingChange(false);
   }, [onStartingChange, projectId, starting]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets reload state.
   useEffect(() => {
     setReloadVersion(0);
   }, [projectId]);
 
   return (
-    <section
-      className="project-preview-view"
-      hidden={!active}
-    >
+    <section className="project-preview-view" hidden={!active}>
       <div className="project-preview-toolbar">
-        <PreviewStatus
-          pending={start.isPending || stop.isPending}
-          status={status}
-        />
+        <PreviewStatus pending={start.isPending || stop.isPending} status={status} />
         <div className="project-preview-actions">
           {status === "running" ? (
             <button
               aria-label="Reload preview"
               className="project-preview-icon-action"
               disabled={stop.isPending}
-              onClick={() =>
-                setReloadVersion((version) => version + 1)
-              }
+              onClick={() => setReloadVersion((version) => version + 1)}
               title="Reload preview"
               type="button"
             >
@@ -112,11 +93,7 @@ export function ProjectPreview({
               type="button"
             >
               {stop.isPending ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="spin"
-                  size={14}
-                />
+                <LoaderCircle aria-hidden="true" className="spin" size={14} />
               ) : (
                 <Square aria-hidden="true" size={12} />
               )}
@@ -126,28 +103,17 @@ export function ProjectPreview({
             <button
               className="project-preview-action"
               disabled={
-                !sandboxAvailable ||
-                projectBusy ||
-                start.isPending ||
-                status === "starting"
+                !sandboxAvailable || projectBusy || start.isPending || status === "starting"
               }
               onClick={() => start.mutate()}
               type="button"
             >
               {start.isPending || status === "starting" ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="spin"
-                  size={14}
-                />
+                <LoaderCircle aria-hidden="true" className="spin" size={14} />
               ) : (
                 <Play aria-hidden="true" size={13} />
               )}
-              <span>
-                {start.isPending || status === "starting"
-                  ? "Starting"
-                  : "Start"}
-              </span>
+              <span>{start.isPending || status === "starting" ? "Starting" : "Start"}</span>
             </button>
           )}
         </div>
@@ -156,11 +122,7 @@ export function ProjectPreview({
       {preview.isPending ? (
         <LoadingState label="Loading preview status" />
       ) : preview.error ? (
-        <ErrorState
-          compact
-          error={preview.error}
-          onRetry={() => void preview.refetch()}
-        />
+        <ErrorState compact error={preview.error} onRetry={() => void preview.refetch()} />
       ) : mutationError ? (
         <ErrorState
           compact
@@ -208,10 +170,7 @@ function PreviewStatus({
         ? "Starting"
         : "Stopped";
   return (
-    <span
-      className={`project-preview-status preview-status-${status}`}
-      role="status"
-    >
+    <span className={`project-preview-status preview-status-${status}`} role="status">
       <span aria-hidden="true" />
       {label}
     </span>
@@ -236,18 +195,18 @@ function PreviewNotice({
             ? "Preview is starting"
             : projectBusy
               ? "Project is busy"
-            : sandboxAvailable
-              ? "Preview is stopped"
-              : "Sandbox not started"}
+              : sandboxAvailable
+                ? "Preview is stopped"
+                : "Sandbox not started"}
         </strong>
         <span>
           {status === "starting"
             ? "Waiting for the fixed development port."
             : projectBusy
               ? "Finish the current run or terminal session first."
-            : sandboxAvailable
-              ? "Start the current project preview."
-              : "Run the agent once before starting Preview."}
+              : sandboxAvailable
+                ? "Start the current project preview."
+                : "Run the agent once before starting Preview."}
         </span>
       </div>
     </div>

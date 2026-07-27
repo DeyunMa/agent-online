@@ -20,14 +20,10 @@ export function ErrorState({
   error: Error;
   onRetry?: () => void;
 }) {
-  const requestId =
-    error instanceof BrowserApiError ? error.requestId : null;
+  const requestId = error instanceof BrowserApiError ? error.requestId : null;
 
   return (
-    <div
-      className={compact ? "error-state error-state-compact" : "error-state"}
-      role="alert"
-    >
+    <div className={compact ? "error-state error-state-compact" : "error-state"} role="alert">
       <AlertCircle aria-hidden="true" size={compact ? 15 : 18} />
       <div>
         <p>{error.message}</p>

@@ -20,7 +20,7 @@ import { ProjectFilesService } from "../application/project-files";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
 import { ProjectTerminalService } from "../application/project-terminal";
-import { isTerminalAgentRun } from "../domain/agent-run";
+import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import type {
   AgentRunResponse,
@@ -45,7 +45,10 @@ describe("Project API", () => {
     const response = await fixture.app.request("http://agent-online.test/api/projects");
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "unauthorized", requestId: "test-request" });
+    await expect(response.json()).resolves.toEqual({
+      error: "unauthorized",
+      requestId: "test-request",
+    });
   });
 
   it("creates and lists only the authenticated user's Projects", async () => {
@@ -92,7 +95,9 @@ describe("Project API", () => {
       headers: { "content-type": "application/json" },
       method: "POST",
     });
-    const inaccessible = await fixture.app.request("http://agent-online.test/api/projects/project_other/messages");
+    const inaccessible = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_other/messages",
+    );
 
     expect(invalid.status).toBe(400);
     await expect(invalid.json()).resolves.toMatchObject({ error: "validation_error" });
@@ -147,16 +152,12 @@ describe("Project API", () => {
       title: "Demo",
       userId: testUser.id,
     });
-    await fixture.app.request(
-      "http://agent-online.test/api/projects/project_1/agent-runs",
-      {
-        body: JSON.stringify({ content: "Build a demo" }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-      },
-    );
-    const lease =
-      await fixture.sandboxLeases.findByProjectId("project_1");
+    await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
+      body: JSON.stringify({ content: "Build a demo" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+    const lease = await fixture.sandboxLeases.findByProjectId("project_1");
     await fixture.sandboxLeases.updateState({
       leaseId: lease?.id ?? "",
       providerRef: "provider-private-sandbox",
@@ -195,11 +196,7 @@ describe("Project API", () => {
       providerRef: "provider-private-sandbox",
       sandboxLeaseId: lease.id,
     });
-    await fixture.sandboxRuntime.writeFile(
-      handle,
-      "/workspace/src/index.ts",
-      "export {};\n",
-    );
+    await fixture.sandboxRuntime.writeFile(handle, "/workspace/src/index.ts", "export {};\n");
     await fixture.sandboxLeases.updateState({
       leaseId: lease.id,
       providerRef: handle.id,
@@ -217,9 +214,7 @@ describe("Project API", () => {
     const file = (await fileResponse.json()) as ProjectFileResponse;
 
     expect(listResponse.status).toBe(200);
-    expect(list.entries).toMatchObject([
-      { kind: "file", name: "index.ts", path: "src/index.ts" },
-    ]);
+    expect(list.entries).toMatchObject([{ kind: "file", name: "index.ts", path: "src/index.ts" }]);
     expect(fileResponse.status).toBe(200);
     expect(file).toMatchObject({
       content: "export {};\n",
@@ -239,28 +234,46 @@ describe("Project API", () => {
       userId: testUser.id,
     });
 
-    const createdResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
-      body: JSON.stringify({ content: "  Build a demo  " }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    });
+    const createdResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "  Build a demo  " }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
     const created = (await createdResponse.json()) as AgentRunResponse;
-    const messagesResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/messages");
+    const messagesResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/messages",
+    );
     const messages = (await messagesResponse.json()) as MessageResponse[];
-    const activeResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs/active");
+    const activeResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs/active",
+    );
     const active = (await activeResponse.json()) as AgentRunResponse;
-    const secondResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
-      body: JSON.stringify({ content: "Try a second Run" }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    });
+    const secondResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "Try a second Run" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
 
     expect(createdResponse.status).toBe(201);
-    expect(created).toMatchObject({ agentRuntimeId: "pi", sandboxRuntimeId: "fake", status: "queued" });
+    expect(created).toMatchObject({
+      agentRuntimeId: "pi",
+      sandboxRuntimeId: "fake",
+      status: "queued",
+    });
     expect(JSON.stringify(created)).not.toContain("providerRef");
     expect(fixture.coordinator.starts).toHaveLength(1);
-    expect(fixture.coordinator.starts[0]).toMatchObject({ prompt: "Build a demo", workingDirectory: "/workspace" });
+    expect(fixture.coordinator.starts[0]).toMatchObject({
+      prompt: "Build a demo",
+      workingDirectory: "/workspace",
+    });
     expect(messages).toMatchObject([{ content: "Build a demo", role: "user", sequence: 0 }]);
+    expect(JSON.stringify(messages)).not.toContain("projectId");
     expect(activeResponse.status).toBe(200);
     expect(active).toMatchObject({ id: created.id, status: "queued" });
     expect(secondResponse.status).toBe(409);
@@ -296,9 +309,7 @@ describe("Project API", () => {
       agentRuntimeId: "goose",
       status: "queued",
     });
-    expect(fixture.coordinator.starts[0]?.agentRun.agentRuntimeId).toBe(
-      "goose",
-    );
+    expect(fixture.coordinator.starts[0]?.agentRun.agentRuntimeId).toBe("goose");
   });
 
   it("rejects a gated AgentRuntime before creating product state", async () => {
@@ -329,9 +340,7 @@ describe("Project API", () => {
     });
     expect(fixture.agentRuns.records.size).toBe(0);
     expect(fixture.messages.records).toHaveLength(0);
-    await expect(
-      fixture.sandboxLeases.findByProjectId("project_1"),
-    ).resolves.toBeNull();
+    await expect(fixture.sandboxLeases.findByProjectId("project_1")).resolves.toBeNull();
     expect(fixture.coordinator.starts).toHaveLength(0);
   });
 
@@ -360,9 +369,7 @@ describe("Project API", () => {
     });
     expect(fixture.agentRuns.records.size).toBe(0);
     expect(fixture.messages.records).toHaveLength(0);
-    await expect(
-      fixture.sandboxLeases.findByProjectId("project_1"),
-    ).resolves.toBeNull();
+    await expect(fixture.sandboxLeases.findByProjectId("project_1")).resolves.toBeNull();
     expect(fixture.coordinator.starts).toHaveLength(0);
   });
 
@@ -376,11 +383,14 @@ describe("Project API", () => {
       userId: testUser.id,
     });
 
-    const createdResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
-      body: JSON.stringify({ content: "Build a demo" }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    });
+    const createdResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "Build a demo" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
     const created = (await createdResponse.json()) as AgentRunResponse;
     const cancellationResponse = await fixture.app.request(
       `http://agent-online.test/api/projects/project_1/agent-runs/${created.id}/cancel`,
@@ -416,15 +426,22 @@ describe("Project API", () => {
       userId: otherUser.id,
     });
 
-    const createdResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
-      body: JSON.stringify({ content: "Build a demo" }),
-      headers: { "content-type": "application/json" },
-      method: "POST",
-    });
+    const createdResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        body: JSON.stringify({ content: "Build a demo" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
     const created = (await createdResponse.json()) as AgentRunResponse;
-    const historyResponse = await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs");
+    const historyResponse = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+    );
     const history = (await historyResponse.json()) as AgentRunResponse[];
-    const inaccessible = await fixture.app.request("http://agent-online.test/api/projects/project_other/agent-runs");
+    const inaccessible = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_other/agent-runs",
+    );
 
     expect(historyResponse.status).toBe(200);
     expect(history).toHaveLength(1);
@@ -476,7 +493,6 @@ function createFixture(
   const services: ServerServices = {
     agentRuns,
     createAgentRuns,
-    defaultModelId: "gemini-3.6-flash",
     enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
     messages,
     projectChanges: {} as ServerServices["projectChanges"],
@@ -511,7 +527,6 @@ function createFixture(
     }),
     projects,
     runExecutions: coordinator,
-    sandboxRuntimeId: "fake",
     sandboxLeases,
   };
   const app = new Hono<AppEnv>();
@@ -566,11 +581,6 @@ class InMemoryProjectRepository implements ProjectRepository {
     return project;
   }
 
-  async deleteOwned(projectId: string, userId: string) {
-    const project = await this.findOwnedById(projectId, userId);
-    return project ? this.records.delete(project.id) : false;
-  }
-
   async findOwnedById(projectId: string, userId: string) {
     const project = this.records.get(projectId);
     return project?.userId === userId ? project : null;
@@ -584,35 +594,11 @@ class InMemoryProjectRepository implements ProjectRepository {
 class InMemoryMessageRepository implements MessageRepository {
   readonly records: MessageRecord[] = [];
 
-  async appendAssistant(input: {
-    agentRunId: string;
-    content: string;
-    id: string;
-    now: string;
-    projectId: string;
-  }) {
-    const existing = this.records.find(
-      (message) => message.agentRunId === input.agentRunId && message.role === "assistant",
-    );
-    if (existing) {
-      return existing;
-    }
-
-    const message: MessageRecord = {
-      agentRunId: input.agentRunId,
-      content: input.content,
-      createdAt: input.now,
-      id: input.id,
-      projectId: input.projectId,
-      role: "assistant",
-      sequence: this.records.filter((record) => record.projectId === input.projectId).length,
-    };
-    this.records.push(message);
-    return message;
-  }
-
   async findById(messageId: string, projectId: string) {
-    return this.records.find((message) => message.id === messageId && message.projectId === projectId) ?? null;
+    return (
+      this.records.find((message) => message.id === messageId && message.projectId === projectId) ??
+      null
+    );
   }
 
   async listByProjectId(projectId: string) {
@@ -626,14 +612,11 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   readonly records = new Map<string, SandboxLeaseRecord>();
 
   async claimIdleAfterActivityForStop(
-    input: Parameters<
-      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
-    >[0],
+    input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],
   ) {
     const lease = this.records.get(input.leaseId);
     if (
-      !lease ||
-      lease.status !== "idle" ||
+      lease?.status !== "idle" ||
       lease.providerRef !== input.expectedProviderRef ||
       lease.updatedAt !== input.expectedUpdatedAt
     ) {
@@ -648,9 +631,7 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return true;
   }
 
-  async claimForManualStop(
-    input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
-  ) {
+  async claimForManualStop(input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0]) {
     const lease = this.records.get(input.leaseId);
     if (
       !lease ||
@@ -671,8 +652,7 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   async claimIdleForStop(input: Parameters<SandboxLeaseRepository["claimIdleForStop"]>[0]) {
     const lease = this.records.get(input.leaseId);
     if (
-      !lease ||
-      lease.status !== "idle" ||
+      lease?.status !== "idle" ||
       lease.providerRef !== input.expectedProviderRef ||
       lease.updatedAt !== input.expectedUpdatedAt
     ) {
@@ -691,7 +671,12 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return [...this.records.values()].find((lease) => lease.projectId === projectId) ?? null;
   }
 
-  async getOrCreate(input: { id: string; now: string; projectId: string; runtimeId: "fake" | "e2b" | "cloudflare-container" }) {
+  async getOrCreate(input: {
+    id: string;
+    now: string;
+    projectId: string;
+    runtimeId: "fake" | "e2b" | "cloudflare-container";
+  }) {
     const current = await this.findByProjectId(input.projectId);
     if (current) {
       return current;
@@ -710,7 +695,12 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return lease;
   }
 
-  async updateState(input: { leaseId: string; providerRef: string | null; status: SandboxLeaseRecord["status"]; updatedAt: string }) {
+  async updateState(input: {
+    leaseId: string;
+    providerRef: string | null;
+    status: SandboxLeaseRecord["status"];
+    updatedAt: string;
+  }) {
     const lease = this.records.get(input.leaseId);
     if (!lease) {
       throw new Error("Lease not found");
@@ -730,7 +720,9 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
 
   constructor(private readonly messages: InMemoryMessageRepository) {}
 
-  async createQueuedWithInput(input: Parameters<AgentRunRepository["createQueuedWithInput"]>[0]): Promise<CreateQueuedAgentRunResult> {
+  async createQueuedWithInput(
+    input: Parameters<AgentRunRepository["createQueuedWithInput"]>[0],
+  ): Promise<CreateQueuedAgentRunResult> {
     const activeRun = [...this.records.values()].find(
       (run) => run.projectId === input.projectId && !isTerminalAgentRun(run.status),
     );
@@ -745,7 +737,8 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       id: input.inputMessageId,
       projectId: input.projectId,
       role: "user",
-      sequence: this.messages.records.filter((message) => message.projectId === input.projectId).length,
+      sequence: this.messages.records.filter((message) => message.projectId === input.projectId)
+        .length,
     };
     const run: AgentRunRecord = {
       agentRuntimeId: input.agentRuntimeId,
@@ -785,7 +778,8 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
   async findActiveOwnedByProjectId(projectId: string, userId: string) {
     return (
       [...this.records.values()].find(
-        (run) => run.projectId === projectId && run.userId === userId && !isTerminalAgentRun(run.status),
+        (run) =>
+          run.projectId === projectId && run.userId === userId && !isTerminalAgentRun(run.status),
       ) ?? null
     );
   }
@@ -798,7 +792,10 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
   async listRecentOwnedByProjectId(projectId: string, userId: string) {
     return [...this.records.values()]
       .filter((run) => run.projectId === projectId && run.userId === userId)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+      .sort(
+        (left, right) =>
+          right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+      )
       .slice(0, 50);
   }
 
@@ -838,7 +835,38 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     return run;
   }
 
+  async completeSucceeded(input: Parameters<AgentRunRepository["completeSucceeded"]>[0]) {
+    const run = this.records.get(input.runId);
+    if (run?.status !== "running") {
+      return null;
+    }
+
+    Object.assign(run, {
+      failureReason: null,
+      finishedAt: input.finishedAt,
+      providerProcessRef: null,
+      status: "succeeded",
+    });
+    run.usage.sandboxDurationMs = Math.max(run.usage.sandboxDurationMs, input.sandboxDurationMs);
+    if (input.assistantMessage) {
+      this.messages.records.push({
+        agentRunId: run.id,
+        content: input.assistantMessage.content,
+        createdAt: input.finishedAt,
+        id: input.assistantMessage.id,
+        projectId: run.projectId,
+        role: "assistant",
+        sequence: this.messages.records.filter((message) => message.projectId === run.projectId)
+          .length,
+      });
+    }
+    return run;
+  }
+
   async transition(input: Parameters<AgentRunRepository["transition"]>[0]) {
+    if (!canTransitionAgentRun(input.from, input.to)) {
+      throw new Error(`Invalid AgentRun transition from ${input.from} to ${input.to}`);
+    }
     const run = this.records.get(input.runId);
     if (!run || run.status !== input.from) {
       return null;
@@ -850,16 +878,6 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       startedAt: input.startedAt ?? run.startedAt,
       status: input.to,
     });
-    return run;
-  }
-
-  async updateUsage(runId: string, usage: AgentRunUsage) {
-    const run = this.records.get(runId);
-    if (!run) {
-      return null;
-    }
-
-    run.usage = usage;
     return run;
   }
 }

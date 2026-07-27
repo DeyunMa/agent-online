@@ -1,20 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  CirclePause,
-  PanelRightOpen,
-  Plus,
-} from "lucide-react";
+import { ChevronRight, CirclePause, PanelRightOpen, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse } from "../../shared/api";
-import {
-  BrowserApiError,
-  browserApi,
-  subscribeToAgentRun,
-} from "../api";
+import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
 import {
   activeAgentRunQueryKey,
   agentRunQueryKey,
@@ -52,8 +43,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const [terminalActive, setTerminalActive] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [view, setView] = useState<ProjectConsoleView>("conversation");
-  const mobileInspectorOpen =
-    inspectorOpen && isMobileInspectorViewport;
+  const mobileInspectorOpen = inspectorOpen && isMobileInspectorViewport;
 
   const project = useQuery({
     queryFn: () => browserApi.getProject(projectId),
@@ -84,14 +74,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     queryFn: () => browserApi.getAgentRun(projectId, activeRunId ?? ""),
     queryKey: agentRunQueryKey(projectId, activeRunId ?? ""),
     refetchInterval: (query) =>
-      query.state.data && isTerminalAgentRun(query.state.data.status)
-        ? false
-        : 2_000,
+      query.state.data && isTerminalAgentRun(query.state.data.status) ? false : 2_000,
   });
 
   const createRun = useMutation({
-    mutationFn: (content: string) =>
-      browserApi.createAgentRun(projectId, { content }),
+    mutationFn: (content: string) => browserApi.createAgentRun(projectId, { content }),
     onSuccess: async (run) => {
       setActiveRunId(run.id);
       setStreamOutput("");
@@ -103,8 +90,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     },
   });
   const cancelRun = useMutation({
-    mutationFn: (runId: string) =>
-      browserApi.cancelAgentRun(projectId, runId),
+    mutationFn: (runId: string) => browserApi.cancelAgentRun(projectId, runId),
     onSuccess: async (run) => {
       queryClient.setQueryData(agentRunQueryKey(projectId, run.id), run);
       await invalidateProjectState(queryClient, projectId);
@@ -113,10 +99,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const stopSandbox = useMutation({
     mutationFn: () => browserApi.stopProjectSandbox(projectId),
     onSuccess: async (updatedProject) => {
-      queryClient.setQueryData(
-        projectDetailQueryKey(projectId),
-        updatedProject,
-      );
+      queryClient.setQueryData(projectDetailQueryKey(projectId), updatedProject);
       await queryClient.invalidateQueries({ queryKey: projectQueryKey });
     },
     onSettled: async () => {
@@ -134,8 +117,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     (recoveredActiveRun !== null &&
       recoveredActiveRun !== undefined &&
       !isTerminalAgentRun(recoveredActiveRun.status)) ||
-    (activeRunId !== null &&
-      (currentRun === undefined || !isTerminalAgentRun(currentRun.status)));
+    (activeRunId !== null && (currentRun === undefined || !isTerminalAgentRun(currentRun.status)));
   const runCreationUnavailable =
     platformCapabilities.isPending ||
     platformCapabilities.isError ||
@@ -147,6 +129,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets console-local state.
   useEffect(() => {
     setActiveRunId(null);
     setStreamOutput("");
@@ -170,8 +153,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     }
 
     window.addEventListener("keydown", handleInspectorKeyDown);
-    return () =>
-      window.removeEventListener("keydown", handleInspectorKeyDown);
+    return () => window.removeEventListener("keydown", handleInspectorKeyDown);
   }, [closeInspector, mobileInspectorOpen]);
 
   useEffect(() => {
@@ -197,28 +179,18 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       return;
     }
 
-    queryClient.setQueryData(
-      agentRunQueryKey(projectId, recoveredRun.id),
-      recoveredRun,
-    );
+    queryClient.setQueryData(agentRunQueryKey(projectId, recoveredRun.id), recoveredRun);
     setActiveRunId((current) => current ?? recoveredRun.id);
   }, [projectId, queryClient, recoveredActiveRun]);
 
   useEffect(() => {
-    if (
-      activeRunId !== null ||
-      !activeAgentRun.isSuccess ||
-      activeAgentRun.data !== null
-    ) {
+    if (activeRunId !== null || !activeAgentRun.isSuccess || activeAgentRun.data !== null) {
       return;
     }
 
     const latestRun = recentRuns.data?.[0];
     if (latestRun) {
-      queryClient.setQueryData(
-        agentRunQueryKey(projectId, latestRun.id),
-        latestRun,
-      );
+      queryClient.setQueryData(agentRunQueryKey(projectId, latestRun.id), latestRun);
       setActiveRunId(latestRun.id);
     }
   }, [
@@ -237,7 +209,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
 
     setStreamError(null);
     void invalidateProjectState(queryClient, projectId);
-  }, [currentRun?.id, currentRun?.status, projectId, queryClient]);
+  }, [currentRun, projectId, queryClient]);
 
   useEffect(() => {
     if (!currentRunId || isTerminalAgentRun(currentRun?.status ?? "succeeded")) {
@@ -287,10 +259,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   if (project.isError) {
     return (
       <section className="project-console-error">
-        <ErrorState
-          error={project.error}
-          onRetry={() => void project.refetch()}
-        />
+        <ErrorState error={project.error} onRetry={() => void project.refetch()} />
       </section>
     );
   }
@@ -321,10 +290,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             <button
               className="new-run-action"
               disabled={
-                activeRunIsBlocking ||
-                runCreationUnavailable ||
-                previewStarting ||
-                terminalActive
+                activeRunIsBlocking || runCreationUnavailable || previewStarting || terminalActive
               }
               onClick={() => composerRef.current?.focus()}
               type="button"
@@ -431,9 +397,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           />
         ) : null}
         <ProjectInspector
-          changesEnabled={
-            platformCapabilities.data?.changesEnabled === true
-          }
+          changesEnabled={platformCapabilities.data?.changesEnabled === true}
           hasActiveRun={activeRunIsBlocking}
           isStopping={stopSandbox.isPending}
           onStopSandbox={() => stopSandbox.mutate()}
@@ -454,16 +418,12 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           project={project.data}
           mobileOpen={mobileInspectorOpen}
           previewActive={previewActive}
-          previewEnabled={
-            platformCapabilities.data?.previewEnabled === true
-          }
+          previewEnabled={platformCapabilities.data?.previewEnabled === true}
           previewStarting={previewStarting}
           run={currentRun}
           stopError={stopSandbox.error}
           terminalActive={terminalActive}
-          terminalEnabled={
-            platformCapabilities.data?.terminalEnabled === true
-          }
+          terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
         />
       </section>
     </>
@@ -472,9 +432,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
 
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : window.matchMedia(query).matches,
+    typeof window === "undefined" ? false : window.matchMedia(query).matches,
   );
 
   useEffect(() => {

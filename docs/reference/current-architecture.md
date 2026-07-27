@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现基准
 >
-> 校准日期：2026-07-26
+> 校准日期：2026-07-27
 >
 > 适用范围：`main` 分支当前代码、Cloudflare Preview 部署和 E2B 组合模板
 
@@ -105,12 +105,12 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 | 路径 | 职责 | 不能承担的职责 |
 | --- | --- | --- |
 | `src/client/` | React UI、查询缓存、同源 API/SSE/WebSocket 客户端 | 不能导入 `src/server/`，不能接触 Provider 标识或密钥。 |
-| `src/server/` | Hono 路由、鉴权、公开 DTO、配置、D1 adapter、ModelGateway、Workflow 入口 | 不在路由中拼接任意 Agent/沙箱命令。 |
+| `src/server/` | 按 Project、Files、AgentRun、Terminal、Preview、Changes、Usage 拆分的 Hono 路由，及鉴权、公开 DTO、配置、D1 adapter、ModelGateway、Workflow 入口 | 路由只做鉴权、校验、调用与响应映射，不拼接任意 Agent/沙箱命令。 |
 | `src/application/` | Project/Run/Files/Changes/Terminal/Preview/Usage 用例编排 | 不依赖 Hono 或浏览器状态。 |
 | `src/domain/` | AgentRun、SandboxLease 等 Provider 无关规则 | 不依赖框架、D1、E2B 或具体 Agent。 |
 | `src/runtime/` | Sandbox 生命周期、进程、文件、PTY、Preview、Changes 能力接口和 E2B/fake adapter | 不理解 Pi/Goose 协议或产品鉴权。 |
 | `src/agent/` | AgentRuntime 合同，以及 Pi/Goose CLI 协议归一化 | 不直接持有 Gemini Key，不管理 SandboxLease。 |
-| `src/shared/` | 浏览器和 Worker 共享的公开 DTO/协议类型 | 不包含 Provider 私有字段。 |
+| `src/shared/` | 最低层的公开协议字面量，以及浏览器和 Worker 共享的 DTO | 不导入内部 application/server 实现，不包含 Provider 私有字段。 |
 | `worker/` | Cloudflare Worker 导出入口 | 不承载业务用例实现。 |
 
 `AgentRuntime` 和 `SandboxRuntime` 是可替换的代码边界，不是独立服务：
@@ -118,6 +118,13 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 - `AgentRuntime` 决定如何启动 Agent CLI、解析事件、提取最终回复和取消当前 Agent 进程。
 - `SandboxRuntime` 决定如何创建/连接沙箱、启动通用进程、访问文件、PTY 和 Preview。
 - 具体 E2B adapter 可以由一个类实现多种 capability，但 application 用例只依赖所需的窄接口。
+
+服务端内部继续按变更原因拆分：`src/server/persistence/d1-repositories.ts` 只是稳定的
+导出入口，Project/Message、SandboxLease、AgentRun、Terminal、Preview 和 Usage
+adapter 分别位于独立模块，公共 snake_case 映射集中在 `d1-records.ts`；
+`run-execution-dispatcher.ts` 单独拥有 Workflow 创建、取消和 expiry/idle 调度，
+`services.ts` 只装配这些端口。客户端 `router.tsx` 只声明路由和 App shell，认证、
+Project 列表和创建页面由各自组件承担。
 
 ## 5. 主要执行流
 
@@ -131,7 +138,7 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 6. `SandboxRuntime.ensureLease()` 连接现有沙箱或创建新沙箱。
 7. `AgentRuntime` 在 `/workspace` 内启动 Agent 进程。
 8. Agent 使用短时 capability 调用 Worker ModelGateway；ModelGateway 替换成平台 Gemini Key，并把每次模型 usage 累加到 AgentRun。
-9. application 只把最终可见回复写成 assistant Message，并把 Run 收敛到终态。
+9. application 以一个 D1 batch 原子提交 succeeded 状态、sandbox duration、最终可见 assistant Message 和 Project touch；取消已抢先改变状态时不写回复。
 10. Lease 进入 `idle`，Workflow 在 idle TTL 后以条件更新抢占并停止沙箱。
 
 Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage，最终回复由 Message API 读取。
@@ -211,7 +218,20 @@ Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage�
 | Changes | E2B 下当前 Git 状态和有界 diff。 |
 | R2、BYOK、支付、团队 | 未实现，且不属于当前版本。 |
 
-## 8. 相关基准
+## 8. 工程门禁
+
+`pnpm check` 是本地和 CI 的统一验收入口，覆盖：
+
+- AST import boundary 和源码/构建产物凭据扫描；
+- Biome lint、格式检查和 TypeScript；
+- Node 单元/API 测试；
+- Cloudflare Workers 运行时中的真实 D1 migrations、trigger 和 batch 测试；
+- production build；
+- Chromium 中注册、创建 Project、fake Run 取消和刷新恢复 smoke。
+
+真实 E2B/Gemini 测试仍是显式 opt-in，不属于每次提交门禁，避免产生外部沙箱和模型成本。
+
+## 9. 相关基准
 
 - [D1 表设计](./database-schema.md)
 - [HTTP、SSE 与 WebSocket 接口](./http-api.md)
@@ -221,3 +241,4 @@ Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage�
 - [Terminal ADR](../adr/0005-controlled-project-terminal.md)
 - [Preview ADR](../adr/0006-controlled-project-preview.md)
 - [Changes ADR](../adr/0007-controlled-project-changes.md)
+- [协调状态恢复](../operations/coordination-recovery.md)

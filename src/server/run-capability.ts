@@ -90,12 +90,18 @@ function createClaims(input: IssueRunCapabilityInput): RunCapabilityClaims {
     throw new Error("Run capability identifiers must not be empty");
   }
 
-  if (!Number.isSafeInteger(input.maxOutputTokens) || input.maxOutputTokens < 1 || input.maxOutputTokens > maximumOutputTokens) {
+  if (
+    !Number.isSafeInteger(input.maxOutputTokens) ||
+    input.maxOutputTokens < 1 ||
+    input.maxOutputTokens > maximumOutputTokens
+  ) {
     throw new Error(`Run capability maxOutputTokens must be between 1 and ${maximumOutputTokens}`);
   }
 
   if (exp <= iat || exp - iat > maximumCapabilityLifetimeSeconds) {
-    throw new Error(`Run capability lifetime must be between 1 and ${maximumCapabilityLifetimeSeconds} seconds`);
+    throw new Error(
+      `Run capability lifetime must be between 1 and ${maximumCapabilityLifetimeSeconds} seconds`,
+    );
   }
 
   return {
@@ -136,13 +142,9 @@ function isValidClaims(value: unknown, now: number): value is RunCapabilityClaim
 }
 
 async function deriveSigningKey(secret: string) {
-  const material = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    "HKDF",
-    false,
-    ["deriveKey"],
-  );
+  const material = await crypto.subtle.importKey("raw", encoder.encode(secret), "HKDF", false, [
+    "deriveKey",
+  ]);
 
   return crypto.subtle.deriveKey(
     {

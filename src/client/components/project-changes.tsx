@@ -1,10 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronLeft,
-  ChevronRight,
-  FileDiff,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDiff, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -12,10 +7,7 @@ import type {
   ProjectChangeEntryResponse,
 } from "../../shared/api";
 import { BrowserApiError, browserApi } from "../api";
-import {
-  projectChangeQueryKey,
-  projectChangesQueryKey,
-} from "../query-keys";
+import { projectChangeQueryKey, projectChangesQueryKey } from "../query-keys";
 import { ErrorState, LoadingState } from "./ui-states";
 
 export function ProjectChanges({
@@ -27,10 +19,9 @@ export function ProjectChanges({
   projectId: string;
   sandboxAvailable: boolean;
 }) {
-  const [selectedPath, setSelectedPath] = useState<string | null>(
-    null,
-  );
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets local selection.
   useEffect(() => {
     setSelectedPath(null);
   }, [projectId]);
@@ -43,17 +34,10 @@ export function ProjectChanges({
     retry: false,
   });
   const detail = useQuery({
-    enabled:
-      sandboxAvailable &&
-      !projectBusy &&
-      selectedPath !== null,
+    enabled: sandboxAvailable && !projectBusy && selectedPath !== null,
     gcTime: 0,
-    queryFn: () =>
-      browserApi.readProjectChange(projectId, selectedPath ?? ""),
-    queryKey: projectChangeQueryKey(
-      projectId,
-      selectedPath ?? "",
-    ),
+    queryFn: () => browserApi.readProjectChange(projectId, selectedPath ?? ""),
+    queryKey: projectChangeQueryKey(projectId, selectedPath ?? ""),
     retry: false,
   });
 
@@ -83,26 +67,14 @@ export function ProjectChanges({
           onBack={() => setSelectedPath(null)}
           onRefresh={() => void detail.refetch()}
         />
-        {detail.isPending ? (
-          <LoadingState label="Loading change" />
-        ) : null}
+        {detail.isPending ? <LoadingState label="Loading change" /> : null}
         {isUnavailableError(detail.error) ? (
-          <ChangesNotice
-            detail={detail.error.message}
-            title="Change unavailable"
-          />
+          <ChangesNotice detail={detail.error.message} title="Change unavailable" />
         ) : detail.error ? (
-          <ErrorState
-            compact
-            error={detail.error}
-            onRetry={() => void detail.refetch()}
-          />
+          <ErrorState compact error={detail.error} onRetry={() => void detail.refetch()} />
         ) : null}
         {!detail.error && detail.data ? (
-          <ChangeDiff
-            staged={detail.data.staged}
-            unstaged={detail.data.unstaged}
-          />
+          <ChangeDiff staged={detail.data.staged} unstaged={detail.data.unstaged} />
         ) : null}
       </section>
     );
@@ -110,24 +82,12 @@ export function ProjectChanges({
 
   return (
     <section className="project-changes-view">
-      <ChangesToolbar
-        label="Current changes"
-        onRefresh={() => void changes.refetch()}
-      />
-      {changes.isPending ? (
-        <LoadingState label="Loading changes" />
-      ) : null}
+      <ChangesToolbar label="Current changes" onRefresh={() => void changes.refetch()} />
+      {changes.isPending ? <LoadingState label="Loading changes" /> : null}
       {isUnavailableError(changes.error) ? (
-        <ChangesNotice
-          detail={changes.error.message}
-          title="Changes unavailable"
-        />
+        <ChangesNotice detail={changes.error.message} title="Changes unavailable" />
       ) : changes.error ? (
-        <ErrorState
-          compact
-          error={changes.error}
-          onRetry={() => void changes.refetch()}
-        />
+        <ErrorState compact error={changes.error} onRetry={() => void changes.refetch()} />
       ) : null}
       {!changes.error && changes.data ? (
         !changes.data.repository ? (
@@ -157,8 +117,7 @@ export function ProjectChanges({
             ) : null}
             {changes.data.truncated ? (
               <p className="project-changes-limit">
-                Showing a partial change list because the 500-entry or
-                128 KiB limit was reached.
+                Showing a partial change list because the 500-entry or 128 KiB limit was reached.
               </p>
             ) : null}
             {changes.data.unsupportedEntries ? (
@@ -186,12 +145,7 @@ function ChangesToolbar({
   return (
     <div className="project-changes-toolbar">
       {onBack ? (
-        <button
-          className="project-change-back"
-          onClick={onBack}
-          title={label}
-          type="button"
-        >
+        <button className="project-change-back" onClick={onBack} title={label} type="button">
           <ChevronLeft aria-hidden="true" size={14} />
           <span>{label}</span>
         </button>
@@ -211,21 +165,11 @@ function ChangesToolbar({
   );
 }
 
-function ChangeRow({
-  change,
-  onOpen,
-}: {
-  change: ProjectChangeEntryResponse;
-  onOpen: () => void;
-}) {
+function ChangeRow({ change, onOpen }: { change: ProjectChangeEntryResponse; onOpen: () => void }) {
   return (
-    <button
-      className="project-change-row"
-      onClick={onOpen}
-      title={change.path}
-      type="button"
-    >
+    <button className="project-change-row" onClick={onOpen} title={change.path} type="button">
       <span
+        role="img"
         aria-label={changeSummaryLabel(change)}
         className={`project-change-kind change-kind-${primaryChangeKind(change)}`}
       >
@@ -233,21 +177,11 @@ function ChangeRow({
       </span>
       <span className="project-change-path">
         <strong>{change.path}</strong>
-        {change.previousPath ? (
-          <small>from {change.previousPath}</small>
-        ) : null}
+        {change.previousPath ? <small>from {change.previousPath}</small> : null}
       </span>
       <span className="project-change-scopes">
-        {change.stagedKind ? (
-          <small>
-            staged {changeKindCode(change.stagedKind)}
-          </small>
-        ) : null}
-        {change.unstagedKind ? (
-          <small>
-            unstaged {changeKindCode(change.unstagedKind)}
-          </small>
-        ) : null}
+        {change.stagedKind ? <small>staged {changeKindCode(change.stagedKind)}</small> : null}
+        {change.unstagedKind ? <small>unstaged {changeKindCode(change.unstagedKind)}</small> : null}
       </span>
       <ChevronRight aria-hidden="true" size={13} />
     </button>
@@ -264,9 +198,7 @@ function ChangeDiff({
   return (
     <div className="project-change-diff">
       {staged ? <DiffSection label="Staged" section={staged} /> : null}
-      {unstaged ? (
-        <DiffSection label="Unstaged" section={unstaged} />
-      ) : null}
+      {unstaged ? <DiffSection label="Unstaged" section={unstaged} /> : null}
       {!staged && !unstaged ? (
         <ChangesNotice
           detail="Git did not return a textual diff for this entry."
@@ -291,13 +223,11 @@ function DiffSection({
         {section.truncated ? <small>truncated</small> : null}
       </header>
       {section.content ? (
-        <pre tabIndex={0}>
+        <pre>
           <code>
             {section.content.split("\n").map((line, index) => (
-              <span
-                className={diffLineClass(line)}
-                key={`${index}:${line.slice(0, 24)}`}
-              >
+              // biome-ignore lint/suspicious/noArrayIndexKey: Immutable diff lines can repeat and carry no component state.
+              <span className={diffLineClass(line)} key={`${index}:${line.slice(0, 24)}`}>
                 {line || " "}
                 {"\n"}
               </span>
@@ -311,13 +241,7 @@ function DiffSection({
   );
 }
 
-function ChangesNotice({
-  detail,
-  title,
-}: {
-  detail: string;
-  title: string;
-}) {
+function ChangesNotice({ detail, title }: { detail: string; title: string }) {
   return (
     <div className="project-changes-notice">
       <FileDiff aria-hidden="true" size={16} />
@@ -350,9 +274,7 @@ function diffLineClass(line: string) {
   return "diff-line-context";
 }
 
-function changeKindCode(
-  kind: NonNullable<ProjectChangeEntryResponse["stagedKind"]>,
-) {
+function changeKindCode(kind: NonNullable<ProjectChangeEntryResponse["stagedKind"]>) {
   switch (kind) {
     case "added":
       return "A";
@@ -384,12 +306,8 @@ function changeKindSummaryCode(change: ProjectChangeEntryResponse) {
 
 function changeSummaryLabel(change: ProjectChangeEntryResponse) {
   return [
-    change.stagedKind
-      ? `staged ${change.stagedKind.replace("_", " ")}`
-      : null,
-    change.unstagedKind
-      ? `unstaged ${change.unstagedKind.replace("_", " ")}`
-      : null,
+    change.stagedKind ? `staged ${change.stagedKind.replace("_", " ")}` : null,
+    change.unstagedKind ? `unstaged ${change.unstagedKind.replace("_", " ")}` : null,
   ]
     .filter(Boolean)
     .join(", ");

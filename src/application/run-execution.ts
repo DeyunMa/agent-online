@@ -8,11 +8,7 @@ import type {
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
-import {
-  RunCoordinator,
-  type Clock,
-  type CoordinatedAgentRun,
-} from "./run-coordinator";
+import { RunCoordinator, type Clock, type CoordinatedAgentRun } from "./run-coordinator";
 
 type ModelAccess = NonNullable<AgentRunInput["modelAccess"]>;
 
@@ -54,10 +50,7 @@ export type RunExecutionServiceDependencies = {
  */
 export class RunExecutionService {
   constructor(private readonly dependencies: RunExecutionServiceDependencies) {
-    if (
-      !Number.isSafeInteger(dependencies.runTimeoutMs) ||
-      dependencies.runTimeoutMs < 1
-    ) {
+    if (!Number.isSafeInteger(dependencies.runTimeoutMs) || dependencies.runTimeoutMs < 1) {
       throw new Error("Run execution timeout must be a positive safe integer");
     }
   }
@@ -77,19 +70,15 @@ export class RunExecutionService {
         requireValue(run.inputMessageId, "AgentRun input message"),
         run.projectId,
       );
-      if (!message || message.role !== "user") {
+      if (message?.role !== "user") {
         throw new Error("AgentRun input message is unavailable");
       }
 
-      const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(
-        run.projectId,
-      );
+      const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
       assertSandboxLease(run, sandboxLease);
 
       const issuedAt = this.dependencies.clock.now();
-      const expiresAt = new Date(
-        issuedAt.getTime() + this.dependencies.runTimeoutMs,
-      );
+      const expiresAt = new Date(issuedAt.getTime() + this.dependencies.runTimeoutMs);
       const modelAccess = await this.dependencies.issueModelAccess({
         expiresAt,
         issuedAt,
@@ -101,7 +90,6 @@ export class RunExecutionService {
         createId: this.dependencies.createId,
         getAgentRuntime: this.dependencies.getAgentRuntime,
         getSandboxRuntime: this.dependencies.getSandboxRuntime,
-        messageRepository: this.dependencies.messages,
         sandboxLeaseRepository: this.dependencies.sandboxLeases,
       });
       const managedRun = await coordinator.start({
@@ -114,10 +102,7 @@ export class RunExecutionService {
 
       return await completionWithTimeout(
         managedRun,
-        Math.max(
-          1,
-          expiresAt.getTime() - this.dependencies.clock.now().getTime(),
-        ),
+        Math.max(1, expiresAt.getTime() - this.dependencies.clock.now().getTime()),
       );
     } catch (_error) {
       return this.convergeExecutionFailure(run.id);
@@ -143,9 +128,7 @@ export class RunExecutionService {
       }
     }
 
-    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(
-      run.projectId,
-    );
+    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
     if (sandboxLease?.id === run.sandboxLeaseId) {
       await this.releaseRunProcess(run, sandboxLease, "cancelled");
     }
@@ -167,24 +150,18 @@ export class RunExecutionService {
     });
   }
 
-  async stopSandboxIfIdle(
-    input: AgentRunExecutionInput,
-  ): Promise<IdleSandboxStopResult> {
+  async stopSandboxIfIdle(input: AgentRunExecutionInput): Promise<IdleSandboxStopResult> {
     const run = await this.requireRun(input);
     if (!isTerminalAgentRun(run.status)) {
       return { detached: false, stopped: false };
     }
 
-    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(
-      run.projectId,
-    );
+    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(run.projectId);
     if (activeRun) {
       return { detached: false, stopped: false };
     }
 
-    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(
-      run.projectId,
-    );
+    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
     if (
       !sandboxLease ||
       sandboxLease.id !== run.sandboxLeaseId ||
@@ -219,18 +196,12 @@ export class RunExecutionService {
   async stopSandboxAfterActivityIdle(
     input: ActivityIdleCleanupInput,
   ): Promise<IdleSandboxStopResult> {
-    const activeRun =
-      await this.dependencies.agentRuns.findActiveByProjectId(
-        input.projectId,
-      );
+    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(input.projectId);
     if (activeRun) {
       return { detached: false, stopped: false };
     }
 
-    const sandboxLease =
-      await this.dependencies.sandboxLeases.findByProjectId(
-        input.projectId,
-      );
+    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(input.projectId);
     if (
       !sandboxLease?.providerRef ||
       sandboxLease.status !== "idle" ||
@@ -239,35 +210,27 @@ export class RunExecutionService {
       return { detached: false, stopped: false };
     }
 
-    const runtime = this.dependencies.getSandboxRuntime(
-      sandboxLease.runtimeId,
-    );
+    const runtime = this.dependencies.getSandboxRuntime(sandboxLease.runtimeId);
     const providerRef = sandboxLease.providerRef;
-    const claimed =
-      await this.dependencies.sandboxLeases.claimIdleAfterActivityForStop({
-        expectedProviderRef: providerRef,
-        expectedUpdatedAt: input.expectedLeaseUpdatedAt,
-        leaseId: sandboxLease.id,
-        updatedAt: this.timestamp(),
-      });
+    const claimed = await this.dependencies.sandboxLeases.claimIdleAfterActivityForStop({
+      expectedProviderRef: providerRef,
+      expectedUpdatedAt: input.expectedLeaseUpdatedAt,
+      leaseId: sandboxLease.id,
+      updatedAt: this.timestamp(),
+    });
     if (!claimed) {
       return { detached: false, stopped: false };
     }
 
     try {
-      await runtime.stop(
-        toRuntimeHandle(sandboxLease, providerRef),
-        "idle",
-      );
+      await runtime.stop(toRuntimeHandle(sandboxLease, providerRef), "idle");
       return { detached: true, stopped: true };
     } catch {
       return { detached: true, stopped: false };
     }
   }
 
-  private async convergeExecutionFailure(
-    runId: string,
-  ): Promise<AgentRunRecord> {
+  private async convergeExecutionFailure(runId: string): Promise<AgentRunRecord> {
     const current = await this.dependencies.agentRuns.findById(runId);
     if (!current) {
       throw new Error(`AgentRun not found: ${runId}`);
@@ -285,14 +248,9 @@ export class RunExecutionService {
     return this.recoverUnownedRun(current);
   }
 
-  private async recoverUnownedRun(
-    run: AgentRunRecord,
-  ): Promise<AgentRunRecord> {
-    const targetStatus =
-      run.status === "cancelling" ? "cancelled" : "interrupted";
-    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(
-      run.projectId,
-    );
+  private async recoverUnownedRun(run: AgentRunRecord): Promise<AgentRunRecord> {
+    const targetStatus = run.status === "cancelling" ? "cancelled" : "interrupted";
+    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
     if (sandboxLease?.id === run.sandboxLeaseId) {
       await this.releaseRunProcess(
         run,
@@ -314,9 +272,7 @@ export class RunExecutionService {
 
     return this.transitionOrReload(current, targetStatus, {
       failureReason:
-        targetStatus === "interrupted"
-          ? "Agent run execution owner was interrupted"
-          : null,
+        targetStatus === "interrupted" ? "Agent run execution owner was interrupted" : null,
       finishedAt,
     });
   }
@@ -335,11 +291,7 @@ export class RunExecutionService {
     try {
       runtime = this.dependencies.getSandboxRuntime(sandboxLease.runtimeId);
     } catch (_error) {
-      await this.updateLeaseBestEffort(
-        sandboxLease,
-        sandboxLease.providerRef,
-        "failed",
-      );
+      await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "failed");
       return;
     }
 
@@ -347,11 +299,7 @@ export class RunExecutionService {
     if (run.providerProcessRef) {
       try {
         await runtime.terminateProcess(handle, run.providerProcessRef, reason);
-        await this.updateLeaseBestEffort(
-          sandboxLease,
-          sandboxLease.providerRef,
-          "idle",
-        );
+        await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "idle");
         return;
       } catch (_error) {
         // Fall through to whole-sandbox termination when the process cannot be targeted.
@@ -362,18 +310,11 @@ export class RunExecutionService {
       await runtime.stop(handle, "failed");
       await this.updateLeaseBestEffort(sandboxLease, null, "stopped");
     } catch (_error) {
-      await this.updateLeaseBestEffort(
-        sandboxLease,
-        sandboxLease.providerRef,
-        "failed",
-      );
+      await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "failed");
     }
   }
 
-  private async recordSandboxDuration(
-    run: AgentRunRecord,
-    finishedAt: string,
-  ) {
+  private async recordSandboxDuration(run: AgentRunRecord, finishedAt: string) {
     if (run.sandboxRuntimeId === "fake" || !run.startedAt) {
       return run;
     }
@@ -382,16 +323,11 @@ export class RunExecutionService {
       0,
       new Date(finishedAt).getTime() - new Date(run.startedAt).getTime(),
     );
-    const updated = await this.dependencies.agentRuns.setSandboxDuration(
-      run.id,
-      sandboxDurationMs,
-    );
+    const updated = await this.dependencies.agentRuns.setSandboxDuration(run.id, sandboxDurationMs);
     return updated ?? (await this.dependencies.agentRuns.findById(run.id)) ?? run;
   }
 
-  private async requireRun(
-    input: AgentRunExecutionInput,
-  ): Promise<AgentRunRecord> {
+  private async requireRun(input: AgentRunExecutionInput): Promise<AgentRunRecord> {
     if (!input.projectId || !input.runId) {
       throw new Error("AgentRun execution identifiers are required");
     }
@@ -427,9 +363,7 @@ export class RunExecutionService {
       return current;
     }
 
-    throw new Error(
-      `Unable to transition AgentRun from ${run.status} to ${to}`,
-    );
+    throw new Error(`Unable to transition AgentRun from ${run.status} to ${to}`);
   }
 
   private async updateLeaseBestEffort(
@@ -454,10 +388,7 @@ export class RunExecutionService {
   }
 }
 
-async function completionWithTimeout(
-  managedRun: CoordinatedAgentRun,
-  timeoutMs: number,
-) {
+async function completionWithTimeout(managedRun: CoordinatedAgentRun, timeoutMs: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<AgentRunRecord>((resolve, reject) => {
     timer = setTimeout(() => {
@@ -488,10 +419,7 @@ function assertSandboxLease(
   }
 }
 
-function toRuntimeHandle(
-  sandboxLease: SandboxLeaseRecord,
-  providerRef: string,
-): RuntimeHandle {
+function toRuntimeHandle(sandboxLease: SandboxLeaseRecord, providerRef: string): RuntimeHandle {
   return {
     id: providerRef,
     kind: sandboxLease.runtimeId,

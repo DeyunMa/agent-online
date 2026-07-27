@@ -49,10 +49,7 @@ import {
   truncateUtf8,
 } from "./git-changes";
 
-type E2BCommandHandle = Pick<
-  CommandHandle,
-  "disconnect" | "kill" | "pid" | "sendStdin" | "wait"
->;
+type E2BCommandHandle = Pick<CommandHandle, "disconnect" | "kill" | "pid" | "sendStdin" | "wait">;
 
 type E2BPty = {
   create(options: {
@@ -71,7 +68,10 @@ type E2BSandbox = {
   commands: {
     kill(pid: number): Promise<boolean>;
     list(): Promise<Array<{ pid: number }>>;
-    run(command: string, options: CommandStartOpts & { background: true }): Promise<E2BCommandHandle>;
+    run(
+      command: string,
+      options: CommandStartOpts & { background: true },
+    ): Promise<E2BCommandHandle>;
   };
   files: {
     list(path: string): Promise<EntryInfo[]>;
@@ -107,8 +107,7 @@ const defaultSandboxTimeoutMs = 30 * 60 * 1_000;
 const defaultProcessTimeoutMs = 30 * 60 * 1_000;
 const defaultTerminalTimeoutMs = 30 * 60 * 1_000;
 const defaultChangesTimeoutMs = 15_000;
-const previewConfigPath =
-  "/tmp/agent-online-vite-preview.config.mjs";
+const previewConfigPath = "/tmp/agent-online-vite-preview.config.mjs";
 const previewConfig = `export default {
   appType: "spa",
   clearScreen: false,
@@ -133,11 +132,7 @@ const defaultClient: E2BSandboxClient = {
 };
 
 export class E2BSandboxRuntime
-  implements
-    SandboxChangesRuntime,
-    SandboxPreviewRuntime,
-    SandboxRuntime,
-    SandboxTerminalRuntime
+  implements SandboxChangesRuntime, SandboxPreviewRuntime, SandboxRuntime, SandboxTerminalRuntime
 {
   readonly filesystemScope = "lease" as const;
   readonly kind = "e2b" as const;
@@ -160,14 +155,17 @@ export class E2BSandboxRuntime
     this.changesTimeoutMs = requirePositiveTimeout(
       options.changesTimeoutMs ?? defaultChangesTimeoutMs,
     );
-    this.processTimeoutMs = requirePositiveTimeout(options.processTimeoutMs ?? defaultProcessTimeoutMs);
-    this.sandboxTimeoutMs = requirePositiveTimeout(options.sandboxTimeoutMs ?? defaultSandboxTimeoutMs);
+    this.processTimeoutMs = requirePositiveTimeout(
+      options.processTimeoutMs ?? defaultProcessTimeoutMs,
+    );
+    this.sandboxTimeoutMs = requirePositiveTimeout(
+      options.sandboxTimeoutMs ?? defaultSandboxTimeoutMs,
+    );
     this.terminalOutputLimitBytes = requirePositiveTimeout(
       options.terminalOutputLimitBytes ?? defaultTerminalOutputLimitBytes,
     );
     this.terminalPendingOutputBytes = requirePositiveTimeout(
-      options.terminalPendingOutputBytes ??
-        defaultTerminalPendingOutputBytes,
+      options.terminalPendingOutputBytes ?? defaultTerminalPendingOutputBytes,
     );
     this.terminalTimeoutMs = requirePositiveTimeout(
       options.terminalTimeoutMs ?? defaultTerminalTimeoutMs,
@@ -177,7 +175,9 @@ export class E2BSandboxRuntime
   async ensureLease(input: EnsureLeaseInput): Promise<RuntimeHandle> {
     if (input.providerRef) {
       try {
-        const existing = await this.client.connect(input.providerRef, { apiKey: this.options.apiKey });
+        const existing = await this.client.connect(input.providerRef, {
+          apiKey: this.options.apiKey,
+        });
         await existing.setTimeout(this.sandboxTimeoutMs);
         this.sandboxes.set(existing.sandboxId, existing);
         return { id: existing.sandboxId, kind: this.kind, sandboxLeaseId: input.sandboxLeaseId };
@@ -197,6 +197,7 @@ export class E2BSandboxRuntime
       },
       network: {
         allowPublicTraffic: false,
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: E2B expands this port placeholder.
         maskRequestHost: "localhost:${PORT}",
       },
       timeoutMs: this.sandboxTimeoutMs,
@@ -205,7 +206,10 @@ export class E2BSandboxRuntime
     return { id: sandbox.sandboxId, kind: this.kind, sandboxLeaseId: input.sandboxLeaseId };
   }
 
-  async startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession> {
+  async startProcess(
+    handle: RuntimeHandle,
+    command: SandboxCommand,
+  ): Promise<SandboxProcessSession> {
     const sandbox = this.requireSandbox(handle);
     const queue = new AsyncEventQueue<SandboxProcessEvent>();
     const bufferedOutput: SandboxProcessEvent[] = [];
@@ -307,10 +311,7 @@ export class E2BSandboxRuntime
   async listChanges(handle: RuntimeHandle) {
     try {
       const sandbox = await this.attachSandbox(handle);
-      await assertSafeGitConfiguration(
-        sandbox,
-        this.changesTimeoutMs,
-      );
+      await assertSafeGitConfiguration(sandbox, this.changesTimeoutMs);
       const result = await runBoundedGitCommand(
         sandbox,
         changesWorkingDirectory,
@@ -334,10 +335,7 @@ export class E2BSandboxRuntime
       if (result.exitCode === 44) {
         throw new SandboxNotRepositoryError();
       }
-      if (
-        result.exitCode !== 0 &&
-        !(result.exitCode === 141 && bounded.truncated)
-      ) {
+      if (result.exitCode !== 0 && !(result.exitCode === 141 && bounded.truncated)) {
         throw new Error("Git status failed");
       }
 
@@ -357,10 +355,7 @@ export class E2BSandboxRuntime
     assertSandboxChange(change);
     try {
       const sandbox = await this.attachSandbox(handle);
-      await assertSafeGitConfiguration(
-        sandbox,
-        this.changesTimeoutMs,
-      );
+      await assertSafeGitConfiguration(sandbox, this.changesTimeoutMs);
       const staged = change.stagedKind
         ? await readGitDiffSection(
             sandbox,
@@ -444,10 +439,7 @@ export class E2BSandboxRuntime
     await sandbox.pty.kill(processId);
   }
 
-  async startPreview(
-    handle: RuntimeHandle,
-    input: SandboxPreviewStartInput,
-  ) {
+  async startPreview(handle: RuntimeHandle, input: SandboxPreviewStartInput) {
     assertPreviewStartInput(input);
     const preset = vitePreviewPreset(input.contentBasePath);
     let process: E2BCommandHandle | undefined;
@@ -491,15 +483,12 @@ export class E2BSandboxRuntime
         }
       }
       stage = "command_start";
-      const startedProcess = await sandbox.commands.run(
-        toShellCommand(preset),
-        {
-          background: true,
-          cwd: preset.cwd,
-          envs: { ...preset.env },
-          timeoutMs: input.processTimeoutMs,
-        },
-      );
+      const startedProcess = await sandbox.commands.run(toShellCommand(preset), {
+        background: true,
+        cwd: preset.cwd,
+        envs: { ...preset.env },
+        timeoutMs: input.processTimeoutMs,
+      });
       process = startedProcess;
       stage = "wait_ready";
       await waitForPreviewReady(
@@ -520,17 +509,10 @@ export class E2BSandboxRuntime
     }
   }
 
-  async isPreviewRunning(
-    handle: RuntimeHandle,
-    providerProcessRef: string,
-    _port: number,
-  ) {
+  async isPreviewRunning(handle: RuntimeHandle, providerProcessRef: string, _port: number) {
     try {
       const sandbox = await this.attachSandbox(handle);
-      const processId = parseProviderProcessRef(
-        providerProcessRef,
-        "preview",
-      );
+      const processId = parseProviderProcessRef(providerProcessRef, "preview");
       const processes = await sandbox.commands.list();
       return processes.some((process) => process.pid === processId);
     } catch (error) {
@@ -548,10 +530,7 @@ export class E2BSandboxRuntime
   ) {
     try {
       const sandbox = await this.attachSandbox(handle);
-      const processId = parseProviderProcessRef(
-        providerProcessRef,
-        "preview",
-      );
+      const processId = parseProviderProcessRef(providerProcessRef, "preview");
       await sandbox.commands.kill(processId);
     } catch (error) {
       if (!(error instanceof SandboxNotFoundError)) {
@@ -560,11 +539,7 @@ export class E2BSandboxRuntime
     }
   }
 
-  async fetchPreview(
-    handle: RuntimeHandle,
-    port: number,
-    request: SandboxPreviewRequest,
-  ) {
+  async fetchPreview(handle: RuntimeHandle, port: number, request: SandboxPreviewRequest) {
     assertPreviewRequest(port, request);
     try {
       const sandbox = await this.attachSandbox(handle);
@@ -572,14 +547,11 @@ export class E2BSandboxRuntime
       const headers = new Headers(request.headers);
       headers.set("e2b-traffic-access-token", trafficAccessToken);
 
-      return fetch(
-        `https://${sandbox.getHost(port)}${request.pathAndQuery}`,
-        {
-          headers,
-          method: request.method,
-          redirect: "manual",
-        },
-      );
+      return fetch(`https://${sandbox.getHost(port)}${request.pathAndQuery}`, {
+        headers,
+        method: request.method,
+        redirect: "manual",
+      });
     } catch (error) {
       if (error instanceof SandboxNotFoundError) {
         throw new SandboxUnavailableError();
@@ -905,10 +877,7 @@ set -uo pipefail
   /usr/bin/head -c "$AGENT_ONLINE_OUTPUT_LIMIT"
 `.trim();
 
-async function assertSafeGitConfiguration(
-  sandbox: E2BSandbox,
-  timeoutMs: number,
-) {
+async function assertSafeGitConfiguration(sandbox: E2BSandbox, timeoutMs: number) {
   const result = await runBoundedGitCommand(
     sandbox,
     changesWorkingDirectory,
@@ -949,7 +918,7 @@ function isUnsafeGitConfigurationKey(key: string) {
     key.startsWith("filter.") ||
     key === "extensions.worktreeconfig" ||
     key === "diff.external" ||
-    (/^diff\..+\.(command|textconv)$/u.test(key)) ||
+    /^diff\..+\.(command|textconv)$/u.test(key) ||
     key === "core.attributesfile" ||
     key === "core.fsmonitor" ||
     key === "core.hookspath" ||
@@ -971,10 +940,7 @@ async function readGitDiffSection(
     maxGitDiffSectionBytes + 1,
     timeoutMs,
   );
-  const bounded = truncateUtf8(
-    result.stdout,
-    maxGitDiffSectionBytes,
-  );
+  const bounded = truncateUtf8(result.stdout, maxGitDiffSectionBytes);
   if (result.exitCode === 44) {
     throw new SandboxNotRepositoryError();
   }
@@ -1032,14 +998,8 @@ async function runBoundedGitCommand(
   }
 }
 
-function createTrackedDiffArgs(
-  change: SandboxChangeEntry,
-  staged: boolean,
-) {
-  const paths =
-    change.previousPath === null
-      ? [change.path]
-      : [change.previousPath, change.path];
+function createTrackedDiffArgs(change: SandboxChangeEntry, staged: boolean) {
+  const paths = change.previousPath === null ? [change.path] : [change.previousPath, change.path];
   return [
     "--no-pager",
     "--literal-pathspecs",
@@ -1084,22 +1044,19 @@ function createUntrackedDiffArgs(path: string) {
 function assertSandboxChange(change: SandboxChangeEntry) {
   if (
     !isSupportedSandboxChangePath(change.path) ||
-    (change.previousPath !== null &&
-      !isSupportedSandboxChangePath(change.previousPath)) ||
+    (change.previousPath !== null && !isSupportedSandboxChangePath(change.previousPath)) ||
     (!change.stagedKind && !change.unstagedKind)
   ) {
     throw new Error("E2B Changes entry is invalid");
   }
 }
 
-function toShellCommand(
-  command: Pick<SandboxCommand, "args" | "command">,
-) {
+function toShellCommand(command: Pick<SandboxCommand, "args" | "command">) {
   return [command.command, ...command.args].map(quoteShellArgument).join(" ");
 }
 
 function quoteShellArgument(value: string) {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 function assertRuntimeHandle(handle: RuntimeHandle, kind: "e2b") {
@@ -1108,10 +1065,7 @@ function assertRuntimeHandle(handle: RuntimeHandle, kind: "e2b") {
   }
 }
 
-function parseProviderProcessRef(
-  value: string,
-  kind: "preview" | "process" | "terminal",
-) {
+function parseProviderProcessRef(value: string, kind: "preview" | "process" | "terminal") {
   const processId = Number(value);
   if (!Number.isSafeInteger(processId) || processId < 1) {
     throw new Error(`E2B ${kind} reference is invalid`);
@@ -1160,21 +1114,20 @@ function isSafePreviewBasePath(value: string) {
     value.includes("/preview/content/") &&
     value.endsWith("/") &&
     value.length <= 2_048 &&
-    !/[\r\n\u0000?#]/.test(value) &&
+    !value.includes("\0") &&
+    !/[\r\n?#]/.test(value) &&
     !value.split("/").some((segment) => segment === "..")
   );
 }
 
-function assertPreviewRequest(
-  port: number,
-  request: SandboxPreviewRequest,
-) {
+function assertPreviewRequest(port: number, request: SandboxPreviewRequest) {
   if (
     port !== 3000 ||
     (request.method !== "GET" && request.method !== "HEAD") ||
     !request.pathAndQuery.startsWith("/") ||
     request.pathAndQuery.length > 4_096 ||
-    /[\r\n\u0000]/.test(request.pathAndQuery)
+    request.pathAndQuery.includes("\0") ||
+    /[\r\n]/.test(request.pathAndQuery)
   ) {
     throw new Error("E2B Preview request is invalid");
   }
@@ -1188,8 +1141,7 @@ function requireTrafficAccessToken(sandbox: E2BSandbox) {
 }
 
 function toPreviewStartError(stage: string, error: unknown) {
-  const sourceName =
-    error instanceof Error ? error.name : "UnknownError";
+  const sourceName = error instanceof Error ? error.name : "UnknownError";
   const result = new Error("E2B Preview start failed", {
     cause: error,
   });
@@ -1197,12 +1149,9 @@ function toPreviewStartError(stage: string, error: unknown) {
   return result;
 }
 
-async function writePreviewConfigWithCommand(
-  sandbox: E2BSandbox,
-) {
+async function writePreviewConfigWithCommand(sandbox: E2BSandbox) {
   const script =
-    `umask 077 && printf %s ${btoa(previewConfig)}` +
-    ` | base64 -d > ${previewConfigPath}`;
+    `umask 077 && printf %s ${btoa(previewConfig)}` + ` | base64 -d > ${previewConfigPath}`;
   const process = await sandbox.commands.run(
     toShellCommand({
       args: ["-c", script],
@@ -1239,16 +1188,13 @@ async function waitForPreviewReady(
     }
 
     try {
-      const response = await fetch(
-        `https://${sandbox.getHost(port)}${contentBasePath}`,
-        {
-          headers: {
-            "e2b-traffic-access-token": trafficAccessToken,
-          },
-          redirect: "manual",
-          signal: AbortSignal.timeout(2_000),
+      const response = await fetch(`https://${sandbox.getHost(port)}${contentBasePath}`, {
+        headers: {
+          "e2b-traffic-access-token": trafficAccessToken,
         },
-      );
+        redirect: "manual",
+        signal: AbortSignal.timeout(2_000),
+      });
       await response.body?.cancel();
       if (![502, 503, 504].includes(response.status)) {
         return;

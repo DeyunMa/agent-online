@@ -1,6 +1,11 @@
-import type { ProcessTerminationReason, SandboxCommand, SandboxProcessSession } from "../runtime/contract";
+import type {
+  ProcessTerminationReason,
+  SandboxCommand,
+  SandboxProcessSession,
+} from "../runtime/contract";
+import type { AgentRuntimeId } from "../shared/protocol";
 
-export type AgentRuntimeId = "pi" | "goose" | "claude-code" | "codex-cli";
+export type { AgentRuntimeId } from "../shared/protocol";
 
 export type AgentRuntimeCapabilities = {
   modelGateway: boolean;
@@ -25,9 +30,26 @@ export type AgentRunInput = {
 };
 
 export type AgentEvent =
-  | { agentRuntimeId: AgentRuntimeId; agentRunId: string; sandboxLeaseId: string; type: "agent.started" }
-  | { agentRuntimeId: AgentRuntimeId; agentRunId: string; chunk: string; sandboxLeaseId: string; type: "agent.output" }
-  | { agentRuntimeId: AgentRuntimeId; agentRunId: string; sandboxLeaseId: string; tool: string; type: "agent.tool.started" }
+  | {
+      agentRuntimeId: AgentRuntimeId;
+      agentRunId: string;
+      sandboxLeaseId: string;
+      type: "agent.started";
+    }
+  | {
+      agentRuntimeId: AgentRuntimeId;
+      agentRunId: string;
+      chunk: string;
+      sandboxLeaseId: string;
+      type: "agent.output";
+    }
+  | {
+      agentRuntimeId: AgentRuntimeId;
+      agentRunId: string;
+      sandboxLeaseId: string;
+      tool: string;
+      type: "agent.tool.started";
+    }
   | {
       agentRuntimeId: AgentRuntimeId;
       agentRunId: string;

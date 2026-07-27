@@ -1,4 +1,9 @@
-export type RuntimeKind = "fake" | "e2b" | "cloudflare-container";
+import type { RuntimeKind, SandboxChangeKind } from "../shared/protocol";
+
+export type {
+  RuntimeKind,
+  SandboxChangeKind,
+} from "../shared/protocol";
 
 export type RuntimeHandle = {
   id: string;
@@ -33,15 +38,6 @@ export type SandboxFileEntry = {
   size: number;
 };
 
-export type SandboxChangeKind =
-  | "added"
-  | "conflicted"
-  | "deleted"
-  | "modified"
-  | "renamed"
-  | "type_changed"
-  | "untracked";
-
 export type SandboxChangeEntry = {
   path: string;
   previousPath: string | null;
@@ -65,7 +61,7 @@ export function isSupportedSandboxChangePath(value: string) {
     value.startsWith("/") ||
     value.endsWith("/") ||
     value.includes("\\") ||
-    /[\u0000-\u001f\u007f]/u.test(value)
+    hasAsciiControlCharacter(value)
   ) {
     return false;
   }
@@ -82,6 +78,16 @@ export function isSupportedSandboxChangePath(value: string) {
         segment !== ".git",
     )
   );
+}
+
+function hasAsciiControlCharacter(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export type SandboxChangeDiffSection = {
@@ -228,10 +234,7 @@ export interface SandboxPreviewRuntime {
 export interface SandboxChangesRuntime {
   readonly kind: RuntimeKind;
   listChanges(handle: RuntimeHandle): Promise<SandboxChangesSnapshot>;
-  readChangeDiff(
-    handle: RuntimeHandle,
-    change: SandboxChangeEntry,
-  ): Promise<SandboxChangeDiff>;
+  readChangeDiff(handle: RuntimeHandle, change: SandboxChangeEntry): Promise<SandboxChangeDiff>;
 }
 
 export interface SandboxRuntime

@@ -15,11 +15,13 @@ describe("Run-authorized ModelGateway", () => {
       capabilitySecret: secret,
       fetchImplementation: async () =>
         Response.json({
-          choices: [{
-            finish_reason: "stop",
-            index: 0,
-            message: { content: "done", role: "assistant" },
-          }],
+          choices: [
+            {
+              finish_reason: "stop",
+              index: 0,
+              message: { content: "done", role: "assistant" },
+            },
+          ],
           usage: {
             completion_tokens: 4,
             prompt_tokens: 9,
@@ -83,7 +85,10 @@ class FakeModelGatewayRunRepository {
   }
 
   async addUsageDelta(runId: string, usage: AgentRunUsageDelta) {
-    if (this.run.id !== runId || (this.run.status !== "starting" && this.run.status !== "running")) {
+    if (
+      this.run.id !== runId ||
+      (this.run.status !== "starting" && this.run.status !== "running")
+    ) {
       return null;
     }
 

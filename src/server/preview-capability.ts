@@ -1,5 +1,4 @@
-export const previewCapabilityAudience =
-  "agent-online:project-preview" as const;
+export const previewCapabilityAudience = "agent-online:project-preview" as const;
 
 export type PreviewCapabilityClaims = {
   aud: typeof previewCapabilityAudience;
@@ -16,10 +15,7 @@ export type PreviewCapabilityCodecOptions = {
   secret: string;
 };
 
-export function previewContentBasePath(
-  projectId: string,
-  token: string,
-) {
+export function previewContentBasePath(projectId: string, token: string) {
   return (
     `/api/projects/${encodeURIComponent(projectId)}` +
     `/preview/content/${encodeURIComponent(token)}/`
@@ -32,13 +28,9 @@ const maximumCapabilityLifetimeSeconds = 30 * 60;
 const maximumTokenLength = 2_048;
 const futureClockSkewSeconds = 30;
 
-export function createPreviewCapabilityCodec(
-  options: PreviewCapabilityCodecOptions,
-) {
+export function createPreviewCapabilityCodec(options: PreviewCapabilityCodecOptions) {
   if (options.secret.length < 32) {
-    throw new Error(
-      "Preview capability signing requires a secret with at least 32 characters",
-    );
+    throw new Error("Preview capability signing requires a secret with at least 32 characters");
   }
 
   const signingKey = deriveSigningKey(options.secret);
@@ -52,14 +44,8 @@ export function createPreviewCapabilityCodec(
       projectId: string;
     }) {
       const claims = createClaims(input);
-      const payload = encodeBase64Url(
-        encoder.encode(JSON.stringify(claims)),
-      );
-      const signature = await crypto.subtle.sign(
-        "HMAC",
-        await signingKey,
-        encoder.encode(payload),
-      );
+      const payload = encodeBase64Url(encoder.encode(JSON.stringify(claims)));
+      const signature = await crypto.subtle.sign("HMAC", await signingKey, encoder.encode(payload));
 
       return `${payload}.${encodeBase64Url(new Uint8Array(signature))}`;
     },
@@ -83,15 +69,8 @@ export function createPreviewCapabilityCodec(
         if (!verified) {
           return null;
         }
-        const claims = JSON.parse(
-          decoder.decode(decodeBase64Url(parts[0])),
-        ) as unknown;
-        return isValidClaims(
-          claims,
-          Math.floor(now().getTime() / 1_000),
-        )
-          ? claims
-          : null;
+        const claims = JSON.parse(decoder.decode(decodeBase64Url(parts[0]))) as unknown;
+        return isValidClaims(claims, Math.floor(now().getTime() / 1_000)) ? claims : null;
       } catch {
         return null;
       }
@@ -127,10 +106,7 @@ function createClaims(input: {
   };
 }
 
-function isValidClaims(
-  value: unknown,
-  now: number,
-): value is PreviewCapabilityClaims {
+function isValidClaims(value: unknown, now: number): value is PreviewCapabilityClaims {
   if (!isRecord(value)) {
     return false;
   }
@@ -151,13 +127,9 @@ function isValidClaims(
 }
 
 async function deriveSigningKey(secret: string) {
-  const material = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    "HKDF",
-    false,
-    ["deriveKey"],
-  );
+  const material = await crypto.subtle.importKey("raw", encoder.encode(secret), "HKDF", false, [
+    "deriveKey",
+  ]);
 
   return crypto.subtle.deriveKey(
     {
@@ -190,10 +162,7 @@ function encodeBase64Url(bytes: Uint8Array) {
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function decodeBase64Url(value: string) {
@@ -201,21 +170,12 @@ function decodeBase64Url(value: string) {
     throw new Error("Invalid base64url value");
   }
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
-  const binary = atob(
-    value.replace(/-/g, "+").replace(/_/g, "/") + padding,
-  );
-  return Uint8Array.from(
-    binary,
-    (character) => character.charCodeAt(0),
-  );
+  const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/") + padding);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function isNonEmptyString(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length >= 1 &&
-    value.length <= 100
-  );
+  return typeof value === "string" && value.length >= 1 && value.length <= 100;
 }
 
 function isSafeInteger(value: unknown): value is number {

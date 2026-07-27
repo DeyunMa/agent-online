@@ -22,10 +22,7 @@ export function projectChangesQueryKey(projectId: string) {
   return ["project-changes", projectId] as const;
 }
 
-export function projectChangeQueryKey(
-  projectId: string,
-  path: string,
-) {
+export function projectChangeQueryKey(projectId: string, path: string) {
   return ["project-change", projectId, path] as const;
 }
 

@@ -1,15 +1,7 @@
 import { LoaderCircle, Square, X } from "lucide-react";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type {
-  AgentRunResponse,
-  ProjectResponse,
-} from "../../shared/api";
+import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
 import { isActiveSandboxLease } from "../../domain/sandbox-lease";
 import {
   agentRunStatusLabel,
@@ -27,12 +19,7 @@ import { ProjectFiles } from "./project-files";
 import { ProjectPreview } from "./project-preview";
 import { ProjectTerminal } from "./project-terminal";
 
-type InspectorView =
-  | "changes"
-  | "files"
-  | "overview"
-  | "preview"
-  | "terminal";
+type InspectorView = "changes" | "files" | "overview" | "preview" | "terminal";
 
 export function ProjectInspector({
   changesEnabled,
@@ -114,14 +101,16 @@ export function ProjectInspector({
     !previewActive &&
     !terminalActive &&
     !isStopping;
+  const mobileDialogAttributes = mobileOpen
+    ? ({ "aria-modal": true, role: "dialog" } as const)
+    : {};
 
   return (
     <aside
+      {...mobileDialogAttributes}
       aria-labelledby="project-inspector-title"
-      aria-modal={mobileOpen || undefined}
       className={`project-inspector ${mobileOpen ? "project-inspector-mobile-open" : ""}`}
       ref={inspectorRef}
-      role={mobileOpen ? "dialog" : undefined}
     >
       <header className="project-inspector-header">
         <h2 id="project-inspector-title">Project inspector</h2>
@@ -139,11 +128,7 @@ export function ProjectInspector({
         ) : null}
       </header>
 
-      <div
-        aria-label="Project inspector views"
-        className="inspector-tabs"
-        role="tablist"
-      >
+      <div aria-label="Project inspector views" className="inspector-tabs" role="tablist">
         <button
           aria-selected={view === "overview"}
           className={`inspector-tab ${view === "overview" ? "inspector-tab-active" : ""}`}
@@ -219,14 +204,8 @@ export function ProjectInspector({
                   </span>
                 }
               />
-              <Definition
-                label="Runtime"
-                value={lease ? runtimeLabel(lease.runtimeId) : "—"}
-              />
-              <Definition
-                label="Updated"
-                value={lease ? formatDateTime(lease.updatedAt) : "—"}
-              />
+              <Definition label="Runtime" value={lease ? runtimeLabel(lease.runtimeId) : "—"} />
+              <Definition label="Updated" value={lease ? formatDateTime(lease.updatedAt) : "—"} />
             </dl>
             {stopError ? <ErrorState compact error={stopError} /> : null}
             {lease && lease.status !== "stopped" ? (
@@ -252,17 +231,13 @@ export function ProjectInspector({
         <ProjectFiles
           hasActiveRun={hasActiveRun || terminalActive}
           projectId={project.id}
-          sandboxAvailable={
-            lease !== null && isActiveSandboxLease(lease.status)
-          }
+          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
         />
       ) : view === "changes" ? (
         <ProjectChanges
           projectBusy={hasActiveRun || terminalActive}
           projectId={project.id}
-          sandboxAvailable={
-            lease !== null && isActiveSandboxLease(lease.status)
-          }
+          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
         />
       ) : null}
       {terminalEnabled ? (
@@ -280,9 +255,7 @@ export function ProjectInspector({
           onStartingChange={onPreviewStartingChange}
           projectBusy={hasActiveRun || terminalActive}
           projectId={project.id}
-          sandboxAvailable={
-            lease !== null && isActiveSandboxLease(lease.status)
-          }
+          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
         />
       ) : null}
     </aside>
@@ -301,10 +274,7 @@ function ProjectOverview({
       <h3>Overview</h3>
       <dl className="inspector-definition-list">
         <Definition label="Project" value={project.title} />
-        <Definition
-          label="Default agent"
-          value={runtimeLabel(project.defaultAgentRuntimeId)}
-        />
+        <Definition label="Default agent" value={runtimeLabel(project.defaultAgentRuntimeId)} />
         <Definition label="Model" value={run?.modelId ?? "—"} />
         <Definition label="Updated" value={formatDateTime(project.updatedAt)} />
       </dl>
@@ -327,14 +297,8 @@ function CurrentRunUsage({ run }: { run: AgentRunResponse | undefined }) {
               </span>
             }
           />
-          <Definition
-            label="Model requests"
-            value={String(run.usage.modelRequestCount)}
-          />
-          <Definition
-            label="Tokens"
-            value={formatTokenCount(run.usage.totalTokens)}
-          />
+          <Definition label="Model requests" value={String(run.usage.modelRequestCount)} />
+          <Definition label="Tokens" value={formatTokenCount(run.usage.totalTokens)} />
           <Definition label="Duration" value={formatRunDuration(run)} />
         </dl>
       ) : (
@@ -344,13 +308,7 @@ function CurrentRunUsage({ run }: { run: AgentRunResponse | undefined }) {
   );
 }
 
-function Definition({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function Definition({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt>{label}</dt>
@@ -387,10 +345,7 @@ function runtimeLabel(value: string) {
   return value;
 }
 
-function trapMobileInspectorFocus(
-  event: KeyboardEvent,
-  inspector: HTMLElement | null,
-) {
+function trapMobileInspectorFocus(event: KeyboardEvent, inspector: HTMLElement | null) {
   if (event.key !== "Tab" || !inspector) {
     return;
   }

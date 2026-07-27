@@ -1,10 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
-import type {
-  UserUsageQuery,
-  UserUsageSummary,
-} from "../application/user-usage";
+import type { UserUsageQuery, UserUsageSummary } from "../application/user-usage";
 import type { UserUsageResponse } from "../shared/api";
 import type { AppEnv } from "./env";
 import { createUsageApi } from "./usage-api";

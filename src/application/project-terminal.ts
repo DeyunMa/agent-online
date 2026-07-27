@@ -24,9 +24,7 @@ const maxTerminalColumns = 240;
 const minTerminalRows = 5;
 const maxTerminalRows = 100;
 
-export type ProjectTerminalRuntime =
-  & SandboxLifecycleRuntime
-  & SandboxTerminalRuntime;
+export type ProjectTerminalRuntime = SandboxLifecycleRuntime & SandboxTerminalRuntime;
 
 export type OpenProjectTerminalResult =
   | { connection: ProjectTerminalConnection; kind: "opened" }
@@ -75,20 +73,13 @@ export class ProjectTerminalService {
   private readonly sessionDurationMs: number;
 
   constructor(private readonly options: ProjectTerminalServiceOptions) {
-    this.sessionDurationMs =
-      options.sessionDurationMs ?? defaultTerminalSessionDurationMs;
-    if (
-      !Number.isSafeInteger(this.sessionDurationMs) ||
-      this.sessionDurationMs < 1
-    ) {
+    this.sessionDurationMs = options.sessionDurationMs ?? defaultTerminalSessionDurationMs;
+    if (!Number.isSafeInteger(this.sessionDurationMs) || this.sessionDurationMs < 1) {
       throw new Error("Terminal session duration must be positive");
     }
   }
 
-  async open(
-    projectId: string,
-    size: SandboxTerminalSize,
-  ): Promise<OpenProjectTerminalResult> {
+  async open(projectId: string, size: SandboxTerminalSize): Promise<OpenProjectTerminalResult> {
     if (!isValidTerminalSize(size)) {
       return { kind: "invalid_size" };
     }
@@ -121,9 +112,7 @@ export class ProjectTerminalService {
     const claimed = await this.options.terminalSessions.claim({
       expectedLeaseProviderRef: lease.providerRef,
       expectedLeaseUpdatedAt: lease.updatedAt,
-      expiresAt: new Date(
-        now.getTime() + this.sessionDurationMs,
-      ).toISOString(),
+      expiresAt: new Date(now.getTime() + this.sessionDurationMs).toISOString(),
       id: this.options.createId(),
       now: now.toISOString(),
       projectId,
@@ -140,9 +129,7 @@ export class ProjectTerminalService {
         terminalSessionId: claimed.session.id,
       });
     } catch {
-      await this.options.terminalSessions
-        .release(claimed.session.id)
-        .catch(() => false);
+      await this.options.terminalSessions.release(claimed.session.id).catch(() => false);
       return { kind: "provider_error" };
     }
 
@@ -168,12 +155,11 @@ export class ProjectTerminalService {
         status: "ready",
         updatedAt: this.timestamp(),
       });
-      const sandboxBound =
-        await this.options.terminalSessions.setProviderSandboxRef(
-          claimed.session.id,
-          handle.id,
-          this.timestamp(),
-        );
+      const sandboxBound = await this.options.terminalSessions.setProviderSandboxRef(
+        claimed.session.id,
+        handle.id,
+        this.timestamp(),
+      );
       if (!sandboxBound) {
         throw new Error("Terminal session was released during startup");
       }
@@ -182,12 +168,11 @@ export class ProjectTerminalService {
         ...size,
         cwd: this.options.workingDirectory,
       });
-      const persisted =
-        await this.options.terminalSessions.setProviderProcessRef(
-          claimed.session.id,
-          terminal.providerProcessRef,
-          this.timestamp(),
-        );
+      const persisted = await this.options.terminalSessions.setProviderProcessRef(
+        claimed.session.id,
+        terminal.providerProcessRef,
+        this.timestamp(),
+      );
       if (!persisted) {
         throw new Error("Terminal session expired during startup");
       }
@@ -258,19 +243,11 @@ export class ProjectTerminalService {
     if (!runtime) {
       return { released: false, stoppedSandbox: false };
     }
-    const handle = toRuntimeHandle(
-      lease.runtimeId,
-      lease.id,
-      session.providerSandboxRef,
-    );
+    const handle = toRuntimeHandle(lease.runtimeId, lease.id, session.providerSandboxRef);
 
     if (session.providerProcessRef) {
       try {
-        await runtime.terminateTerminal(
-          handle,
-          session.providerProcessRef,
-          "expired",
-        );
+        await runtime.terminateTerminal(handle, session.providerProcessRef, "expired");
         const released = await releaseTerminalAsIdle({
           clock: this.options.clock,
           handle,
@@ -360,10 +337,7 @@ class ManagedProjectTerminal implements ProjectTerminalConnection {
   }
 
   write(input: Uint8Array) {
-    if (
-      input.byteLength < 1 ||
-      input.byteLength > maxTerminalInputBytes
-    ) {
+    if (input.byteLength < 1 || input.byteLength > maxTerminalInputBytes) {
       return Promise.reject(new Error("Terminal input size is invalid"));
     }
     if (this.cleanup) {
@@ -429,11 +403,7 @@ function assertRuntimeHandle(
   runtimeId: RuntimeKind,
   sandboxLeaseId: string,
 ) {
-  if (
-    handle.kind !== runtimeId ||
-    handle.sandboxLeaseId !== sandboxLeaseId ||
-    !handle.id
-  ) {
+  if (handle.kind !== runtimeId || handle.sandboxLeaseId !== sandboxLeaseId || !handle.id) {
     throw new Error("Terminal runtime returned an invalid handle");
   }
 }

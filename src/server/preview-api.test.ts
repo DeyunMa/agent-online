@@ -16,6 +16,7 @@ import type { ServerServices } from "./services";
 const user = { email: "user@example.test", id: "user-1" };
 const now = new Date("2026-07-26T08:00:00.000Z");
 const expiresAt = "2026-07-26T08:30:00.000Z";
+const betterAuthTestSecret = "preview-test-secret-with-at-least-thirty-two-characters";
 const project: ProjectRecord = {
   createdAt: now.toISOString(),
   defaultAgentRuntimeId: "pi",
@@ -27,21 +28,11 @@ const project: ProjectRecord = {
 
 describe("Preview API", () => {
   it("recognizes only the fixed Vite client module for removal", () => {
-    const baseUrl =
-      "/api/projects/project-1/preview/content/capability/";
+    const baseUrl = "/api/projects/project-1/preview/content/capability/";
 
-    expect(
-      isViteClientResourcePath(
-        `${baseUrl}@vite/client`,
-        baseUrl,
-      ),
-    ).toBe(true);
-    expect(isViteClientResourcePath("/@vite/client?v=1", baseUrl)).toBe(
-      true,
-    );
-    expect(isViteClientResourcePath("/src/main.js", baseUrl)).toBe(
-      false,
-    );
+    expect(isViteClientResourcePath(`${baseUrl}@vite/client`, baseUrl)).toBe(true);
+    expect(isViteClientResourcePath("/@vite/client?v=1", baseUrl)).toBe(true);
+    expect(isViteClientResourcePath("/src/main.js", baseUrl)).toBe(false);
   });
 
   it("issues an opaque same-origin content URL without provider details", async () => {
@@ -58,9 +49,7 @@ describe("Preview API", () => {
       expiresAt,
       status: "running",
     });
-    expect(body.contentUrl).toMatch(
-      /^\/api\/projects\/project-1\/preview\/content\/[^/]+\/$/,
-    );
+    expect(body.contentUrl).toMatch(/^\/api\/projects\/project-1\/preview\/content\/[^/]+\/$/);
     expect(JSON.stringify(body)).not.toContain("sandbox-provider");
     expect(JSON.stringify(body)).not.toContain("e2b.app");
     expect(JSON.stringify(body)).not.toContain("3000");
@@ -116,24 +105,18 @@ describe("Preview API", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("body { color: black; }");
-    expect(fixture.fetchPreview).toHaveBeenCalledWith(
-      "project-1",
-      "preview-1",
-      {
-        headers: {
-          accept: "text/css",
-          range: "bytes=0-100",
-        },
-        method: "GET",
-        pathAndQuery: `${status.contentUrl}assets/app.css?v=1`,
+    expect(fixture.fetchPreview).toHaveBeenCalledWith("project-1", "preview-1", {
+      headers: {
+        accept: "text/css",
+        range: "bytes=0-100",
       },
-    );
+      method: "GET",
+      pathAndQuery: `${status.contentUrl}assets/app.css?v=1`,
+    });
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(response.headers.get("x-provider-host")).toBeNull();
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("content-security-policy")).toContain(
-      "connect-src 'none'",
-    );
+    expect(response.headers.get("content-security-policy")).toContain("connect-src 'none'");
   });
 
   it("replaces only Vite's client module with a no-network style runtime", async () => {
@@ -152,9 +135,7 @@ describe("Preview API", () => {
     const source = await response.text();
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain(
-      "text/javascript",
-    );
+    expect(response.headers.get("content-type")).toContain("text/javascript");
     expect(source).toContain("export function createHotContext()");
     expect(source).toContain("export function updateStyle(id, content)");
     expect(source).toContain("export function removeStyle(id)");
@@ -190,12 +171,7 @@ describe("Preview API", () => {
   });
 });
 
-function createFixture(
-  options: {
-    authenticated?: boolean;
-    projectOwned?: boolean;
-  } = {},
-) {
+function createFixture(options: { authenticated?: boolean; projectOwned?: boolean } = {}) {
   const inspect = vi.fn(async () => ({
     expiresAt,
     issuedAt: now.toISOString(),
@@ -237,15 +213,12 @@ function createFixture(
       stop,
     },
     projects: {
-      findOwnedById: vi.fn(async () =>
-        options.projectOwned === false ? null : project,
-      ),
+      findOwnedById: vi.fn(async () => (options.projectOwned === false ? null : project)),
     },
   } as unknown as ServerServices;
   const dependencies: Partial<PreviewApiDependencies> = {
     createServices: () => services,
-    getAuthenticatedUser: async () =>
-      options.authenticated === false ? null : user,
+    getAuthenticatedUser: async () => (options.authenticated === false ? null : user),
     now: () => now,
   };
   const app = new Hono<AppEnv>();
@@ -258,8 +231,7 @@ function createFixture(
   return {
     app,
     env: {
-      BETTER_AUTH_SECRET:
-        "preview-test-secret-with-at-least-thirty-two-characters",
+      BETTER_AUTH_SECRET: betterAuthTestSecret,
     } as AppEnv["Bindings"],
     fetchPreview,
     start,

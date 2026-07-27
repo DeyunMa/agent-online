@@ -1,0 +1,27 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "agent-online-browser-smoke",
+  "main": "../../worker/index.ts",
+  "compatibility_date": "2026-07-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    "ACCESS_MODE": "open",
+    "BETTER_AUTH_URL": "http://127.0.0.1:4173",
+    "DEFAULT_MODEL_ID": "gemini-3.6-flash",
+    "RUNTIME_PROVIDER": "fake",
+    "RUNS_ENABLED": "true"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agent-online-browser-smoke",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../migrations"
+    }
+  ]
+}

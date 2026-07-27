@@ -1,11 +1,5 @@
-import type {
-  AgentRuntime,
-  AgentRuntimeId,
-} from "../agent/contract";
-import {
-  defaultAgentRuntimeId,
-  getAgentRuntime,
-} from "../agent/registry";
+import type { AgentRuntime, AgentRuntimeId } from "../agent/contract";
+import { defaultAgentRuntimeId, getAgentRuntime } from "../agent/registry";
 import type { InstalledSandboxRuntimeId } from "./runtime-config";
 import type { AppBindings } from "./env";
 
@@ -22,8 +16,7 @@ export function getAgentRuntimePolicy(
   sandboxRuntimeId: InstalledSandboxRuntimeId,
 ): AgentRuntimePolicy {
   const gooseMode = getGooseRuntimeMode(env);
-  const gooseExecutable =
-    sandboxRuntimeId === "e2b" && gooseMode !== "disabled";
+  const gooseExecutable = sandboxRuntimeId === "e2b" && gooseMode !== "disabled";
   const executionRuntimeIds: readonly AgentRuntimeId[] = gooseExecutable
     ? [defaultAgentRuntimeId, "goose"]
     : [defaultAgentRuntimeId];
@@ -47,9 +40,7 @@ export function getAgentRuntimePolicy(
 export function getGooseRuntimeMode(env: AppBindings): GooseRuntimeMode {
   const value = env.GOOSE_RUNTIME_MODE?.trim().toLowerCase() || "disabled";
   if (value !== "disabled" && value !== "spike" && value !== "public") {
-    throw new Error(
-      "GOOSE_RUNTIME_MODE must be disabled, spike, or public",
-    );
+    throw new Error("GOOSE_RUNTIME_MODE must be disabled, spike, or public");
   }
   return value;
 }

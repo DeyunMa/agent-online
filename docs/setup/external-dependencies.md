@@ -9,8 +9,8 @@
 | --- | --- | --- | --- |
 | Better Auth Secret | `BETTER_AUTH_SECRET` | 本地邮箱密码认证。 | 已由本地 `.dev.vars` 提供。 |
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
-| Gemini API | `GEMINI_API_KEY` | D2 Worker ModelGateway 和真实 E2E。 | 已由本地 `.dev.vars` 提供。 |
-| E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱。 | 已由本地 `.dev.vars` 提供。 |
+| Gemini API | `GEMINI_API_KEY` | 真实 Worker ModelGateway 和显式 E2E；fake 开发不读取。 | 本地真实链路已配置。 |
+| E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱；fake 开发不读取。 | 本地真实链路已配置。 |
 | E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose、Git、Bash、coreutils 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter、Preview 和 Changes 产品链路 E2E。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
@@ -24,7 +24,7 @@
 | 待办 | 用户需要提供或确认 | 项目侧动作 |
 | --- | --- | --- |
 | Cloudflare 身份 | 目标 Account 已确认，Wrangler OAuth 已连接。 | 已完成；本机其他 Account 环境变量需按资源台账显式排除。 |
-| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 5 个迁移。 |
+| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用至 `0005`；本轮新增的 `0006_integrity_guards.sql` 必须在下一次获批部署前单独应用。 |
 | Worker 地址 | `workers.dev`。 | 已设置同源 `BETTER_AUTH_URL`，未配置自定义域。 |
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
@@ -33,15 +33,19 @@
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
+顶层 production 资源仍未配置，`pnpm deploy` 会主动失败。下一次 Preview 发布必须先
+部署关闭 Run 的新代码并排空旧 Workflow，再运行九项只读 D1 预检和 `0006` 迁移；
+发布后 Hosted Preview E2E 需要受邀测试账号，但不新增第三方服务。
+
 ## 3. 当前成本口径
 
-截至 2026-07-26：
+截至 2026-07-27：
 
 | 依赖 | 免费层结论 | 当前风险 |
 | --- | --- | --- |
 | Worker 与 Static Assets | 当前 Preview 可运行在 Workers Free；静态资源请求和存储无额外费用。 | 动态请求受每天 100,000 次、单次 CPU 和 subrequest 限制。 |
 | D1 | Free 包含每天 500 万行读取、10 万行写入和总计 5GB。 | 超出免费日限额后查询失败，不会自动获得无限容量。 |
-| Workflows | Workers Free 可用，包含每天 3,000 steps 和 1GB 状态。 | 与 Worker 共享请求/CPU 边界，复杂任务仍需观察。 |
+| Workflows | Workers Free 可用，包含每天 3,000 steps 和 1GB 状态；Free 超额不会产生 step/storage 账单。 | 与 Worker 共享请求/CPU 边界；Cloudflare 宣布 step/storage 新计费规则不早于 2026-08-10 生效，届时仍需复核。 |
 | Workers Logs | Free 包含每天 200,000 条日志事件，保留 3 天。 | 当前 100% head sampling 只适合私有 Preview。 |
 | Better Auth | 当前使用自托管开源框架。 | 未使用 Better Auth 托管基础设施。 |
 | Gemini API | Gemini 3.6 Flash 当前有 Free Tier；本项目按 owner 的模型额度不计成本。 | 实际是否计费取决于 Key 所属 Google 项目的 tier。 |
@@ -51,12 +55,14 @@
 
 官方口径见 [D2 阶段基线](../status/2026-07-26-d2-baseline.md#4-外部依赖与成本)。
 
-## 4. 功能推进到对应阶段才需要
+## 4. 当前未集成的候选
 
-| 能力 | 可能需要的外部项 | 启用条件 |
+本节只用于防止把候选项误填为当前配置，不表示已经排期或实现。
+
+| 能力 | 可能需要的外部项 | 当前结论 |
 | --- | --- | --- |
-| 基础错误监控 | Sentry 项目与 `SENTRY_DSN`。 | 完成脱敏 `beforeSend`，不上传 prompt、文件、终端或密钥。 |
-| 管理用量视图 | `ADMIN_EMAILS`。 | `/api/admin/usage` 和服务端 allowlist 已实现。 |
+| 基础错误监控 | Sentry 项目与 `SENTRY_DSN`。 | 未集成；当前代码不读取此变量。 |
+| 管理用量视图 | 独立管理员授权设计。 | 未实现 `/api/admin/usage`，也不存在 `ADMIN_EMAILS` 配置。 |
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |
 | 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有独立 `SandboxRuntime` Adapter、能力声明和 E2E。 |

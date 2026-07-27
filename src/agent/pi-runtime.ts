@@ -1,10 +1,5 @@
-import type {
-  AgentEvent,
-  AgentExecution,
-  AgentRunInput,
-  AgentRuntime,
-} from "./contract";
-import type { SandboxProcessEvent, SandboxProcessSession } from "../runtime/contract";
+import type { AgentEvent, AgentExecution, AgentRunInput, AgentRuntime } from "./contract";
+import type { SandboxProcessSession } from "../runtime/contract";
 
 const modelProviderId = "agent-online";
 const piConfigRoot = "/tmp/agent-online-pi";
@@ -21,7 +16,9 @@ export const piRuntime: AgentRuntime = {
 
   async start(context, input): Promise<AgentExecution> {
     const piConfigDirectory = getPiConfigDirectory(input.agentRunId);
-    const modelConfiguration = input.modelAccess ? createModelConfiguration(input.modelAccess) : null;
+    const modelConfiguration = input.modelAccess
+      ? createModelConfiguration(input.modelAccess)
+      : null;
     if (modelConfiguration) {
       await context.files.write(
         `${piConfigDirectory}/models.json`,
@@ -42,11 +39,13 @@ export const piRuntime: AgentRuntime = {
         : undefined,
     });
 
-    await session.write(`${JSON.stringify({
-      id: input.agentRunId,
-      message: input.prompt,
-      type: "prompt",
-    })}\n`);
+    await session.write(
+      `${JSON.stringify({
+        id: input.agentRunId,
+        message: input.prompt,
+        type: "prompt",
+      })}\n`,
+    );
 
     return new PiAgentExecution(session, input);
   },
@@ -221,9 +220,7 @@ function createPiArguments(input: AgentRunInput) {
 }
 
 function getPiConfigDirectory(agentRunId: string) {
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(agentRunId)
-  ) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(agentRunId)) {
     throw new Error("AgentRun ID is not safe for a Pi config path");
   }
 
@@ -232,7 +229,11 @@ function getPiConfigDirectory(agentRunId: string) {
 
 function createModelConfiguration(modelAccess: NonNullable<AgentRunInput["modelAccess"]>) {
   const baseUrl = new URL(modelAccess.baseUrl);
-  if (baseUrl.protocol !== "https:" && baseUrl.hostname !== "localhost" && baseUrl.hostname !== "127.0.0.1") {
+  if (
+    baseUrl.protocol !== "https:" &&
+    baseUrl.hostname !== "localhost" &&
+    baseUrl.hostname !== "127.0.0.1"
+  ) {
     throw new Error("Pi ModelGateway baseUrl must use HTTPS outside local development");
   }
 

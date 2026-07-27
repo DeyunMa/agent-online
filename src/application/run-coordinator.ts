@@ -4,11 +4,10 @@ import type { AgentRunStatus } from "../domain/agent-run";
 import type {
   AgentRunRecord,
   AgentRunRepository,
-  MessageRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
-import type { RuntimeHandle, RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
 
 export type Clock = {
   now(): Date;
@@ -20,7 +19,6 @@ export type RunCoordinatorDependencies = {
   createId(): string;
   getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
-  messageRepository: MessageRepository;
   sandboxLeaseRepository: SandboxLeaseRepository;
 };
 
@@ -56,7 +54,6 @@ export class RunCoordinator {
 class ManagedRun implements CoordinatedAgentRun {
   readonly completion: Promise<AgentRunRecord>;
 
-  private agentRuntime: AgentRuntime | null = null;
   private completionSettled = false;
   private currentLease: SandboxLeaseRecord;
   private currentRun: AgentRunRecord;
@@ -65,8 +62,6 @@ class ManagedRun implements CoordinatedAgentRun {
   private readonly resolveCompletion: (run: AgentRunRecord) => void;
   private lifecycle: Promise<void> = Promise.resolve();
   private providerRef: string | null;
-  private sandboxHandle: RuntimeHandle | null = null;
-  private sandboxRuntime: SandboxRuntime | null = null;
   private terminal = false;
 
   constructor(
@@ -96,53 +91,57 @@ class ManagedRun implements CoordinatedAgentRun {
       claimed = true;
 
       startupStage = "resolve_agent_runtime";
-      this.agentRuntime = this.dependencies.getAgentRuntime(this.currentRun.agentRuntimeId);
-      if (this.agentRuntime.id !== this.currentRun.agentRuntimeId) {
+      const agentRuntime = this.dependencies.getAgentRuntime(this.currentRun.agentRuntimeId);
+      if (agentRuntime.id !== this.currentRun.agentRuntimeId) {
         throw new Error("Registered AgentRuntime does not match AgentRun runtime");
       }
 
       startupStage = "resolve_sandbox_runtime";
-      this.sandboxRuntime = this.dependencies.getSandboxRuntime(this.currentLease.runtimeId);
-      if (this.sandboxRuntime.kind !== this.currentRun.sandboxRuntimeId) {
+      const sandboxRuntime = this.dependencies.getSandboxRuntime(this.currentLease.runtimeId);
+      if (sandboxRuntime.kind !== this.currentRun.sandboxRuntimeId) {
         throw new Error("Registered SandboxRuntime does not match AgentRun runtime");
       }
 
       startupStage = "mark_lease_starting";
       await this.updateLease("starting");
       startupStage = "ensure_sandbox";
-      this.sandboxHandle = await this.sandboxRuntime.ensureLease({
+      const sandboxHandle = await sandboxRuntime.ensureLease({
         providerRef: this.currentLease.providerRef,
         projectId: this.currentRun.projectId,
         sandboxLeaseId: this.currentLease.id,
       });
 
-      if (this.sandboxHandle.kind !== this.sandboxRuntime.kind) {
+      if (sandboxHandle.kind !== sandboxRuntime.kind) {
         throw new Error("SandboxRuntime returned a handle for a different runtime");
       }
 
       startupStage = "mark_lease_ready";
-      this.providerRef = this.sandboxHandle.id;
+      this.providerRef = sandboxHandle.id;
       await this.updateLease("ready");
       startupStage = "start_agent";
-      this.execution = await this.agentRuntime.start({
-        files: {
-          write: (path, content) => this.sandboxRuntime!.writeFile(this.sandboxHandle!, path, content),
+      const execution = await agentRuntime.start(
+        {
+          files: {
+            write: (path, content) => sandboxRuntime.writeFile(sandboxHandle, path, content),
+          },
+          processes: {
+            start: (command) => sandboxRuntime.startProcess(sandboxHandle, command),
+          },
         },
-        processes: {
-          start: (command) => this.sandboxRuntime!.startProcess(this.sandboxHandle!, command),
+        {
+          agentRunId: this.currentRun.id,
+          modelAccess: this.input.modelAccess,
+          projectId: this.currentRun.projectId,
+          prompt: this.input.prompt,
+          sandboxLeaseId: this.currentLease.id,
+          workingDirectory: this.input.workingDirectory,
         },
-      }, {
-        agentRunId: this.currentRun.id,
-        modelAccess: this.input.modelAccess,
-        projectId: this.currentRun.projectId,
-        prompt: this.input.prompt,
-        sandboxLeaseId: this.currentLease.id,
-        workingDirectory: this.input.workingDirectory,
-      });
+      );
+      this.execution = execution;
       startupStage = "persist_process_ref";
       const runWithProcessRef = await this.dependencies.agentRunRepository.setProviderProcessRef(
         this.currentRun.id,
-        this.execution.providerProcessRef,
+        execution.providerProcessRef,
       );
       if (!runWithProcessRef) {
         throw new Error("Unable to persist AgentRun process reference");
@@ -159,9 +158,7 @@ class ManagedRun implements CoordinatedAgentRun {
         throw error;
       }
 
-      await this.failSafely(
-        `Agent run startup failed at ${startupStage}`,
-      );
+      await this.failSafely(`Agent run startup failed at ${startupStage}`);
     }
   }
 
@@ -211,25 +208,46 @@ class ManagedRun implements CoordinatedAgentRun {
         return this.fail("Agent completed without a visible reply");
       }
 
-      if (visibleReply) {
-        await this.dependencies.messageRepository.appendAssistant({
-          agentRunId: this.currentRun.id,
-          content: visibleReply,
-          id: this.dependencies.createId(),
-          now: finishedAt,
-          projectId: this.currentRun.projectId,
-        });
+      const completedRun = await this.dependencies.agentRunRepository.completeSucceeded({
+        assistantMessage: visibleReply
+          ? {
+              content: visibleReply,
+              id: this.dependencies.createId(),
+            }
+          : null,
+        finishedAt,
+        runId: this.currentRun.id,
+        sandboxDurationMs: this.calculateSandboxDuration(finishedAt),
+      });
+      if (!completedRun) {
+        await this.refreshCurrentRun();
+        if (isTerminalAgentRun(this.currentRun.status)) {
+          this.terminal = true;
+          this.resolve(this.currentRun);
+          return this.currentRun;
+        }
+        if (this.currentRun.status === "cancelling") {
+          return this.complete("cancelled");
+        }
+        throw new Error("Unable to complete running AgentRun");
       }
+
+      this.currentRun = completedRun;
+      this.terminal = true;
+      return this.finishLease(completedRun);
     }
 
     await this.recordSandboxDuration(finishedAt);
-
     const completedRun = await this.transition(this.currentRun.status, status, {
       failureReason: failureReason ?? null,
       finishedAt,
     });
     this.terminal = true;
 
+    return this.finishLease(completedRun);
+  }
+
+  private async finishLease(completedRun: AgentRunRecord) {
     try {
       await this.updateLease("idle");
       this.resolve(completedRun);
@@ -243,7 +261,12 @@ class ManagedRun implements CoordinatedAgentRun {
 
   private async consumeEvents() {
     try {
-      for await (const event of this.execution!.events()) {
+      const execution = this.execution;
+      if (!execution) {
+        throw new Error("Agent execution is unavailable");
+      }
+
+      for await (const event of execution.events()) {
         await this.serialized(async () => {
           if (this.terminal) {
             return;
@@ -399,19 +422,26 @@ class ManagedRun implements CoordinatedAgentRun {
       return;
     }
 
-    const sandboxDurationMs = Math.max(
-      0,
-      new Date(finishedAt).getTime() - new Date(this.currentRun.startedAt).getTime(),
-    );
     const updatedRun = await this.dependencies.agentRunRepository.setSandboxDuration(
       this.currentRun.id,
-      sandboxDurationMs,
+      this.calculateSandboxDuration(finishedAt),
     );
     if (!updatedRun) {
       throw new Error("Unable to record AgentRun sandbox duration");
     }
 
     this.currentRun = updatedRun;
+  }
+
+  private calculateSandboxDuration(finishedAt: string) {
+    if (this.currentRun.sandboxRuntimeId === "fake" || !this.currentRun.startedAt) {
+      return 0;
+    }
+
+    return Math.max(
+      0,
+      new Date(finishedAt).getTime() - new Date(this.currentRun.startedAt).getTime(),
+    );
   }
 
   private async updateLease(status: SandboxLeaseRecord["status"]) {

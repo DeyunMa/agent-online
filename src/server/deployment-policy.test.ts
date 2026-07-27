@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  getDeploymentPolicy,
-  isEmailAllowed,
-} from "./deployment-policy";
+import { getDeploymentPolicy, isEmailAllowed } from "./deployment-policy";
+
+const testAllowedEmails = ["Owner@Example.test", "invited@example.test"].join(", ");
 
 describe("deployment policy", () => {
   it("keeps local development unrestricted by default", () => {
@@ -16,8 +15,7 @@ describe("deployment policy", () => {
 
   it("normalizes an invite-only email allowlist", () => {
     const policy = getDeploymentPolicy({
-      ACCESS_ALLOWED_EMAILS:
-        " Owner@Example.test, invited@example.test ",
+      ACCESS_ALLOWED_EMAILS: testAllowedEmails,
       ACCESS_MODE: "allowlist",
       RUNS_ENABLED: "false",
     });
@@ -36,11 +34,7 @@ describe("deployment policy", () => {
         ACCESS_MODE: "allowlist",
       }),
     ).toThrow("ACCESS_ALLOWED_EMAILS");
-    expect(() => getDeploymentPolicy({ ACCESS_MODE: "private" })).toThrow(
-      "ACCESS_MODE",
-    );
-    expect(() => getDeploymentPolicy({ RUNS_ENABLED: "sometimes" })).toThrow(
-      "RUNS_ENABLED",
-    );
+    expect(() => getDeploymentPolicy({ ACCESS_MODE: "private" })).toThrow("ACCESS_MODE");
+    expect(() => getDeploymentPolicy({ RUNS_ENABLED: "sometimes" })).toThrow("RUNS_ENABLED");
   });
 });

@@ -1,13 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ChartNoAxesColumn,
-  ChevronRight,
-  Folder,
-  LoaderCircle,
-  Plus,
-  Search,
-} from "lucide-react";
+import { ChartNoAxesColumn, ChevronRight, Folder, LoaderCircle, Plus, Search } from "lucide-react";
 import { useState } from "react";
 
 import { browserApi } from "../api";
@@ -70,8 +63,7 @@ export function ProjectSidebar() {
               <li key={project.id}>
                 <Link
                   activeProps={{
-                    className:
-                      "project-sidebar-link project-sidebar-link-active",
+                    className: "project-sidebar-link project-sidebar-link-active",
                   }}
                   className="project-sidebar-link"
                   params={{ projectId: project.id }}
@@ -90,8 +82,7 @@ export function ProjectSidebar() {
       <div className="project-sidebar-footer">
         <Link
           activeProps={{
-            className:
-              "project-sidebar-usage project-sidebar-usage-active",
+            className: "project-sidebar-usage project-sidebar-usage-active",
           }}
           className="project-sidebar-usage"
           to="/usage"

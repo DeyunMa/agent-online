@@ -114,9 +114,10 @@ describe("ProjectSandboxService", () => {
       kind: "provider_error",
       lease: { providerRef: null, status: "stopped" },
     });
-    await expect(
-      sandboxLeases.findByProjectId(lease.projectId),
-    ).resolves.toMatchObject({ providerRef: null, status: "stopped" });
+    await expect(sandboxLeases.findByProjectId(lease.projectId)).resolves.toMatchObject({
+      providerRef: null,
+      status: "stopped",
+    });
   });
 });
 
@@ -142,15 +143,11 @@ function createService(input: {
     getSandboxRuntime: () => runtime,
     now: () => now,
     previewSessions: {
-      findByProjectId: vi.fn(async () =>
-        input.previewActive ? ({} as never) : null,
-      ),
+      findByProjectId: vi.fn(async () => (input.previewActive ? ({} as never) : null)),
     },
     sandboxLeases: input.sandboxLeases,
     terminalSessions: {
-      findByProjectId: vi.fn(async () =>
-        input.terminalActive ? ({} as never) : null,
-      ),
+      findByProjectId: vi.fn(async () => (input.terminalActive ? ({} as never) : null)),
     },
   });
 }
@@ -158,11 +155,7 @@ function createService(input: {
 function createSandboxLeases(initial: SandboxLeaseRecord) {
   let lease: SandboxLeaseRecord = { ...initial };
   const claimForManualStop = vi.fn(
-    async (
-      input: Parameters<
-        SandboxLeaseRepository["claimForManualStop"]
-      >[0],
-    ) => {
+    async (input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0]) => {
       if (
         lease.id !== input.leaseId ||
         lease.providerRef !== input.expectedProviderRef ||
@@ -183,8 +176,7 @@ function createSandboxLeases(initial: SandboxLeaseRecord) {
 
   return {
     claimForManualStop,
-    findByProjectId: async (projectId: string) =>
-      lease.projectId === projectId ? lease : null,
+    findByProjectId: async (projectId: string) => (lease.projectId === projectId ? lease : null),
   } as unknown as SandboxLeaseRepository & {
     claimForManualStop: typeof claimForManualStop;
   };

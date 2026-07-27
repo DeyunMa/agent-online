@@ -11,11 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { gooseRuntime } from "../agent/goose-runtime";
 import { piRuntime } from "../agent/pi-runtime";
-import type {
-  AgentEvent,
-  AgentExecutionContext,
-  AgentRunInput,
-} from "../agent/contract";
+import type { AgentEvent, AgentExecutionContext, AgentRunInput } from "../agent/contract";
 import type { RuntimeHandle } from "../runtime/contract";
 import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import {
@@ -56,9 +52,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
         if (!authorization?.startsWith("Bearer ")) {
           return null;
         }
-        const claims = await capabilityCodec.verify(
-          authorization.slice("Bearer ".length),
-        );
+        const claims = await capabilityCodec.verify(authorization.slice("Bearer ".length));
         return claims
           ? {
               maxOutputTokens: claims.maxOutputTokens,
@@ -95,9 +89,13 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       });
       sandbox = await Sandbox.connect(runtimeHandle.id, { apiKey: e2bApiKey });
 
-      const templateProbe = await runSandboxCommand(sandbox, "sandbox template and isolation probe",
+      const templateProbe = await runSandboxCommand(
+        sandbox,
+        "sandbox template and isolation probe",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: The remote shell expands these variables.
         'test -z "${E2B_API_KEY:-}" && test -z "${GEMINI_API_KEY:-}" && test -z "${AGENT_ONLINE_GATEWAY_TOKEN:-}" && test -w /workspace && node --version && pi --version && goose --version',
-        { timeoutMs: 30_000 }, redactOutput,
+        { timeoutMs: 30_000 },
+        redactOutput,
       );
       expect(templateProbe.exitCode).toBe(0);
       const [nodeVersion, piVersion, gooseVersion] = templateProbe.stdout.trim().split(/\r?\n/);
@@ -137,9 +135,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
           ),
         ),
       );
-      const gooseUpdateEvents = await collectAgentEvents(
-        gooseUpdate.events(),
-      );
+      const gooseUpdateEvents = await collectAgentEvents(gooseUpdate.events());
       expectSuccessfulCompletion(gooseUpdateEvents, gooseUpdatedMarker);
       const gooseFileProbe = await runSandboxCommand(
         sandbox,
@@ -189,9 +185,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
           ),
         ),
       );
-      const cancelledEventsPromise = collectAgentEvents(
-        cancelledGoose.events(),
-      );
+      const cancelledEventsPromise = collectAgentEvents(cancelledGoose.events());
       await waitForSandboxFile(sandbox, gooseCancellationMarkerPath, 30_000);
       await cancelledGoose.cancel("cancelled");
       const cancelledEvents = await cancelledEventsPromise;
@@ -223,7 +217,9 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
         expect(String(gooseProviderConfig)).not.toContain(capabilityToken);
       }
       expect(usage.length).toBeGreaterThanOrEqual(3);
-      expect(usage.reduce((total, entry) => total + entry.modelRequestCount, 0)).toBeGreaterThanOrEqual(3);
+      expect(
+        usage.reduce((total, entry) => total + entry.modelRequestCount, 0),
+      ).toBeGreaterThanOrEqual(3);
       expect(usage.reduce((total, entry) => total + entry.totalTokens, 0)).toBeGreaterThan(0);
       expect(new Set(usage.map((entry) => entry.runId))).toEqual(
         new Set(["pi-create", "goose-update", "pi-verify", "goose-cancel"]),
@@ -285,7 +281,7 @@ function expectSuccessfulCompletion(events: AgentEvent[], marker: string) {
     exitCode: 0,
     type: "agent.completed",
   });
-  if (!completed || completed.type !== "agent.completed") {
+  if (completed?.type !== "agent.completed") {
     throw new Error("AgentRuntime did not emit a completion event");
   }
   expect(completed.finalText).toContain(marker);
@@ -321,11 +317,7 @@ async function issueModelAccess(
   };
 }
 
-async function waitForSandboxFile(
-  sandbox: Sandbox,
-  path: string,
-  timeoutMs: number,
-) {
+async function waitForSandboxFile(sandbox: Sandbox, path: string, timeoutMs: number) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await sandbox.files.exists(path)) {
@@ -346,7 +338,9 @@ type QuickTunnel = {
   publicUrl: string;
 };
 
-async function startLocalGateway(handler: (request: Request) => Promise<Response>): Promise<LocalGateway> {
+async function startLocalGateway(
+  handler: (request: Request) => Promise<Response>,
+): Promise<LocalGateway> {
   const server = createServer(async (request, response) => {
     try {
       const gatewayRequest = await toFetchRequest(request);
@@ -401,14 +395,22 @@ async function startQuickTunnel(localUrl: string): Promise<QuickTunnel> {
 function waitForQuickTunnelUrl(process: ChildProcess) {
   return new Promise<string>((resolve, reject) => {
     let settled = false;
-    const timeout = setTimeout(() => finish(new Error("Timed out waiting for Cloudflare Quick Tunnel.")), 30_000);
+    const timeout = setTimeout(
+      () => finish(new Error("Timed out waiting for Cloudflare Quick Tunnel.")),
+      30_000,
+    );
     const inspect = (chunk: Buffer) => {
       const match = chunk.toString().match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
       if (match) {
         finish(undefined, match[0]);
       }
     };
-    const fail = () => finish(new Error("Cloudflare Quick Tunnel could not start. Set CLOUDFLARED_BIN or install cloudflared."));
+    const fail = () =>
+      finish(
+        new Error(
+          "Cloudflare Quick Tunnel could not start. Set CLOUDFLARED_BIN or install cloudflared.",
+        ),
+      );
     const finish = (error?: Error, publicUrl?: string) => {
       if (settled) {
         return;
@@ -424,8 +426,10 @@ function waitForQuickTunnelUrl(process: ChildProcess) {
       if (error) {
         void stopProcess(process);
         reject(error);
+      } else if (publicUrl) {
+        resolve(publicUrl);
       } else {
-        resolve(publicUrl!);
+        reject(new Error("Unable to resolve the local ModelGateway URL"));
       }
     };
 
@@ -536,7 +540,9 @@ async function runSandboxCommand(
   } catch (error) {
     if (error instanceof CommandExitError) {
       const output = redactOutput(`${error.stderr}\n${error.stdout}`).trim();
-      throw new Error(`${label} failed with exit code ${error.exitCode}: ${output.slice(0, 2_000) || "no output"}`);
+      throw new Error(
+        `${label} failed with exit code ${error.exitCode}: ${output.slice(0, 2_000) || "no output"}`,
+      );
     }
 
     throw error;
@@ -544,8 +550,9 @@ async function runSandboxCommand(
 }
 
 function createOutputRedactor(values: string[]) {
-  return (value: string) => values.reduce(
-    (redacted, secret) => redacted.split(secret).join("[redacted]"),
-    value.replace(/AIza[\w-]+/g, "[redacted]"),
-  );
+  return (value: string) =>
+    values.reduce(
+      (redacted, secret) => redacted.split(secret).join("[redacted]"),
+      value.replace(/AIza[\w-]+/g, "[redacted]"),
+    );
 }

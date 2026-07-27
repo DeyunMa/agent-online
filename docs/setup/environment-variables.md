@@ -13,13 +13,12 @@
 
 不要把真实 Key 放进 `wrangler.jsonc`、Git、截图或聊天消息。`.dev.vars.example` 只保留变量名和示例值。
 
-## 2. 当前需要准备的值
+## 2. 本地 fake 模式的最小值
 
-所有本地模式都需要：
+只做 UI、认证、Project 和 fake Run 开发时，只需要：
 
 | 变量 | 是否需要你提供 | 用途 |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | 是，你已有。 | 平台默认 Gemini；真实 E2B Run 通过 Worker ModelGateway 使用。 |
 | `BETTER_AUTH_URL` | 是。 | Better Auth Cookie、跳转和安全 origin 的基准 URL。 |
 | `BETTER_AUTH_SECRET` | 是，但由项目自行生成。 | Better Auth 的签名与加密 Secret。 |
 
@@ -29,10 +28,9 @@
 
 | 变量 | 何时需要 | 用途 |
 | --- | --- | --- |
+| `GEMINI_API_KEY` | 真实 Pi/Goose Run 或显式 E2E 时。 | 只由 Worker ModelGateway 调用平台 Gemini；不进入沙箱。 |
 | `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi/Goose + Gemini E2E](../testing/e2b-agent-runtimes-gemini.md) 时。 | 只供服务端创建和管理沙箱。 |
 | `E2B_TEMPLATE_ID` | `RUNTIME_PROVIDER=e2b` 或运行真实 spike 时。 | 非敏感的精确 E2B build reference；只由服务端创建沙箱时读取。 |
-| `ADMIN_EMAILS` | 接入内部用量页面时。 | 逗号分隔的维护者邮箱 allowlist，不是部署登录白名单或用户角色系统。 |
-| `SENTRY_DSN` | 安装 Sentry SDK 后。 | 可选 Worker 错误监控的项目 DSN；它不是 Gemini/E2B 那类服务端凭据，当前脚手架不读取它。 |
 
 `BETTER_AUTH_SECRET` 用 `openssl rand -base64 32` 独立生成，至少保持 32 个高熵字符。不要复用 Gemini 或 E2B Key。
 
@@ -62,7 +60,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `ACCESS_ALLOWED_EMAILS` | 不需要 | 必填 Secret | 逗号分隔的邮箱；会 trim 并转小写比较。allowlist 模式缺失或为空时服务端拒绝启动受保护路径。 |
 | `RUNS_ENABLED` | 未设置即 `true` | 当前 `true` | 新建 AgentRun 的服务端总开关。Preview 首次锁定部署使用 `false`；关闭时不创建 Message、Lease 或 AgentRun。 |
 
-`ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问；未来的 `ADMIN_EMAILS` 只控制维护者 API。二者不能合并，否则普通受邀测试用户会意外获得管理权限。
+`ACCESS_ALLOWED_EMAILS` 控制整个私有部署的访问。当前没有 `ADMIN_EMAILS`、维护者角色或管理 API，不能把登录 allowlist 解释成管理员权限。
 
 浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、`previewEnabled`、`changesEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。这些 capability 只表示服务端安装了对应 E2B 能力，不包含 Provider 标识、端口、traffic token、Git command 或内部路径。前端禁用只是交互反馈，服务端所有权、固定参数与互斥才是强制边界。
 
@@ -93,7 +91,7 @@ pnpm wrangler secret put E2B_API_KEY --env preview
 pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 ```
 
-启用真实 E2B 才写入 E2B Secret。Sentry 集成启用后，`SENTRY_DSN` 可作为部署配置提供。不同环境的 Binding 和 `vars` 不会自动继承，部署 staging/production 前必须逐项配置和检查。
+启用真实 E2B 才写入 Gemini/E2B Secret。当前代码不读取 `SENTRY_DSN` 或 `ADMIN_EMAILS`。不同环境的 Binding 和 `vars` 不会自动继承，部署 staging/production 前必须逐项配置和检查。
 
 完整顺序见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。
 

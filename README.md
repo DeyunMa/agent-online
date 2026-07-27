@@ -1,7 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行，以及 D3 受控 Files、Usage、Terminal、Project Preview 和只读 Changes 均已通过私有 Cloudflare 环境的真实端到端验收（2026-07-26）。
-> D4 Goose Runtime 已完成受控远端 spike，但仍不向浏览器公开。维护者用量、配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes 和 D4 Goose 私有 spike 均已完成既定验收。2026-07-27 完成正确性与工程门禁加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -21,7 +20,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
 - Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
-- D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。
+- D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消优先只终止当前 Agent 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
@@ -32,12 +31,15 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Project Inspector 已启用受控 Terminal：登录用户通过同源 Worker WebSocket 使用当前 E2B `/workspace` PTY；D1 只保存当前硬互斥和私有 sandbox/PTY reference，不保存滚屏。Terminal 与 AgentRun 互斥，30 分钟 expiry 与关闭后的 10 分钟 idle 回收都由 Workflow 持久调度。
 - Project Inspector 已启用受控 Preview：只在现有 E2B Lease 中运行平台固定的 Vite 进程和端口，通过同源、短时签名的 GET/HEAD 网关加载 HTML/JS/CSS。浏览器不能提交命令、端口、环境变量或 Provider URL；Preview 最长 30 分钟，停止即删除临时 D1 行，不保存页面、日志、截图或访问历史。
 - Project Inspector 已启用只读 Changes：仅在现有 E2B Lease 中读取 `/workspace` 当前 Git working tree/index，使用固定 Git 命令、清空进程环境、拒绝危险或额外的 repository config scope，并分别展示 staged/unstaged 的有界 diff。不能安全公开的路径会明确标记为隐藏，不会误报 working tree clean。它不保存历史，也不能把变更归因到某一次 Run。
-- `pnpm check:boundaries` 使用 TypeScript/TSX AST 检查模块方向；GitHub Actions 在 `main` 和 Pull Request 上执行边界检查、类型检查、全部非外部测试和 production build。真实 E2B/Gemini E2E 保持显式 opt-in，避免每次提交产生沙箱成本。
+- `pnpm check` 统一执行依赖方向、源码凭据扫描、Biome lint/format、类型检查、Node 单元测试、Cloudflare Workers 真实 D1 迁移/触发器测试、production build/产物凭据扫描和 Playwright 浏览器 smoke。GitHub Actions 在 `main` 和 Pull Request 上执行同一门禁；真实 E2B/Gemini E2E 保持显式 opt-in，避免每次提交产生沙箱成本。
+- 顶层 production 资源尚未配置，通用 `pnpm deploy` 会被配置 guard 拒绝；当前远程
+  目标只有带显式 Cloudflare Account guard 的私有 Preview。`0006` 发布前另有只读
+  D1 完整性预检，避免旧 Workflow 与新 trigger 交错写入。
 - Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
-D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。本轮不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 
@@ -59,6 +61,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 
 | 文档 | 内容 |
 | --- | --- |
+| [文档使用说明](./docs/README.md) | 当前事实、ADR、状态快照和视觉文档的优先级与维护规则。 |
 | [CONTEXT.md](./CONTEXT.md) | 当前统一术语、资源关系和不变量。 |
 | [当前项目架构](./docs/reference/current-architecture.md) | 当前部署拓扑、资源模型、代码分层、执行流和信任边界。 |
 | [D1 表设计](./docs/reference/database-schema.md) | 当前全部 D1 表、字段、外键、索引、状态和删除语义。 |
@@ -80,7 +83,9 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [本地开发](./docs/setup/local-development.md) | 单 Worker 工程结构、模块边界和本地启动方式。 |
 | [Cloudflare 私有 Preview 部署](./docs/setup/preview-deployment.md) | Preview 白名单、Run 开关、D1/Secret/迁移和分阶段验收步骤。 |
 | [Cloudflare Preview 资源台账](./docs/setup/cloudflare-preview-resources.md) | 已创建资源、Dashboard 查看路径、变量/Secret 名称、日志与运维命令。 |
+| [协调状态恢复](./docs/operations/coordination-recovery.md) | stale Run/Terminal/Preview/Lease 的诊断、停止顺序和受控恢复边界。 |
 | [E2B + Pi/Goose + Gemini E2E](./docs/testing/e2b-agent-runtimes-gemini.md) | 组合模板、两种 adapter、同沙箱文件连续性、usage 与取消的真实验证。 |
+| [Hosted Preview E2E](./docs/testing/hosted-preview-e2e.md) | 从登录 UI 到真实 Pi、Files、usage、取消、停止和响应脱敏的发布后验收。 |
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |
 | [2026-07-26 D3 Usage 纵切](./docs/status/2026-07-26-d3-usage.md) | 当前用户全量用量聚合、API/UI 合同、本地验收与剩余边界。 |
@@ -88,6 +93,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-26 D3 Preview 纵切](./docs/status/2026-07-26-d3-preview.md) | 固定 Vite Preview、同源内容网关、生命周期、真实 E2E 与剩余限制。 |
 | [2026-07-26 D3 Changes 纵切](./docs/status/2026-07-26-d3-changes.md) | 只读 Git status/diff、安全边界、远程 E2E、响应脱敏与移动端抽屉。 |
 | [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
+| [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md) | Run/D1 原子性、模块边界、资源上限、凭据扫描和统一自动化门禁。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

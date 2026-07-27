@@ -2,10 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 
 import { getAuthConfig } from "./config";
-import {
-  getDeploymentPolicy,
-  isEmailAllowed,
-} from "./deployment-policy";
+import { getDeploymentPolicy, isEmailAllowed } from "./deployment-policy";
 import type { AppBindings } from "./env";
 
 export function createAuth(env: AppBindings) {
@@ -20,17 +17,11 @@ export function createAuth(env: AppBindings) {
     },
     hooks: {
       before: createAuthMiddleware(async (context) => {
-        if (
-          context.path !== "/sign-up/email" &&
-          context.path !== "/sign-in/email"
-        ) {
+        if (context.path !== "/sign-up/email" && context.path !== "/sign-in/email") {
           return;
         }
 
-        const email =
-          typeof context.body?.email === "string"
-            ? context.body.email
-            : null;
+        const email = typeof context.body?.email === "string" ? context.body.email : null;
         if (email && !isEmailAllowed(deploymentPolicy, email)) {
           throw new APIError("FORBIDDEN", {
             message: "This deployment is invite-only.",

@@ -1,10 +1,10 @@
-import type { AgentRuntimeId } from "../agent/contract";
-import type { AgentRunStatus } from "../domain/agent-run";
-import type { SandboxLeaseStatus } from "../domain/sandbox-lease";
 import type {
+  AgentRunStatus,
+  AgentRuntimeId,
   RuntimeKind,
   SandboxChangeKind,
-} from "../runtime/contract";
+  SandboxLeaseStatus,
+} from "./protocol";
 
 export type HealthResponse = {
   name: "agent-online";

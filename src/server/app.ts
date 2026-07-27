@@ -31,10 +31,7 @@ app.get("/api/health", (c) =>
 
 app.get("/api/capabilities", (c) => {
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(c.env);
-  const policy = getAgentRuntimePolicy(
-    c.env,
-    sandboxRuntimeId,
-  );
+  const policy = getAgentRuntimePolicy(c.env, sandboxRuntimeId);
   return c.json({
     agentRuntimeIds: [...policy.publicRuntimeIds],
     changesEnabled: sandboxRuntimeId === "e2b",
@@ -59,7 +56,7 @@ app.notFound((c) => c.json({ error: "not_found", requestId: c.get("requestId") }
 
 app.onError((error, c) => {
   console.error("Unhandled request error", {
-    message: error instanceof Error ? error.message : String(error),
+    errorName: error instanceof Error ? error.name : "UnknownError",
     requestId: c.get("requestId"),
   });
 

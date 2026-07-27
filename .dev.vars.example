@@ -9,7 +9,7 @@ BETTER_AUTH_URL=http://localhost:5173
 # ACCESS_ALLOWED_EMAILS=owner@example.com
 # RUNS_ENABLED=false
 
-# Platform model
+# Required only for real Pi/Goose runs, not for fake UI/control-plane development.
 GEMINI_API_KEY=
 
 # Add only when the real E2B runtime adapter is enabled.
@@ -29,6 +29,3 @@ GEMINI_API_KEY=
 
 # Public HTTPS origin used only when a local E2B sandbox cannot reach localhost.
 # MODEL_GATEWAY_BASE_URL=
-
-# Add only when the internal usage view is implemented.
-# ADMIN_EMAILS=

@@ -11,10 +11,7 @@ import {
   D1SandboxLeaseRepository,
 } from "./persistence/d1-repositories";
 import { createRunCapabilityCodec } from "./run-capability";
-import {
-  getE2BExecutionConfig,
-  type E2BExecutionConfig,
-} from "./runtime-config";
+import { getE2BExecutionConfig, type E2BExecutionConfig } from "./runtime-config";
 
 export type E2BRunExecution = {
   config: E2BExecutionConfig;
@@ -33,8 +30,7 @@ export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
   const runtime = new E2BSandboxRuntime({
     apiKey: config.apiKey,
     processTimeoutMs: config.runTimeoutMs + 15_000,
-    sandboxTimeoutMs:
-      longestActivityMs + config.idleTtlMs + 60_000,
+    sandboxTimeoutMs: longestActivityMs + config.idleTtlMs + 60_000,
     templateId: config.templateId,
   });
   const capabilityCodec = createRunCapabilityCodec({

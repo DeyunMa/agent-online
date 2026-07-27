@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、Gemini 3.6 Flash ModelGateway、Pi/Goose Run 聚合 usage、当前用户跨 Run 聚合、Terminal/Preview 临时所有权，以及不落库的只读 Changes 均已通过远程验收；维护者视图仍待实现。
+> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-27 已补充 D1 跨表 trigger、原子成功完成和真实迁移测试。当前没有维护者角色或管理视图。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -27,7 +27,6 @@ Better Auth 负责 `user`、`account`、`session` 和 `verification`。第一版
 3. 从 Project 推导 Message、SandboxLease、AgentRun、终端和 preview 的访问权。
 4. 创建 AgentRun 时由服务端解析已注册的 `agent_runtime_id` 与 `sandbox_runtime_id`；浏览器提交的任意 Runtime/命令都不可信。
 5. 创建 AgentRun 前检查部署级 `RUNS_ENABLED`；关闭时必须先于 Message、Lease 和 AgentRun 写入返回。
-6. 内部管理端点以后以独立的 `ADMIN_EMAILS` Worker allowlist 保护，不为此预建角色、组织或团队模型。
 
 必须固定 `BETTER_AUTH_URL` 并设置受信任 origin；React 和 API 同域可避免 CORS 与跨域 Cookie 的复杂度。开放公共注册前，需要重新审阅邮箱验证、注册限流、滥用处理和找回密码。
 
@@ -117,9 +116,9 @@ Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token �
 
 它不用于保存价格、套餐、信用余额、订单、发票或付款。需要强配额、预留或商用计费时，必须作为新的领域设计引入，而不是提前保留半套表。
 
-## 6. 可选观测：Sentry
+## 6. 未集成的可选观测：Sentry
 
-Sentry 不是运行依赖，也不应接收用户内容。真实 Worker、ModelGateway 和 SandboxRuntime 接入后，可以只接入错误监控和低采样服务端 trace，标签使用 `agent_run_id`、Runtime 种类和状态等无敏感元数据。
+Sentry 不是运行依赖，当前代码也不读取 `SENTRY_DSN`。若以后单独批准接入，只能上传脱敏错误和低采样服务端 trace，标签使用应用级 Run ID、Runtime 种类和状态等无敏感元数据。
 
 第一版不要启用 Session Replay、日志全量导出或 AI Agent transcript 追踪；这些能力更容易意外收集 prompt、文件或终端输出。接入前应明确 `beforeSend`/数据清洗策略、采样率和错误阈值。
 

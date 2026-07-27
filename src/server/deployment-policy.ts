@@ -7,45 +7,26 @@ export type DeploymentPolicy = {
 };
 
 export function getDeploymentPolicy(
-  env: Pick<
-    AppBindings,
-    "ACCESS_ALLOWED_EMAILS" | "ACCESS_MODE" | "RUNS_ENABLED"
-  >,
+  env: Pick<AppBindings, "ACCESS_ALLOWED_EMAILS" | "ACCESS_MODE" | "RUNS_ENABLED">,
 ): DeploymentPolicy {
-  const accessMode = parseAccessMode(
-    env.ACCESS_MODE,
-    env.ACCESS_ALLOWED_EMAILS,
-  );
+  const accessMode = parseAccessMode(env.ACCESS_MODE, env.ACCESS_ALLOWED_EMAILS);
 
   return {
     accessMode,
     allowedEmails:
-      accessMode === "allowlist"
-        ? parseAllowedEmails(env.ACCESS_ALLOWED_EMAILS)
-        : null,
+      accessMode === "allowlist" ? parseAllowedEmails(env.ACCESS_ALLOWED_EMAILS) : null,
     runsEnabled: parseBoolean(env.RUNS_ENABLED, true, "RUNS_ENABLED"),
   };
 }
 
-export function isEmailAllowed(
-  policy: DeploymentPolicy,
-  email: string,
-): boolean {
-  return (
-    policy.allowedEmails === null ||
-    policy.allowedEmails.has(normalizeEmail(email))
-  );
+export function isEmailAllowed(policy: DeploymentPolicy, email: string): boolean {
+  return policy.allowedEmails === null || policy.allowedEmails.has(normalizeEmail(email));
 }
 
 function parseAllowedEmails(value: string | undefined) {
-  const emails = (value ?? "")
-    .split(",")
-    .map(normalizeEmail)
-    .filter(Boolean);
+  const emails = (value ?? "").split(",").map(normalizeEmail).filter(Boolean);
   if (emails.length === 0) {
-    throw new Error(
-      "ACCESS_ALLOWED_EMAILS must contain at least one email when set",
-    );
+    throw new Error("ACCESS_ALLOWED_EMAILS must contain at least one email when set");
   }
 
   return new Set(emails);
@@ -71,11 +52,7 @@ function normalizeEmail(value: string) {
   return value.trim().toLocaleLowerCase();
 }
 
-function parseBoolean(
-  value: string | undefined,
-  defaultValue: boolean,
-  name: string,
-) {
+function parseBoolean(value: string | undefined, defaultValue: boolean, name: string) {
   if (value === undefined || value.trim() === "") {
     return defaultValue;
   }

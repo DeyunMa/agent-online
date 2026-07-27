@@ -7,10 +7,7 @@ import type {
   TerminalSessionRecord,
   TerminalSessionRepository,
 } from "./ports";
-import {
-  ProjectTerminalService,
-  type ProjectTerminalRuntime,
-} from "./project-terminal";
+import { ProjectTerminalService, type ProjectTerminalRuntime } from "./project-terminal";
 import type {
   RuntimeHandle,
   SandboxTerminalEvent,
@@ -58,14 +55,10 @@ describe("ProjectTerminalService", () => {
         rows: 30,
       },
     );
-    expect(harness.session.inputs).toEqual([
-      new TextEncoder().encode("pwd\r"),
-    ]);
+    expect(harness.session.inputs).toEqual([new TextEncoder().encode("pwd\r")]);
     expect(harness.session.sizes).toEqual([{ cols: 120, rows: 36 }]);
     expect(events).toEqual(harness.session.outputEvents);
-    expect(
-      harness.terminalSessions.releaseAndMarkLeaseIdle,
-    ).toHaveBeenCalledWith({
+    expect(harness.terminalSessions.releaseAndMarkLeaseIdle).toHaveBeenCalledWith({
       expectedProviderSandboxRef: "sandbox-1",
       now,
       sessionId: "terminal-1",
@@ -80,19 +73,15 @@ describe("ProjectTerminalService", () => {
       projectId: "project-1",
       terminalSessionId: "terminal-1",
     });
-    expect(harness.leaseStatuses).toEqual([
-      "starting",
-      "ready",
-      "busy",
-    ]);
+    expect(harness.leaseStatuses).toEqual(["starting", "ready", "busy"]);
   });
 
   it("returns project_busy before creating a sandbox when an AgentRun is active", async () => {
     const harness = createHarness({ activeRun: true });
 
-    await expect(
-      harness.service.open("project-1", { cols: 80, rows: 24 }),
-    ).resolves.toEqual({ kind: "project_busy" });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "project_busy",
+    });
 
     expect(harness.sandboxLeases.getOrCreate).not.toHaveBeenCalled();
     expect(harness.runtime.ensureLease).not.toHaveBeenCalled();
@@ -101,9 +90,9 @@ describe("ProjectTerminalService", () => {
   it("uses the atomic Terminal claim to reject a concurrent opener", async () => {
     const harness = createHarness({ claimBusy: true });
 
-    await expect(
-      harness.service.open("project-1", { cols: 80, rows: 24 }),
-    ).resolves.toEqual({ kind: "project_busy" });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "project_busy",
+    });
 
     expect(harness.runtime.ensureLease).not.toHaveBeenCalled();
   });
@@ -111,22 +100,20 @@ describe("ProjectTerminalService", () => {
   it("does not start provider state when durable expiry scheduling fails", async () => {
     const harness = createHarness({ scheduleExpiryError: true });
 
-    await expect(
-      harness.service.open("project-1", { cols: 80, rows: 24 }),
-    ).resolves.toEqual({ kind: "provider_error" });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "provider_error",
+    });
 
-    expect(harness.terminalSessions.release).toHaveBeenCalledWith(
-      "terminal-1",
-    );
+    expect(harness.terminalSessions.release).toHaveBeenCalledWith("terminal-1");
     expect(harness.runtime.ensureLease).not.toHaveBeenCalled();
   });
 
   it("makes Terminal explicitly unavailable for a runtime without PTY capability", async () => {
     const harness = createHarness({ runtimeAvailable: false });
 
-    await expect(
-      harness.service.open("project-1", { cols: 80, rows: 24 }),
-    ).resolves.toEqual({ kind: "sandbox_unavailable" });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "sandbox_unavailable",
+    });
 
     expect(harness.terminalSessions.claim).not.toHaveBeenCalled();
   });
@@ -134,9 +121,9 @@ describe("ProjectTerminalService", () => {
   it("isolates the sandbox before releasing the claim when PTY startup fails", async () => {
     const harness = createHarness({ startError: true });
 
-    await expect(
-      harness.service.open("project-1", { cols: 80, rows: 24 }),
-    ).resolves.toEqual({ kind: "provider_error" });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "provider_error",
+    });
 
     expect(harness.runtime.stop).toHaveBeenCalledWith(
       {
@@ -146,9 +133,7 @@ describe("ProjectTerminalService", () => {
       },
       "failed",
     );
-    expect(
-      harness.terminalSessions.releaseAndMarkLeaseStopped,
-    ).toHaveBeenCalledWith({
+    expect(harness.terminalSessions.releaseAndMarkLeaseStopped).toHaveBeenCalledWith({
       expectedProviderSandboxRef: "sandbox-1",
       now,
       sessionId: "terminal-1",
@@ -159,9 +144,9 @@ describe("ProjectTerminalService", () => {
   it("validates dimensions before touching persistence", async () => {
     const harness = createHarness();
 
-    await expect(
-      harness.service.open("project-1", { cols: 10, rows: 2 }),
-    ).resolves.toEqual({ kind: "invalid_size" });
+    await expect(harness.service.open("project-1", { cols: 10, rows: 2 })).resolves.toEqual({
+      kind: "invalid_size",
+    });
 
     expect(harness.sandboxLeases.getOrCreate).not.toHaveBeenCalled();
   });
@@ -183,9 +168,9 @@ describe("ProjectTerminalService", () => {
     ]);
 
     expect(harness.session.close).toHaveBeenCalledTimes(1);
-    await expect(
-      result.connection.write(new TextEncoder().encode("ls\r")),
-    ).rejects.toThrow("closed");
+    await expect(result.connection.write(new TextEncoder().encode("ls\r"))).rejects.toThrow(
+      "closed",
+    );
   });
 
   it("keeps the Project locked when neither PTY nor sandbox stop is confirmed", async () => {
@@ -205,16 +190,12 @@ describe("ProjectTerminalService", () => {
 
     await result.connection.close("failed");
 
-    expect(
-      harness.terminalSessions.markLeaseFailedKeepingSession,
-    ).toHaveBeenCalledWith({
+    expect(harness.terminalSessions.markLeaseFailedKeepingSession).toHaveBeenCalledWith({
       expectedProviderSandboxRef: "sandbox-1",
       now,
       sessionId: "terminal-1",
     });
-    expect(
-      harness.terminalSessions.releaseAndMarkLeaseStopped,
-    ).not.toHaveBeenCalled();
+    expect(harness.terminalSessions.releaseAndMarkLeaseStopped).not.toHaveBeenCalled();
     expect(harness.terminalSessions.release).not.toHaveBeenCalled();
   });
 
@@ -226,9 +207,10 @@ describe("ProjectTerminalService", () => {
     });
     expect(opened.kind).toBe("opened");
 
-    await expect(
-      harness.service.expire("project-1", "terminal-1"),
-    ).resolves.toEqual({ released: true, stoppedSandbox: false });
+    await expect(harness.service.expire("project-1", "terminal-1")).resolves.toEqual({
+      released: true,
+      stoppedSandbox: false,
+    });
     expect(harness.runtime.terminateTerminal).toHaveBeenCalledWith(
       {
         id: "sandbox-1",
@@ -357,14 +339,11 @@ function createHarness(
   });
   const service = new ProjectTerminalService({
     agentRuns: {
-      findActiveByProjectId: vi.fn(async () =>
-        options.activeRun ? ({} as AgentRunRecord) : null,
-      ),
+      findActiveByProjectId: vi.fn(async () => (options.activeRun ? ({} as AgentRunRecord) : null)),
     },
     clock: { now: () => new Date(now) },
     createId: createSequentialId(),
-    getSandboxRuntime: () =>
-      options.runtimeAvailable === false ? null : runtime,
+    getSandboxRuntime: () => (options.runtimeAvailable === false ? null : runtime),
     sandboxLeases,
     sandboxRuntimeId: "e2b",
     scheduleExpiry,

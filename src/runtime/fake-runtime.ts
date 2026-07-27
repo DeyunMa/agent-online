@@ -89,7 +89,10 @@ export class FakeSandboxRuntime implements SandboxRuntime {
     return { id, kind: this.kind, sandboxLeaseId: input.sandboxLeaseId };
   }
 
-  async startProcess(handle: RuntimeHandle, command: SandboxCommand): Promise<SandboxProcessSession> {
+  async startProcess(
+    handle: RuntimeHandle,
+    command: SandboxCommand,
+  ): Promise<SandboxProcessSession> {
     this.assertHandle(handle);
     const session = new FakeSandboxProcessSession(
       command,
@@ -195,9 +198,7 @@ function normalizeAbsolutePath(path: string) {
 
 function assertRuntimeHandle(handle: RuntimeHandle, kind: "fake") {
   if (handle.kind !== kind) {
-    throw new Error(
-      `Runtime handle kind ${handle.kind} does not match runtime ${kind}`,
-    );
+    throw new Error(`Runtime handle kind ${handle.kind} does not match runtime ${kind}`);
   }
 }
 

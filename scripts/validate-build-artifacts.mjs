@@ -1,10 +1,13 @@
-import { readdir } from "node:fs/promises";
-import { relative } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { findSensitiveLabels } from "./secret-patterns.mjs";
 
 const outputUrl = new URL("../dist/", import.meta.url);
 const outputPath = fileURLToPath(outputUrl);
 const forbiddenPaths = [];
+const sensitiveMatches = [];
 
 try {
   await scanDirectory(outputPath);
@@ -23,15 +26,25 @@ if (forbiddenPaths.length > 0) {
     console.error(`- ${path}`);
   }
   process.exitCode = 1;
-} else if (process.exitCode !== 1) {
-  console.log("Build artifact secret-file check passed.");
+}
+
+if (sensitiveMatches.length > 0) {
+  console.error("Build output contains possible credential material:");
+  for (const match of sensitiveMatches) {
+    console.error(`- ${match.path} (${match.label})`);
+  }
+  process.exitCode = 1;
+}
+
+if (process.exitCode !== 1) {
+  console.log("Build artifact secret scan passed.");
 }
 
 async function scanDirectory(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
 
   for (const entry of entries) {
-    const entryPath = `${directory}/${entry.name}`;
+    const entryPath = join(directory, entry.name);
 
     if (isForbiddenName(entry.name)) {
       forbiddenPaths.push(relative(outputPath, entryPath));
@@ -40,7 +53,22 @@ async function scanDirectory(directory) {
 
     if (entry.isDirectory()) {
       await scanDirectory(entryPath);
+      continue;
     }
+
+    if (entry.isFile()) {
+      await scanFile(entryPath);
+    }
+  }
+}
+
+async function scanFile(path) {
+  const contents = await readFile(path);
+  for (const label of findSensitiveLabels(contents)) {
+    sensitiveMatches.push({
+      label,
+      path: relative(outputPath, path),
+    });
   }
 }
 

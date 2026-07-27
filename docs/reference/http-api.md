@@ -2,7 +2,7 @@
 
 > 文档状态：当前公开接口基准
 >
-> 校准日期：2026-07-26
+> 校准日期：2026-07-27
 >
 > 权威来源：`src/server/` 路由和 `src/shared/` 公开 DTO
 
@@ -180,7 +180,7 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 - `content` 经过 trim 后必须为 1 至 64,000 个字符。
 - 未传 `agentRuntimeId` 时使用 Project 默认值。
 - Runtime 必须在服务端 execution policy 中启用；浏览器 UI 只应使用 capability 返回的 public Runtime。
-- 用户 Message 与 queued AgentRun 原子创建。
+- 用户 Message 与 queued AgentRun 原子创建；成功完成时，Run 终态、sandbox duration、最终 assistant Message 和 Project touch 也在一个 D1 batch 中提交。
 - 同一 Project 已有非终态 Run或活动 Terminal/正在启动的 Preview 时返回 `409 project_busy`，不创建第二条 Run。
 - `RUNS_ENABLED=false` 时返回 `503 runs_disabled`，且不写入 Message、Lease 或 AgentRun。
 
@@ -207,8 +207,9 @@ type AgentRunStreamEvent =
 当前实现：
 
 - 连接后立即发送一次 `run.status`。
-- Worker 每 250 ms 从 D1 读取 Run；状态变化时发送新的 `run.status`。
+- Worker 每 750 ms 从 D1 读取 Run；状态变化时发送新的 `run.status`。
 - 进入终态后发送一次 `run.completed` 并结束流。
+- 客户端断开时停止后续 D1 轮询；SSE 不是后台执行所有者。
 - 最终 assistant 回复不通过 SSE 发送，浏览器随后刷新 Message API。
 
 共享类型为未来的 `agent.output` 和 `agent.tool.started` 保留了结构，但当前服务器不发这两类事件；客户端不能依赖它们。
@@ -401,7 +402,9 @@ Content-Type: application/json
 
 - capability 必须有效，且 D1 中对应 Run 仍为 `starting` 或 `running`。
 - 请求模型必须与 AgentRun 的 `model_id` 一致。
+- 请求体最多 4 MiB；即使缺少或伪造 `Content-Length`，Worker 也按实际读取字节数中止。
 - Worker 强制输出 token 上限，把平台 Gemini Key 注入上游请求。
+- 成功上游响应最多缓冲 8 MiB，错误诊断最多读取 64 KiB；超限或非 UTF-8 响应统一拒绝。
 - 上游成功响应必须包含 usage；usage 写入 D1 失败时不把未计量结果返回 Agent。
 - 响应使用 `cache-control: no-store`。
 

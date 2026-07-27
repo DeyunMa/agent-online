@@ -1,33 +1,17 @@
-import {
-  WorkflowEntrypoint,
-  type WorkflowEvent,
-  type WorkflowStep,
-} from "cloudflare:workers";
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
 
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
-import {
-  createProjectPreviewService,
-  createProjectTerminalService,
-} from "./services";
+import { createProjectPreviewService, createProjectTerminalService } from "./services";
 
-export class AgentRunWorkflow extends WorkflowEntrypoint<
-  AppBindings,
-  AgentRunWorkflowPayload
-> {
-  async run(
-    event: Readonly<WorkflowEvent<AgentRunWorkflowPayload>>,
-    step: WorkflowStep,
-  ) {
+export class AgentRunWorkflow extends WorkflowEntrypoint<AppBindings, AgentRunWorkflowPayload> {
+  async run(event: Readonly<WorkflowEvent<AgentRunWorkflowPayload>>, step: WorkflowStep) {
     const payload = validatePayload(event.payload);
     const { config, service } = createE2BRunExecution(this.env);
 
     if (payload.kind === "preview-expiry") {
-      await step.sleepUntil(
-        "wait for preview session expiry",
-        new Date(payload.expiresAt),
-      );
+      await step.sleepUntil("wait for preview session expiry", new Date(payload.expiresAt));
       const cleanup = await step.do(
         "expire preview session",
         {
@@ -38,10 +22,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
           },
         },
         () =>
-          createProjectPreviewService(this.env).expire(
-            payload.projectId,
-            payload.previewSessionId,
-          ),
+          createProjectPreviewService(this.env).expire(payload.projectId, payload.previewSessionId),
       );
       return {
         ...cleanup,
@@ -78,10 +59,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
     }
 
     if (payload.kind === "terminal-expiry") {
-      await step.sleepUntil(
-        "wait for terminal session expiry",
-        new Date(payload.expiresAt),
-      );
+      await step.sleepUntil("wait for terminal session expiry", new Date(payload.expiresAt));
       const cleanup = await step.do(
         "expire terminal session",
         {
@@ -119,8 +97,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
         },
         () =>
           service.stopSandboxAfterActivityIdle({
-            expectedLeaseUpdatedAt:
-              payload.expectedLeaseUpdatedAt,
+            expectedLeaseUpdatedAt: payload.expectedLeaseUpdatedAt,
             projectId: payload.projectId,
           }),
       );
@@ -141,9 +118,7 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
             delay: "2 seconds",
             limit: 1,
           },
-          timeout: `${Math.ceil(
-            (config.runTimeoutMs + 30_000) / 1_000,
-          )} seconds`,
+          timeout: `${Math.ceil((config.runTimeoutMs + 30_000) / 1_000)} seconds`,
         },
         async () => {
           const run = await service.execute(payload);
@@ -176,18 +151,14 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<
   }
 }
 
-function validatePayload(
-  value: Readonly<AgentRunWorkflowPayload>,
-): AgentRunWorkflowPayload {
+function validatePayload(value: Readonly<AgentRunWorkflowPayload>): AgentRunWorkflowPayload {
   if (value.kind === "terminal-idle-cleanup") {
     if (
       !isIdentifier(value.projectId) ||
       !isIdentifier(value.terminalSessionId) ||
       !isTimestamp(value.expectedLeaseUpdatedAt)
     ) {
-      throw new NonRetryableError(
-        "Terminal idle Workflow payload is invalid",
-      );
+      throw new NonRetryableError("Terminal idle Workflow payload is invalid");
     }
     return { ...value };
   }
@@ -198,9 +169,7 @@ function validatePayload(
       !isIdentifier(value.previewSessionId) ||
       !isTimestamp(value.expectedLeaseUpdatedAt)
     ) {
-      throw new NonRetryableError(
-        "Preview idle Workflow payload is invalid",
-      );
+      throw new NonRetryableError("Preview idle Workflow payload is invalid");
     }
     return { ...value };
   }
@@ -211,9 +180,7 @@ function validatePayload(
       !isIdentifier(value.previewSessionId) ||
       !isTimestamp(value.expiresAt)
     ) {
-      throw new NonRetryableError(
-        "Preview expiry Workflow payload is invalid",
-      );
+      throw new NonRetryableError("Preview expiry Workflow payload is invalid");
     }
     return { ...value };
   }
@@ -224,9 +191,7 @@ function validatePayload(
       !isIdentifier(value.terminalSessionId) ||
       !isTimestamp(value.expiresAt)
     ) {
-      throw new NonRetryableError(
-        "Terminal expiry Workflow payload is invalid",
-      );
+      throw new NonRetryableError("Terminal expiry Workflow payload is invalid");
     }
     return { ...value };
   }
@@ -247,9 +212,5 @@ function isIdentifier(value: string) {
 }
 
 function isTimestamp(value: string) {
-  return (
-    value.length >= 20 &&
-    value.length <= 40 &&
-    !Number.isNaN(Date.parse(value))
-  );
+  return value.length >= 20 && value.length <= 40 && !Number.isNaN(Date.parse(value));
 }

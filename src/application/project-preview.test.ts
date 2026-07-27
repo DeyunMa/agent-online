@@ -6,14 +6,8 @@ import type {
   PreviewSessionRepository,
   SandboxLeaseRecord,
 } from "./ports";
-import {
-  ProjectPreviewService,
-  projectPreviewPort,
-} from "./project-preview";
-import {
-  SandboxUnavailableError,
-  type SandboxPreviewRuntime,
-} from "../runtime/contract";
+import { ProjectPreviewService, projectPreviewPort } from "./project-preview";
+import { SandboxUnavailableError, type SandboxPreviewRuntime } from "../runtime/contract";
 
 const now = "2026-07-26T08:00:00.000Z";
 
@@ -39,8 +33,7 @@ describe("ProjectPreviewService", () => {
         sandboxLeaseId: "lease-1",
       },
       {
-        contentBasePath:
-          "/api/projects/project-1/preview/content/capability/",
+        contentBasePath: "/api/projects/project-1/preview/content/capability/",
         port: projectPreviewPort,
         preset: "vite-v1",
         processTimeoutMs: 1_815_000,
@@ -147,11 +140,7 @@ describe("ProjectPreviewService", () => {
       pathAndQuery: "/?view=home",
     };
 
-    const result = await harness.service.fetch(
-      "project-1",
-      "preview-1",
-      request,
-    );
+    const result = await harness.service.fetch("project-1", "preview-1", request);
 
     expect(result.kind).toBe("ok");
     expect(harness.runtime.fetchPreview).toHaveBeenCalledWith(
@@ -217,16 +206,13 @@ function createHarness(
     createdAt: now,
     id: "lease-1",
     projectId: "project-1",
-    providerRef:
-      options.sandboxAvailable === false ? null : "sandbox-1",
+    providerRef: options.sandboxAvailable === false ? null : "sandbox-1",
     runtimeId: "e2b",
     status: options.sandboxAvailable === false ? "stopped" : "idle",
     updatedAt: now,
   };
   let session: PreviewSessionRecord | null =
-    options.existingStatus === undefined
-      ? null
-      : createPreviewRecord(options.existingStatus);
+    options.existingStatus === undefined ? null : createPreviewRecord(options.existingStatus);
   const previewSessions = {
     claim: vi.fn(async () => {
       session = createPreviewRecord("starting");
@@ -252,9 +238,7 @@ function createHarness(
         headers: { "content-type": "text/html" },
       });
     }),
-    isPreviewRunning: vi.fn(
-      async () => options.processRunning !== false,
-    ),
+    isPreviewRunning: vi.fn(async () => options.processRunning !== false),
     kind: "e2b",
     startPreview: vi.fn(async () => ({
       providerProcessRef: "process-42",
@@ -270,9 +254,7 @@ function createHarness(
   const reportFailure = vi.fn();
   const service = new ProjectPreviewService({
     agentRuns: {
-      findActiveByProjectId: vi.fn(async () =>
-        options.activeRun ? ({} as AgentRunRecord) : null,
-      ),
+      findActiveByProjectId: vi.fn(async () => (options.activeRun ? ({} as AgentRunRecord) : null)),
     },
     clock: { now: () => new Date(now) },
     createContentBasePath: vi.fn(async () => {
@@ -311,9 +293,7 @@ function createHarness(
   };
 }
 
-function createPreviewRecord(
-  status: PreviewSessionRecord["status"],
-): PreviewSessionRecord {
+function createPreviewRecord(status: PreviewSessionRecord["status"]): PreviewSessionRecord {
   return {
     createdAt: now,
     expiresAt: "2026-07-26T08:30:00.000Z",

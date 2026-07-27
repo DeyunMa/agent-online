@@ -1,10 +1,6 @@
 import type { AgentRuntimeId } from "../agent/contract";
 import type { RuntimeKind } from "../runtime/contract";
-import type {
-  AgentRunRecord,
-  AgentRunRepository,
-  SandboxLeaseRepository,
-} from "./ports";
+import type { AgentRunRecord, AgentRunRepository, SandboxLeaseRepository } from "./ports";
 import type { StartAgentRunInput } from "./run-coordinator";
 
 export type AgentRunExecutionStartResult = {
@@ -40,9 +36,7 @@ export type CreateAgentRunServiceDependencies = {
  * HTTP concerns and runtime-publication policy stay outside this use case.
  */
 export class CreateAgentRunService {
-  constructor(
-    private readonly dependencies: CreateAgentRunServiceDependencies,
-  ) {}
+  constructor(private readonly dependencies: CreateAgentRunServiceDependencies) {}
 
   async create(input: {
     agentRuntimeId: AgentRuntimeId;
@@ -97,9 +91,7 @@ export class CreateAgentRunService {
         runId: created.run.id,
         to: "failed",
       });
-      const current =
-        failed ??
-        (await this.dependencies.agentRuns.findById(created.run.id));
+      const current = failed ?? (await this.dependencies.agentRuns.findById(created.run.id));
       if (!current || current.status === "queued") {
         throw new Error("AgentRun startup failure did not converge");
       }

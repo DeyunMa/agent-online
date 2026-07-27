@@ -1,15 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ChartNoAxesColumn,
-  ExternalLink,
-  RefreshCw,
-} from "lucide-react";
+import { ChartNoAxesColumn, ExternalLink, RefreshCw } from "lucide-react";
 
-import type {
-  UsageMetricsResponse,
-  UserUsageResponse,
-} from "../../shared/api";
+import type { UsageMetricsResponse, UserUsageResponse } from "../../shared/api";
 import { browserApi } from "../api";
 import { formatDuration, formatTokenCount } from "../presentation";
 import { userUsageQueryKey } from "../query-keys";
@@ -56,14 +49,9 @@ export function UsagePage() {
 
         {usage.isPending ? <LoadingState label="Loading usage" /> : null}
         {usage.isError ? (
-          <ErrorState
-            error={usage.error}
-            onRetry={() => void usage.refetch()}
-          />
+          <ErrorState error={usage.error} onRetry={() => void usage.refetch()} />
         ) : null}
-        {usage.isSuccess && usage.data.totals.runCount === 0 ? (
-          <UsageEmptyState />
-        ) : null}
+        {usage.isSuccess && usage.data.totals.runCount === 0 ? <UsageEmptyState /> : null}
         {usage.isSuccess && usage.data.totals.runCount > 0 ? (
           <UsageReport report={usage.data} />
         ) : null}

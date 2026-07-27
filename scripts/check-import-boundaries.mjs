@@ -15,7 +15,7 @@ const forbiddenLayerImports = new Map([
   ["domain", new Set(["agent", "application", "client", "runtime", "server"])],
   ["runtime", new Set(["agent", "application", "client", "server"])],
   ["server", new Set(["client"])],
-  ["shared", new Set(["application", "client", "server"])],
+  ["shared", new Set(["agent", "application", "client", "domain", "runtime", "server"])],
 ]);
 const violations = [];
 
@@ -37,10 +37,7 @@ for (const file of sourceFiles) {
 
   for (const specifier of imports) {
     if (!specifier.startsWith(".")) {
-      if (
-        sourceLayer === "domain" &&
-        !isTestFile(sourceRelative)
-      ) {
+      if (sourceLayer === "domain" && !isTestFile(sourceRelative)) {
         violations.push(
           `${sourceRelative}: domain production code cannot import package "${specifier}"`,
         );
@@ -48,17 +45,13 @@ for (const file of sourceFiles) {
       continue;
     }
 
-    const targetRelative = toRepositoryPath(
-      path.resolve(path.dirname(file), specifier),
-    );
+    const targetRelative = toRepositoryPath(path.resolve(path.dirname(file), specifier));
     const targetLayer = getLayer(targetRelative);
     if (!targetLayer) {
       continue;
     }
 
-    if (
-      forbiddenLayerImports.get(sourceLayer)?.has(targetLayer)
-    ) {
+    if (forbiddenLayerImports.get(sourceLayer)?.has(targetLayer)) {
       violations.push(
         `${sourceRelative}: ${sourceLayer} cannot import ${targetLayer} (${specifier})`,
       );
@@ -86,10 +79,7 @@ for (const file of sourceFiles) {
       );
     }
 
-    if (
-      sourceLayer === "worker" &&
-      targetLayer !== "server"
-    ) {
+    if (sourceLayer === "worker" && targetLayer !== "server") {
       violations.push(
         `${sourceRelative}: the Worker entrypoint may import only the server boundary (${specifier})`,
       );
@@ -104,9 +94,7 @@ if (violations.length > 0) {
   }
   process.exitCode = 1;
 } else {
-  console.log(
-    `Import boundary check passed (${sourceFiles.length} source files).`,
-  );
+  console.log(`Import boundary check passed (${sourceFiles.length} source files).`);
 }
 
 async function collectSourceFiles(directory) {
@@ -126,9 +114,7 @@ async function collectSourceFiles(directory) {
 }
 
 function getLayer(relativePath) {
-  const match = /^(?:src\/([^/]+)|worker)(?:\/|$)/u.exec(
-    relativePath,
-  );
+  const match = /^(?:src\/([^/]+)|worker)(?:\/|$)/u.exec(relativePath);
   return match?.[1] ?? (relativePath.startsWith("worker/") ? "worker" : null);
 }
 
@@ -153,10 +139,7 @@ function collectModuleSpecifiers(ast) {
       node.source?.type === "StringLiteral"
     ) {
       specifiers.add(node.source.value);
-    } else if (
-      node.type === "ImportExpression" &&
-      node.source?.type === "StringLiteral"
-    ) {
+    } else if (node.type === "ImportExpression" && node.source?.type === "StringLiteral") {
       specifiers.add(node.source.value);
     } else if (
       node.type === "CallExpression" &&
@@ -174,12 +157,7 @@ function collectModuleSpecifiers(ast) {
     }
 
     for (const [key, value] of Object.entries(node)) {
-      if (
-        key !== "loc" &&
-        key !== "start" &&
-        key !== "end" &&
-        key !== "extra"
-      ) {
+      if (key !== "loc" && key !== "start" && key !== "end" && key !== "extra") {
         stack.push(value);
       }
     }

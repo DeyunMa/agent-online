@@ -1,6 +1,7 @@
-export const sandboxLeaseStatuses = ["stopped", "starting", "ready", "busy", "idle", "failed"] as const;
+import type { SandboxLeaseStatus } from "../shared/protocol";
 
-export type SandboxLeaseStatus = (typeof sandboxLeaseStatuses)[number];
+export { sandboxLeaseStatuses } from "../shared/protocol";
+export type { SandboxLeaseStatus } from "../shared/protocol";
 
 const activeStatuses = new Set<SandboxLeaseStatus>(["starting", "ready", "busy", "idle"]);
 

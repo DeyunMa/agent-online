@@ -11,10 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import type { ProjectFileEntryResponse } from "../../shared/api";
 import { BrowserApiError, browserApi } from "../api";
-import {
-  projectFileQueryKey,
-  projectFilesQueryKey,
-} from "../query-keys";
+import { projectFileQueryKey, projectFilesQueryKey } from "../query-keys";
 import { ErrorState, LoadingState } from "./ui-states";
 
 export function ProjectFiles({
@@ -29,6 +26,7 @@ export function ProjectFiles({
   const [directoryPath, setDirectoryPath] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets local navigation.
   useEffect(() => {
     setDirectoryPath("");
     setSelectedFilePath(null);
@@ -79,19 +77,12 @@ export function ProjectFiles({
         />
         {file.isPending ? <LoadingState label="Loading file" /> : null}
         {isUnavailableError(file.error) ? (
-          <FilesNotice
-            detail={file.error.message}
-            title="File unavailable"
-          />
+          <FilesNotice detail={file.error.message} title="File unavailable" />
         ) : file.error ? (
-          <ErrorState
-            compact
-            error={file.error}
-            onRetry={() => void file.refetch()}
-          />
+          <ErrorState compact error={file.error} onRetry={() => void file.refetch()} />
         ) : null}
         {!file.error && file.data ? (
-          <pre className="project-file-content" tabIndex={0}>
+          <pre className="project-file-content">
             <code>{file.data.content}</code>
           </pre>
         ) : null}
@@ -108,16 +99,9 @@ export function ProjectFiles({
       />
       {directory.isPending ? <LoadingState label="Loading files" /> : null}
       {isUnavailableError(directory.error) ? (
-        <FilesNotice
-          detail={directory.error.message}
-          title="Sandbox not started"
-        />
+        <FilesNotice detail={directory.error.message} title="Sandbox not started" />
       ) : directory.error ? (
-        <ErrorState
-          compact
-          error={directory.error}
-          onRetry={() => void directory.refetch()}
-        />
+        <ErrorState compact error={directory.error} onRetry={() => void directory.refetch()} />
       ) : null}
       {!directory.error && directory.data ? (
         <>
@@ -144,9 +128,7 @@ export function ProjectFiles({
             />
           )}
           {directory.data.truncated ? (
-            <p className="project-files-limit">
-              Showing the first 500 entries.
-            </p>
+            <p className="project-files-limit">Showing the first 500 entries.</p>
           ) : null}
         </>
       ) : null}
@@ -170,17 +152,20 @@ function DirectoryToolbar({
         <button onClick={() => onNavigate("")} type="button">
           workspace
         </button>
-        {segments.map((segment, index) => (
-          <span key={`${segment}-${index}`}>
-            <ChevronRight aria-hidden="true" size={12} />
-            <button
-              onClick={() => onNavigate(segments.slice(0, index + 1).join("/"))}
-              type="button"
-            >
-              {segment}
-            </button>
-          </span>
-        ))}
+        {segments.map((segment, index) => {
+          const segmentPath = segments.slice(0, index + 1).join("/");
+          return (
+            <span key={segmentPath}>
+              <ChevronRight aria-hidden="true" size={12} />
+              <button
+                onClick={() => onNavigate(segments.slice(0, index + 1).join("/"))}
+                type="button"
+              >
+                {segment}
+              </button>
+            </span>
+          );
+        })}
       </nav>
       <IconButton label="Refresh files" onClick={onRefresh}>
         <RefreshCw aria-hidden="true" size={14} />
@@ -211,13 +196,7 @@ function FileToolbar({
   );
 }
 
-function FileRow({
-  entry,
-  onOpen,
-}: {
-  entry: ProjectFileEntryResponse;
-  onOpen: () => void;
-}) {
+function FileRow({ entry, onOpen }: { entry: ProjectFileEntryResponse; onOpen: () => void }) {
   const disabled = entry.kind === "symlink";
   return (
     <button

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  UserUsageRepository,
-  UserUsageSummary,
-} from "./user-usage";
+import type { UserUsageRepository, UserUsageSummary } from "./user-usage";
 import { UserUsageService } from "./user-usage";
 
 const summary: UserUsageSummary = {
@@ -42,8 +39,6 @@ describe("UserUsageService", () => {
       },
     };
 
-    expect(() => new UserUsageService(repository).getForUser("")).toThrow(
-      "User ID is required",
-    );
+    expect(() => new UserUsageService(repository).getForUser("")).toThrow("User ID is required");
   });
 });

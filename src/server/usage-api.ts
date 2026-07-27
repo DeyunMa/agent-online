@@ -1,9 +1,6 @@
 import { Hono, type Context } from "hono";
 
-import {
-  UserUsageService,
-  type UserUsageQuery,
-} from "../application/user-usage";
+import { UserUsageService, type UserUsageQuery } from "../application/user-usage";
 import type { UserUsageResponse } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
@@ -13,36 +10,25 @@ type AppContext = Context<AppEnv>;
 
 export type UsageApiDependencies = {
   createUsageQuery: (env: AppBindings) => UserUsageQuery;
-  getAuthenticatedUser: (
-    env: AppBindings,
-    headers: Headers,
-  ) => Promise<AuthenticatedUser | null>;
+  getAuthenticatedUser: (env: AppBindings, headers: Headers) => Promise<AuthenticatedUser | null>;
 };
 
 const defaultDependencies: UsageApiDependencies = {
-  createUsageQuery: (env) =>
-    new UserUsageService(new D1UserUsageRepository(env.DB)),
+  createUsageQuery: (env) => new UserUsageService(new D1UserUsageRepository(env.DB)),
   getAuthenticatedUser,
 };
 
-export function createUsageApi(
-  overrides: Partial<UsageApiDependencies> = {},
-) {
+export function createUsageApi(overrides: Partial<UsageApiDependencies> = {}) {
   const dependencies = { ...defaultDependencies, ...overrides };
   const api = new Hono<AppEnv>();
 
   api.get("/usage", async (c) => {
-    const user = await dependencies.getAuthenticatedUser(
-      c.env,
-      c.req.raw.headers,
-    );
+    const user = await dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
     if (!user) {
       return unauthorized(c);
     }
 
-    const summary = await dependencies
-      .createUsageQuery(c.env)
-      .getForUser(user.id);
+    const summary = await dependencies.createUsageQuery(c.env).getForUser(user.id);
 
     return c.json<UserUsageResponse>({
       ...summary,

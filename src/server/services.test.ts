@@ -26,7 +26,6 @@ describe("server service composition", () => {
       workingDirectory: "/workspace",
     });
 
-    expect(services.sandboxRuntimeId).toBe("e2b");
     expect(create).toHaveBeenCalledWith({
       id: "run_1",
       params: {

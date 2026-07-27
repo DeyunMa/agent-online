@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview 和只读 Changes 均已完成私有 Cloudflare 环境验收；Goose adapter、组合模板和远端 `Pi -> Goose -> Pi`、D1/Workflow/取消/deadline/TTL 已通过受控 spike。Goose 浏览器选择仍未开放。
+> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-27 已补强 D1 原子完成、跨表完整性、真实迁移测试和统一工程门禁。Goose 浏览器选择仍未开放。
 
 ## 产品定义
 
@@ -63,6 +63,8 @@ erDiagram
 15. Preview 只能在无活动 Run/Terminal 且已有存活 Lease 时启动。`starting` 阶段参与 D1 互斥；进入 `running` 后可以与后续 Run/Terminal 共存，但会阻止整沙箱 Stop 和 idle cleanup。
 16. Preview 只运行平台固定的 Vite preset、固定 `/workspace` 和固定内部端口。浏览器只拿到绑定 Project/PreviewSession/expiry 的同源短时 capability，不能拿到 Provider host、traffic token、内部端口或任意启动参数。
 17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
+18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
+19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
 
 ## 有意不建模的内容
 

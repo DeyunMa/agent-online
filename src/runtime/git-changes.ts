@@ -1,23 +1,11 @@
-import type {
-  SandboxChangeEntry,
-  SandboxChangeKind,
-  SandboxChangesSnapshot,
-} from "./contract";
+import type { SandboxChangeEntry, SandboxChangeKind, SandboxChangesSnapshot } from "./contract";
 import { isSupportedSandboxChangePath } from "./contract";
 
 export const maxGitStatusBytes = 128 * 1_024;
 export const maxGitStatusEntries = 500;
 export const maxGitDiffSectionBytes = 128 * 1_024;
 
-const conflictStatuses = new Set([
-  "DD",
-  "AU",
-  "UD",
-  "UA",
-  "DU",
-  "AA",
-  "UU",
-]);
+const conflictStatuses = new Set(["DD", "AU", "UD", "UA", "DU", "AA", "UU"]);
 
 export function parseGitStatusOutput(
   output: string,
@@ -72,8 +60,7 @@ export function parseGitStatusOutput(
     }
     if (
       !isSupportedSandboxChangePath(path) ||
-      (previousPath !== null &&
-        !isSupportedSandboxChangePath(previousPath))
+      (previousPath !== null && !isSupportedSandboxChangePath(previousPath))
     ) {
       unsupportedEntries = true;
       continue;
@@ -82,14 +69,8 @@ export function parseGitStatusOutput(
     entries.push({
       path,
       previousPath,
-      stagedKind:
-        status === "??"
-          ? null
-          : toStageKind(indexStatus, status),
-      unstagedKind:
-        status === "??"
-          ? "untracked"
-          : toStageKind(worktreeStatus, status),
+      stagedKind: status === "??" ? null : toStageKind(indexStatus, status),
+      unstagedKind: status === "??" ? "untracked" : toStageKind(worktreeStatus, status),
     });
   }
 
@@ -109,9 +90,7 @@ export function truncateUtf8(
   while (end > 0) {
     try {
       return {
-        text: new TextDecoder("utf-8", { fatal: true }).decode(
-          bytes.slice(0, end),
-        ),
+        text: new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(0, end)),
         truncated: true,
       };
     } catch {
@@ -122,14 +101,8 @@ export function truncateUtf8(
   return { text: "", truncated: true };
 }
 
-function toStageKind(
-  stageStatus: string,
-  status: string,
-): SandboxChangeKind | null {
-  if (
-    conflictStatuses.has(status) ||
-    stageStatus === "U"
-  ) {
+function toStageKind(stageStatus: string, status: string): SandboxChangeKind | null {
+  if (conflictStatuses.has(status) || stageStatus === "U") {
     return "conflicted";
   }
   if (stageStatus === " ") {

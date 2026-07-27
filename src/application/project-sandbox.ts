@@ -18,15 +18,9 @@ export type ProjectSandboxServiceDependencies = {
   agentRuns: AgentRunRepository;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   now(): Date;
-  previewSessions: Pick<
-    PreviewSessionRepository,
-    "findByProjectId"
-  >;
+  previewSessions: Pick<PreviewSessionRepository, "findByProjectId">;
   sandboxLeases: SandboxLeaseRepository;
-  terminalSessions: Pick<
-    TerminalSessionRepository,
-    "findByProjectId"
-  >;
+  terminalSessions: Pick<TerminalSessionRepository, "findByProjectId">;
 };
 
 /**
@@ -34,21 +28,16 @@ export type ProjectSandboxServiceDependencies = {
  * provider-private identifiers to HTTP handlers or browser contracts.
  */
 export class ProjectSandboxService {
-  constructor(
-    private readonly dependencies: ProjectSandboxServiceDependencies,
-  ) {}
+  constructor(private readonly dependencies: ProjectSandboxServiceDependencies) {}
 
   async stop(projectId: string): Promise<StopProjectSandboxResult> {
     const now = this.dependencies.now().toISOString();
-    const lease = await this.dependencies.sandboxLeases.findByProjectId(
-      projectId,
-    );
+    const lease = await this.dependencies.sandboxLeases.findByProjectId(projectId);
     if (!lease?.providerRef || lease.status === "stopped") {
       return { kind: "already_stopped", lease };
     }
 
-    const activeRun =
-      await this.dependencies.agentRuns.findActiveByProjectId(projectId);
+    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(projectId);
     if (activeRun) {
       return { kind: "project_busy" };
     }
@@ -61,13 +50,12 @@ export class ProjectSandboxService {
 
     const providerRef = lease.providerRef;
     const updatedAt = now;
-    const claimed =
-      await this.dependencies.sandboxLeases.claimForManualStop({
-        expectedProviderRef: providerRef,
-        expectedUpdatedAt: lease.updatedAt,
-        leaseId: lease.id,
-        updatedAt,
-      });
+    const claimed = await this.dependencies.sandboxLeases.claimForManualStop({
+      expectedProviderRef: providerRef,
+      expectedUpdatedAt: lease.updatedAt,
+      leaseId: lease.id,
+      updatedAt,
+    });
     if (!claimed) {
       return this.resolveClaimConflict(projectId);
     }
@@ -90,11 +78,8 @@ export class ProjectSandboxService {
     }
   }
 
-  private async resolveClaimConflict(
-    projectId: string,
-  ): Promise<StopProjectSandboxResult> {
-    const activeRun =
-      await this.dependencies.agentRuns.findActiveByProjectId(projectId);
+  private async resolveClaimConflict(projectId: string): Promise<StopProjectSandboxResult> {
+    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(projectId);
     if (activeRun) {
       return { kind: "project_busy" };
     }
@@ -105,8 +90,7 @@ export class ProjectSandboxService {
       return { kind: "project_busy" };
     }
 
-    const currentLease =
-      await this.dependencies.sandboxLeases.findByProjectId(projectId);
+    const currentLease = await this.dependencies.sandboxLeases.findByProjectId(projectId);
     if (!currentLease?.providerRef || currentLease.status === "stopped") {
       return { kind: "already_stopped", lease: currentLease };
     }
@@ -115,10 +99,7 @@ export class ProjectSandboxService {
   }
 }
 
-function toRuntimeHandle(
-  lease: SandboxLeaseRecord,
-  providerRef: string,
-): RuntimeHandle {
+function toRuntimeHandle(lease: SandboxLeaseRecord, providerRef: string): RuntimeHandle {
   return {
     id: providerRef,
     kind: lease.runtimeId,

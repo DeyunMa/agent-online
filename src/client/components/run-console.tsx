@@ -11,19 +11,11 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
-import {
-  type FormEvent,
-  type ReactNode,
-  type RefObject,
-  useState,
-} from "react";
+import { type FormEvent, type ReactNode, type RefObject, useState } from "react";
 
 import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
-import type {
-  AgentRunResponse,
-  MessageResponse,
-} from "../../shared/api";
-import { BrowserApiError } from "../api";
+import type { AgentRunResponse, MessageResponse } from "../../shared/api";
+import type { BrowserApiError } from "../api";
 import {
   agentRunStatusLabel,
   agentRunStatusTone,
@@ -98,7 +90,7 @@ export function RunStatusBar({
   const terminal = isTerminalAgentRun(run.status);
 
   return (
-    <section className="run-status-bar" aria-live="polite">
+    <section aria-label="Current run status" aria-live="polite" className="run-status-bar">
       <div className={`run-status-pill ${agentRunStatusTone(run.status)}`}>
         <RunStatusIcon status={run.status} />
         <span>{agentRunStatusLabel(run.status)}</span>
@@ -108,12 +100,8 @@ export function RunStatusBar({
       <time dateTime={run.createdAt}>{formatDateTime(run.createdAt)}</time>
       <span>{formatRunDuration(run)}</span>
       <div className="run-status-spacer" />
-      {run.failureReason ? (
-        <p className="run-status-error">{run.failureReason}</p>
-      ) : null}
-      {streamError ? (
-        <p className="run-status-note">{streamError.message}</p>
-      ) : null}
+      {run.failureReason ? <p className="run-status-error">{run.failureReason}</p> : null}
+      {streamError ? <p className="run-status-note">{streamError.message}</p> : null}
       {cancelError ? <ErrorState compact error={cancelError} /> : null}
       {!terminal ? (
         <button
@@ -252,16 +240,16 @@ export function RunHistory({
       {runs && runs.length > 0 ? (
         <ol className="run-history-table">
           {runs.slice(0, 12).map((run) => {
-            const inputMessage = messages?.find(
-              (message) => message.id === run.inputMessageId,
-            );
+            const inputMessage = messages?.find((message) => message.id === run.inputMessageId);
             const selected = run.id === selectedRunId;
 
             return (
               <li key={run.id}>
                 <button
                   aria-pressed={selected}
-                  className={selected ? "run-history-entry run-history-entry-selected" : "run-history-entry"}
+                  className={
+                    selected ? "run-history-entry run-history-entry-selected" : "run-history-entry"
+                  }
                   onClick={() => onSelect(run.id)}
                   type="button"
                 >
@@ -338,7 +326,7 @@ export function AgentComposer({
       {validationError ? <p className="field-error">{validationError}</p> : null}
       {error ? <ErrorState compact error={error} /> : null}
       <div className="agent-composer-toolbar">
-        <div className="agent-composer-tools" aria-label="Unavailable project tools">
+        <div className="agent-composer-tools">
           <DisabledTool icon={<Paperclip size={17} />} label="Attachments unavailable" />
           <DisabledTool icon={<Folder size={17} />} label="Files unavailable" />
           <DisabledTool icon={<Terminal size={17} />} label="Terminal unavailable" />
@@ -367,13 +355,7 @@ export function AgentComposer({
   );
 }
 
-function DisabledTool({
-  icon,
-  label,
-}: {
-  icon: ReactNode;
-  label: string;
-}) {
+function DisabledTool({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <button aria-label={label} className="composer-tool" disabled title={label} type="button">
       {icon}

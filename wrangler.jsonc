@@ -26,6 +26,7 @@
   ],
   "env": {
     "preview": {
+      "account_id": "66a06222aa0acd9ea509abad73fa02fb",
       "workers_dev": true,
       "assets": {
         "binding": "ASSETS",

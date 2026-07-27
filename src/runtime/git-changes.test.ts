@@ -63,8 +63,7 @@ describe("Git Changes parsing", () => {
   });
 
   it("marks private or unsupported paths and detects partial records", () => {
-    const output =
-      " M .git/config\0 M ../outside\0 M safe.ts\0 M partial";
+    const output = " M .git/config\0 M ../outside\0 M safe.ts\0 M partial";
 
     expect(parseGitStatusOutput(output, false)).toEqual({
       entries: [
@@ -96,9 +95,7 @@ describe("Git Changes parsing", () => {
     const value = "a".repeat(maxGitStatusBytes) + "界";
     const result = truncateUtf8(value, maxGitStatusBytes);
 
-    expect(new TextEncoder().encode(result.text).byteLength).toBeLessThanOrEqual(
-      maxGitStatusBytes,
-    );
+    expect(new TextEncoder().encode(result.text).byteLength).toBeLessThanOrEqual(maxGitStatusBytes);
     expect(result.truncated).toBe(true);
   });
 });

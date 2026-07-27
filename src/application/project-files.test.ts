@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  AgentRunRecord,
-  SandboxLeaseRecord,
-} from "./ports";
+import type { AgentRunRecord, SandboxLeaseRecord } from "./ports";
 import { ProjectFilesService } from "./project-files";
-import type {
-  RuntimeHandle,
-  SandboxFileEntry,
-} from "../runtime/contract";
+import type { RuntimeHandle, SandboxFileEntry } from "../runtime/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 
 describe("ProjectFilesService", () => {
@@ -108,9 +102,7 @@ describe("ProjectFilesService", () => {
     await expect(busy.service.list("project-1", "")).resolves.toEqual({
       kind: "project_busy",
     });
-    await expect(
-      terminalBusy.service.list("project-1", ""),
-    ).resolves.toEqual({
+    await expect(terminalBusy.service.list("project-1", "")).resolves.toEqual({
       kind: "project_busy",
     });
     await expect(stopped.service.list("project-1", "")).resolves.toEqual({
@@ -145,8 +137,7 @@ async function createFixture(
     updatedAt: "2026-07-26T00:00:00.000Z",
   };
   const agentRuns = {
-    findActiveByProjectId: async () =>
-      options.activeRun ? ({} as AgentRunRecord) : null,
+    findActiveByProjectId: async () => (options.activeRun ? ({} as AgentRunRecord) : null),
   };
   const sandboxLeases = {
     findByProjectId: async () => lease,
@@ -161,8 +152,7 @@ async function createFixture(
       now: () => new Date("2026-07-26T00:00:00.000Z"),
       sandboxLeases,
       terminalSessions: {
-        findByProjectId: async () =>
-          options.terminalActive ? ({} as never) : null,
+        findByProjectId: async () => (options.terminalActive ? ({} as never) : null),
       },
       workingDirectory: "/workspace",
     }),
@@ -180,10 +170,7 @@ class BinaryFakeSandboxRuntime extends FakeSandboxRuntime {
 class SymlinkFakeSandboxRuntime extends FakeSandboxRuntime {
   override readonly filesystemScope = "lease" as const;
 
-  override async listDirectory(
-    handle: RuntimeHandle,
-    path: string,
-  ): Promise<SandboxFileEntry[]> {
+  override async listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]> {
     if (path === "/workspace") {
       return [
         {

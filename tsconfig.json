@@ -8,12 +8,16 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["@cloudflare/vitest-pool-workers/types", "node", "vitest/globals"]
   },
   "include": [
     "src",
+    "tests",
     "worker",
+    "playwright.config.ts",
+    "playwright.preview.config.ts",
     "vite.config.ts",
+    "vitest.cloudflare.config.ts",
     "vitest.config.ts",
     "worker-configuration.d.ts"
   ]

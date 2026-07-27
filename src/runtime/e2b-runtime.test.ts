@@ -7,10 +7,7 @@ import {
 } from "e2b";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  SandboxNotRepositoryError,
-  SandboxUnavailableError,
-} from "./contract";
+import { SandboxNotRepositoryError, SandboxUnavailableError } from "./contract";
 import { E2BSandboxRuntime, type E2BSandboxClient } from "./e2b-runtime";
 import { maxGitDiffSectionBytes } from "./git-changes";
 
@@ -43,6 +40,7 @@ describe("E2BSandboxRuntime", () => {
         metadata: { app: "agent-online", projectId: "project-1", sandboxLeaseId: "lease-1" },
         network: {
           allowPublicTraffic: false,
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: E2B expands this port placeholder.
           maskRequestHost: "localhost:${PORT}",
         },
         timeoutMs: 1_000,
@@ -130,9 +128,7 @@ describe("E2BSandboxRuntime", () => {
     expect(sandbox.terminalInputs).toEqual([
       { data: new TextEncoder().encode("pwd\r"), processId: 42 },
     ]);
-    expect(sandbox.terminalSizes).toEqual([
-      { processId: 42, size: { cols: 120, rows: 36 } },
-    ]);
+    expect(sandbox.terminalSizes).toEqual([{ processId: 42, size: { cols: 120, rows: 36 } }]);
     expect(events).toEqual([
       {
         chunk: new TextEncoder().encode("terminal output"),
@@ -164,8 +160,7 @@ describe("E2BSandboxRuntime", () => {
         sandboxLeaseId: "lease-1",
       });
 
-      const contentBasePath =
-        "/api/projects/project-1/preview/content/capability/";
+      const contentBasePath = "/api/projects/project-1/preview/content/capability/";
       const started = await runtime.startPreview(handle, {
         contentBasePath,
         port: 3000,
@@ -200,19 +195,15 @@ describe("E2BSandboxRuntime", () => {
           path: "/tmp/agent-online-vite-preview.config.mjs",
         },
       ]);
-      expect(sandbox.fileWrites[0]?.content).not.toContain(
-        "watch: null",
-      );
+      expect(sandbox.fileWrites[0]?.content).not.toContain("watch: null");
       expect(response.status).toBe(200);
       const proxyCall = fetchMock.mock.calls.at(-1);
       expect(proxyCall?.[0]).toBe(
         "https://3000-sandbox-existing.example.test/api/projects/project-1/preview/content/capability/assets/app.js?v=1",
       );
-      expect(
-        new Headers(proxyCall?.[1]?.headers).get(
-          "e2b-traffic-access-token",
-        ),
-      ).toBe("traffic-token");
+      expect(new Headers(proxyCall?.[1]?.headers).get("e2b-traffic-access-token")).toBe(
+        "traffic-token",
+      );
     } finally {
       vi.unstubAllGlobals();
     }
@@ -241,8 +232,7 @@ describe("E2BSandboxRuntime", () => {
 
       await expect(
         runtime.startPreview(handle, {
-          contentBasePath:
-            "/api/projects/project-1/preview/content/capability/",
+          contentBasePath: "/api/projects/project-1/preview/content/capability/",
           port: 3000,
           preset: "vite-v1",
           processTimeoutMs: 30_000,
@@ -250,15 +240,10 @@ describe("E2BSandboxRuntime", () => {
         }),
       ).resolves.toEqual({ providerProcessRef: "42" });
 
-      expect(client.connected).toEqual([
-        "sandbox-existing",
-        "sandbox-existing",
-      ]);
+      expect(client.connected).toEqual(["sandbox-existing", "sandbox-existing"]);
       expect(sandbox.fileWrites).toHaveLength(0);
       expect(sandbox.commandHistory).toHaveLength(2);
-      expect(sandbox.commandHistory[0]).toContain(
-        "'/bin/sh' '-c'",
-      );
+      expect(sandbox.commandHistory[0]).toContain("'/bin/sh' '-c'");
     } finally {
       vi.unstubAllGlobals();
     }
@@ -289,9 +274,7 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     });
 
-    await expect(
-      runtime.terminateTerminal(handle, "42", "expired"),
-    ).resolves.toBeUndefined();
+    await expect(runtime.terminateTerminal(handle, "42", "expired")).resolves.toBeUndefined();
   });
 
   it("rejects a PTY that exceeds its bounded output budget", async () => {
@@ -374,10 +357,11 @@ describe("E2BSandboxRuntime", () => {
     });
 
     const changes = await runtime.listChanges(handle);
-    const diff = await runtime.readChangeDiff(
-      handle,
-      changes.entries[0]!,
-    );
+    const change = changes.entries[0];
+    if (!change) {
+      throw new Error("Expected a changed path");
+    }
+    const diff = await runtime.readChangeDiff(handle, change);
 
     expect(changes).toEqual({
       entries: [
@@ -402,30 +386,18 @@ describe("E2BSandboxRuntime", () => {
     expect(sandbox.commandHistory[0]).toContain(
       "'config' '--file' '/workspace/.git/config' '--no-includes'",
     );
-    expect(sandbox.commandHistory[1]).toContain(
-      "'status' '--porcelain=v1' '-z'",
-    );
+    expect(sandbox.commandHistory[1]).toContain("'status' '--porcelain=v1' '-z'");
     expect(sandbox.commandHistory[3]).toContain(
       "'diff' '--no-color' '--no-ext-diff' '--no-textconv'",
     );
-    expect(sandbox.commandHistory[3]).toContain(
-      "'quote'\"'\"'s.ts'",
-    );
+    expect(sandbox.commandHistory[3]).toContain("'quote'\"'\"'s.ts'");
     expect(sandbox.commandHistory[1]).toContain(
       "'/usr/bin/env' '-i' 'AGENT_ONLINE_OUTPUT_LIMIT=131073'",
     );
-    expect(sandbox.commandHistory[1]).toContain(
-      "GIT_NO_LAZY_FETCH=1",
-    );
-    expect(sandbox.commandHistory[1]).toContain(
-      "/usr/bin/head -c",
-    );
-    expect(sandbox.commandHistory[1]).toContain(
-      '"$GIT_DIR/commondir"',
-    );
-    expect(sandbox.commandHistory[1]).toContain(
-      '"$GIT_DIR/config.worktree"',
-    );
+    expect(sandbox.commandHistory[1]).toContain("GIT_NO_LAZY_FETCH=1");
+    expect(sandbox.commandHistory[1]).toContain("/usr/bin/head -c");
+    expect(sandbox.commandHistory[1]).toContain('"$GIT_DIR/commondir"');
+    expect(sandbox.commandHistory[1]).toContain('"$GIT_DIR/config.worktree"');
     expect(sandbox.commandHistory[1]).not.toContain("mktemp");
     expect(sandbox.commandOptionHistory).toHaveLength(4);
     expect(sandbox.commandOptionHistory).toEqual(
@@ -452,9 +424,7 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     });
 
-    await expect(
-      runtime.listChanges(handle),
-    ).rejects.toBeInstanceOf(SandboxNotRepositoryError);
+    await expect(runtime.listChanges(handle)).rejects.toBeInstanceOf(SandboxNotRepositoryError);
   });
 
   it.each([
@@ -462,51 +432,41 @@ describe("E2BSandboxRuntime", () => {
     "extensions.worktreeConfig",
     "filter.danger.clean",
     "include.path",
-  ])(
-    "rejects unsafe repository configuration %s before reading status",
-    async (unsafeKey) => {
-      const sandbox = new FakeE2BSandbox("sandbox-existing");
-      sandbox.commandResults.push({
-        exitCode: 0,
-        stderr: "",
-        stdout: `${unsafeKey}\0`,
-      });
-      const runtime = createRuntime(new FakeE2BClient(sandbox));
-      const handle = await runtime.ensureLease({
-        projectId: "project-1",
-        providerRef: "sandbox-existing",
-        sandboxLeaseId: "lease-1",
-      });
+  ])("rejects unsafe repository configuration %s before reading status", async (unsafeKey) => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    sandbox.commandResults.push({
+      exitCode: 0,
+      stderr: "",
+      stdout: `${unsafeKey}\0`,
+    });
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
 
-      await expect(runtime.listChanges(handle)).rejects.toThrow(
-        "not safe",
-      );
-      expect(sandbox.commandHistory).toHaveLength(1);
-    },
-  );
+    await expect(runtime.listChanges(handle)).rejects.toThrow("not safe");
+    expect(sandbox.commandHistory).toHaveLength(1);
+  });
 
-  it.each([46, 47])(
-    "rejects repository config scope exit code %i",
-    async (exitCode) => {
-      const sandbox = new FakeE2BSandbox("sandbox-existing");
-      sandbox.commandResults.push({
-        exitCode,
-        stderr: "",
-        stdout: "",
-      });
-      const runtime = createRuntime(new FakeE2BClient(sandbox));
-      const handle = await runtime.ensureLease({
-        projectId: "project-1",
-        providerRef: "sandbox-existing",
-        sandboxLeaseId: "lease-1",
-      });
+  it.each([46, 47])("rejects repository config scope exit code %i", async (exitCode) => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    sandbox.commandResults.push({
+      exitCode,
+      stderr: "",
+      stdout: "",
+    });
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
 
-      await expect(runtime.listChanges(handle)).rejects.toThrow(
-        "validation failed",
-      );
-      expect(sandbox.commandHistory).toHaveLength(1);
-    },
-  );
+    await expect(runtime.listChanges(handle)).rejects.toThrow("validation failed");
+    expect(sandbox.commandHistory).toHaveLength(1);
+  });
 
   it("returns a bounded diff when Git exits on the fixed head limit", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
@@ -531,16 +491,16 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     });
     const changes = await runtime.listChanges(handle);
-
-    const diff = await runtime.readChangeDiff(
-      handle,
-      changes.entries[0]!,
-    );
+    const change = changes.entries[0];
+    if (!change) {
+      throw new Error("Expected a changed path");
+    }
+    const diff = await runtime.readChangeDiff(handle, change);
 
     expect(diff.unstaged?.truncated).toBe(true);
-    expect(
-      new TextEncoder().encode(diff.unstaged?.content).byteLength,
-    ).toBe(maxGitDiffSectionBytes);
+    expect(new TextEncoder().encode(diff.unstaged?.content).byteLength).toBe(
+      maxGitDiffSectionBytes,
+    );
   });
 
   it("reports a missing persisted process so cancellation can stop the sandbox", async () => {
@@ -553,9 +513,9 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     });
 
-    await expect(
-      runtime.terminateProcess(handle, "42", "cancelled"),
-    ).rejects.toThrow("process was not found");
+    await expect(runtime.terminateProcess(handle, "42", "cancelled")).rejects.toThrow(
+      "process was not found",
+    );
   });
 
   it("replaces an expired provider reference and treats an already-gone sandbox as stopped", async () => {
@@ -576,9 +536,7 @@ describe("E2BSandboxRuntime", () => {
   });
 
   it("converges Preview operations when the recorded sandbox has expired", async () => {
-    const client = new FakeE2BClient(
-      new FakeE2BSandbox("sandbox-expired"),
-    );
+    const client = new FakeE2BClient(new FakeE2BSandbox("sandbox-expired"));
     client.connectError = new SandboxNotFoundError("expired");
     const runtime = createRuntime(client);
     const handle = {
@@ -587,12 +545,8 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     };
 
-    await expect(
-      runtime.isPreviewRunning(handle, "42", 3000),
-    ).resolves.toBe(false);
-    await expect(
-      runtime.terminatePreview(handle, "42", "expired"),
-    ).resolves.toBeUndefined();
+    await expect(runtime.isPreviewRunning(handle, "42", 3000)).resolves.toBe(false);
+    await expect(runtime.terminatePreview(handle, "42", "expired")).resolves.toBeUndefined();
     await expect(
       runtime.fetchPreview(handle, 3000, {
         headers: {},
@@ -628,9 +582,7 @@ class FakeE2BClient implements E2BSandboxClient {
 class FakeE2BSandbox {
   command = "";
   readonly commandHistory: string[] = [];
-  readonly commandOptionHistory: Array<
-    CommandStartOpts & { background: true }
-  > = [];
+  readonly commandOptionHistory: Array<CommandStartOpts & { background: true }> = [];
   readonly commandResults: Array<{
     exitCode: number;
     stderr: string;
@@ -696,9 +648,7 @@ class FakeE2BSandbox {
       await options.onStdout?.("stdout");
       await options.onStderr?.("stderr");
       const result = this.commandResults.shift();
-      return result
-        ? new FakeE2BCommandHandle(result)
-        : this.process;
+      return result ? new FakeE2BCommandHandle(result) : this.process;
     },
   };
   readonly pty = {
@@ -711,10 +661,7 @@ class FakeE2BSandbox {
       this.killedTerminalIds.push(processId);
       return this.terminalKillResult;
     },
-    resize: async (
-      processId: number,
-      size: { cols: number; rows: number },
-    ) => {
+    resize: async (processId: number, size: { cols: number; rows: number }) => {
       this.terminalSizes.push({ processId, size });
     },
     sendInput: async (processId: number, data: Uint8Array) => {

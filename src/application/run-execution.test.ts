@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  AgentExecution,
-  AgentRuntime,
-} from "../agent/contract";
-import { isTerminalAgentRun } from "../domain/agent-run";
+import type { AgentExecution, AgentRuntime } from "../agent/contract";
+import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
 import type {
   EnsureLeaseInput,
   ProcessTerminationReason,
@@ -46,9 +43,7 @@ describe("RunExecutionService", () => {
 
     expect(prompts).toEqual(["Build the requested application."]);
     expect(completed.status).toBe("succeeded");
-    expect(
-      fixture.messages.records.find((message) => message.role === "assistant"),
-    ).toMatchObject({
+    expect(fixture.messages.records.find((message) => message.role === "assistant")).toMatchObject({
       content: "Completed from the sandbox.",
       role: "assistant",
     });
@@ -180,22 +175,16 @@ describe("RunExecutionService", () => {
     });
 
     await expect(
-      current
-        .createService(blockingAgent())
-        .stopSandboxAfterActivityIdle({
-          expectedLeaseUpdatedAt:
-            "2026-07-25T00:10:00.000Z",
-          projectId: "project_1",
-        }),
+      current.createService(blockingAgent()).stopSandboxAfterActivityIdle({
+        expectedLeaseUpdatedAt: "2026-07-25T00:10:00.000Z",
+        projectId: "project_1",
+      }),
     ).resolves.toEqual({ detached: true, stopped: true });
     await expect(
-      stale
-        .createService(blockingAgent())
-        .stopSandboxAfterActivityIdle({
-          expectedLeaseUpdatedAt:
-            "2026-07-25T00:10:00.000Z",
-          projectId: "project_1",
-        }),
+      stale.createService(blockingAgent()).stopSandboxAfterActivityIdle({
+        expectedLeaseUpdatedAt: "2026-07-25T00:10:00.000Z",
+        projectId: "project_1",
+      }),
     ).resolves.toEqual({ detached: false, stopped: false });
 
     expect(current.runtime.stoppedSandboxes).toEqual([
@@ -205,14 +194,8 @@ describe("RunExecutionService", () => {
   });
 });
 
-function createFixture(
-  overrides: {
-    lease?: SandboxLeaseRecord;
-    run?: AgentRunRecord;
-  } = {},
-) {
+function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRecord } = {}) {
   const run = overrides.run ?? createRun();
-  const agentRuns = new InMemoryAgentRunRepository([run]);
   const messages = new InMemoryMessageRepository([
     {
       agentRunId: null,
@@ -224,6 +207,7 @@ function createFixture(
       sequence: 0,
     },
   ]);
+  const agentRuns = new InMemoryAgentRunRepository([run], messages);
   const sandboxLeases = new InMemorySandboxLeaseRepository(
     overrides.lease ?? createLease(),
     agentRuns,
@@ -353,22 +337,21 @@ class RecordingSandboxRuntime implements SandboxRuntime {
     this.stoppedSandboxes.push({ providerRef: handle.id, reason });
   }
 
-  async writeFile(
-    _handle: RuntimeHandle,
-    _path: string,
-    _content: string,
-  ) {}
+  async writeFile(_handle: RuntimeHandle, _path: string, _content: string) {}
 }
 
 class InMemoryMessageRepository implements MessageRepository {
   constructor(readonly records: MessageRecord[]) {}
 
-  async appendAssistant(
-    input: Parameters<MessageRepository["appendAssistant"]>[0],
-  ) {
+  recordAssistant(input: {
+    agentRunId: string;
+    content: string;
+    id: string;
+    now: string;
+    projectId: string;
+  }) {
     const existing = this.records.find(
-      (message) =>
-        message.agentRunId === input.agentRunId && message.role === "assistant",
+      (message) => message.agentRunId === input.agentRunId && message.role === "assistant",
     );
     if (existing) {
       return existing;
@@ -389,10 +372,8 @@ class InMemoryMessageRepository implements MessageRepository {
 
   async findById(messageId: string, projectId: string) {
     return (
-      this.records.find(
-        (message) =>
-          message.id === messageId && message.projectId === projectId,
-      ) ?? null
+      this.records.find((message) => message.id === messageId && message.projectId === projectId) ??
+      null
     );
   }
 
@@ -408,13 +389,9 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   ) {}
 
   async claimIdleAfterActivityForStop(
-    input: Parameters<
-      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
-    >[0],
+    input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],
   ) {
-    const active = await this.agentRuns.findActiveByProjectId(
-      this.lease.projectId,
-    );
+    const active = await this.agentRuns.findActiveByProjectId(this.lease.projectId);
     if (
       active ||
       this.lease.id !== input.leaseId ||
@@ -433,12 +410,8 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return true;
   }
 
-  async claimForManualStop(
-    input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
-  ) {
-    const active = await this.agentRuns.findActiveByProjectId(
-      this.lease.projectId,
-    );
+  async claimForManualStop(input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0]) {
+    const active = await this.agentRuns.findActiveByProjectId(this.lease.projectId);
     if (
       active ||
       this.lease.id !== input.leaseId ||
@@ -456,12 +429,8 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return true;
   }
 
-  async claimIdleForStop(
-    input: Parameters<SandboxLeaseRepository["claimIdleForStop"]>[0],
-  ) {
-    const active = await this.agentRuns.findActiveByProjectId(
-      this.lease.projectId,
-    );
+  async claimIdleForStop(input: Parameters<SandboxLeaseRepository["claimIdleForStop"]>[0]) {
+    const active = await this.agentRuns.findActiveByProjectId(this.lease.projectId);
     const latest = this.agentRuns.latestByProject(this.lease.projectId);
     if (
       active ||
@@ -490,9 +459,7 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     return this.lease;
   }
 
-  async updateState(
-    input: Parameters<SandboxLeaseRepository["updateState"]>[0],
-  ) {
+  async updateState(input: Parameters<SandboxLeaseRepository["updateState"]>[0]) {
     Object.assign(this.lease, {
       providerRef: input.providerRef,
       status: input.status,
@@ -505,7 +472,10 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
 class InMemoryAgentRunRepository implements AgentRunRepository {
   private readonly records = new Map<string, AgentRunRecord>();
 
-  constructor(runs: AgentRunRecord[]) {
+  constructor(
+    runs: AgentRunRecord[],
+    private readonly messages: InMemoryMessageRepository,
+  ) {
     for (const run of runs) {
       this.records.set(run.id, run);
     }
@@ -522,8 +492,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
   async findActiveByProjectId(projectId: string) {
     return (
       [...this.records.values()].find(
-        (run) =>
-          run.projectId === projectId && !isTerminalAgentRun(run.status),
+        (run) => run.projectId === projectId && !isTerminalAgentRun(run.status),
       ) ?? null
     );
   }
@@ -532,9 +501,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     return (
       [...this.records.values()].find(
         (run) =>
-          run.projectId === projectId &&
-          run.userId === userId &&
-          !isTerminalAgentRun(run.status),
+          run.projectId === projectId && run.userId === userId && !isTerminalAgentRun(run.status),
       ) ?? null
     );
   }
@@ -555,8 +522,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       .filter((run) => run.projectId === projectId)
       .sort(
         (left, right) =>
-          right.createdAt.localeCompare(left.createdAt) ||
-          right.id.localeCompare(left.id),
+          right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
       )[0];
   }
 
@@ -574,10 +540,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     if (!run || isTerminalAgentRun(run.status)) {
       return null;
     }
-    run.usage.sandboxDurationMs = Math.max(
-      run.usage.sandboxDurationMs,
-      sandboxDurationMs,
-    );
+    run.usage.sandboxDurationMs = Math.max(run.usage.sandboxDurationMs, sandboxDurationMs);
     return run;
   }
 
@@ -585,22 +548,42 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     return this.records.get(runId) ?? null;
   }
 
-  async transition(
-    input: Parameters<AgentRunRepository["transition"]>[0],
-  ) {
+  async completeSucceeded(input: Parameters<AgentRunRepository["completeSucceeded"]>[0]) {
+    const run = this.records.get(input.runId);
+    if (run?.status !== "running") {
+      return null;
+    }
+    Object.assign(run, {
+      failureReason: null,
+      finishedAt: input.finishedAt,
+      providerProcessRef: null,
+      status: "succeeded",
+    });
+    run.usage.sandboxDurationMs = Math.max(run.usage.sandboxDurationMs, input.sandboxDurationMs);
+    if (input.assistantMessage) {
+      this.messages.recordAssistant({
+        agentRunId: run.id,
+        content: input.assistantMessage.content,
+        id: input.assistantMessage.id,
+        now: input.finishedAt,
+        projectId: run.projectId,
+      });
+    }
+    return run;
+  }
+
+  async transition(input: Parameters<AgentRunRepository["transition"]>[0]) {
+    if (!canTransitionAgentRun(input.from, input.to)) {
+      throw new Error(`Invalid AgentRun transition from ${input.from} to ${input.to}`);
+    }
     const run = this.records.get(input.runId);
     if (!run || run.status !== input.from) {
       return null;
     }
     Object.assign(run, {
-      failureReason:
-        input.failureReason === undefined
-          ? run.failureReason
-          : input.failureReason,
-      finishedAt:
-        input.finishedAt === undefined ? run.finishedAt : input.finishedAt,
-      startedAt:
-        input.startedAt === undefined ? run.startedAt : input.startedAt,
+      failureReason: input.failureReason === undefined ? run.failureReason : input.failureReason,
+      finishedAt: input.finishedAt === undefined ? run.finishedAt : input.finishedAt,
+      startedAt: input.startedAt === undefined ? run.startedAt : input.startedAt,
       status: input.to,
     });
     if (isTerminalAgentRun(input.to)) {
@@ -608,19 +591,13 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     }
     return run;
   }
-
-  async updateUsage(runId: string) {
-    return this.records.get(runId) ?? null;
-  }
 }
 
 class MonotonicClock {
   private tick = 0;
 
   now() {
-    const value = new Date(
-      Date.UTC(2026, 6, 25, 0, 0, this.tick),
-    );
+    const value = new Date(Date.UTC(2026, 6, 25, 0, 0, this.tick));
     this.tick += 1;
     return value;
   }
@@ -653,9 +630,7 @@ function createRun(overrides: Partial<AgentRunRecord> = {}): AgentRunRecord {
   };
 }
 
-function createLease(
-  overrides: Partial<SandboxLeaseRecord> = {},
-): SandboxLeaseRecord {
+function createLease(overrides: Partial<SandboxLeaseRecord> = {}): SandboxLeaseRecord {
   return {
     createdAt: "2026-07-25T00:00:00.000Z",
     id: "lease_1",

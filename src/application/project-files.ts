@@ -10,10 +10,7 @@ import type {
   SandboxFileEntry,
   SandboxFilesystemRuntime,
 } from "../runtime/contract";
-import {
-  SandboxPathNotFoundError,
-  SandboxUnavailableError,
-} from "../runtime/contract";
+import { SandboxPathNotFoundError, SandboxUnavailableError } from "../runtime/contract";
 
 const maxDirectoryEntries = 500;
 const maxFileBytes = 256 * 1_024;
@@ -55,19 +52,14 @@ export type ListProjectDirectoryResult =
   | { directory: ProjectDirectory; kind: "ok" }
   | ProjectFilesFailure;
 
-export type ReadProjectFileResult =
-  | { file: ProjectTextFile; kind: "ok" }
-  | ProjectFilesFailure;
+export type ReadProjectFileResult = { file: ProjectTextFile; kind: "ok" } | ProjectFilesFailure;
 
 export type ProjectFilesServiceOptions = {
   agentRuns: Pick<AgentRunRepository, "findActiveByProjectId">;
   getSandboxRuntime: (id: RuntimeKind) => SandboxFilesystemRuntime;
   now(): Date;
   sandboxLeases: Pick<SandboxLeaseRepository, "findByProjectId">;
-  terminalSessions: Pick<
-    TerminalSessionRepository,
-    "findByProjectId"
-  >;
+  terminalSessions: Pick<TerminalSessionRepository, "findByProjectId">;
   workingDirectory: string;
 };
 
@@ -181,7 +173,10 @@ export class ProjectFilesService {
     projectId: string,
   ): Promise<
     | { handle: RuntimeHandle; kind: "ok"; runtime: SandboxFilesystemRuntime }
-    | Extract<ProjectFilesFailure, { kind: "project_busy" | "provider_error" | "sandbox_unavailable" }>
+    | Extract<
+        ProjectFilesFailure,
+        { kind: "project_busy" | "provider_error" | "sandbox_unavailable" }
+      >
   > {
     if (await this.options.agentRuns.findActiveByProjectId(projectId)) {
       return { kind: "project_busy" };
@@ -227,10 +222,7 @@ async function inspectPath(
 
   for (let index = 0; index < segments.length; index += 1) {
     const parent = segments.slice(0, index);
-    const entries = await runtime.listDirectory(
-      handle,
-      toAbsolutePath(workingDirectory, parent),
-    );
+    const entries = await runtime.listDirectory(handle, toAbsolutePath(workingDirectory, parent));
     entry = entries.find((candidate) => candidate.name === segments[index]) ?? null;
 
     if (!entry) {
@@ -260,7 +252,7 @@ function parseProjectPath(rawPath: string | undefined, allowRoot: boolean) {
     value.startsWith("/") ||
     value.endsWith("/") ||
     value.includes("\\") ||
-    /[\u0000-\u001f\u007f]/u.test(value)
+    hasAsciiControlCharacter(value)
   ) {
     return null;
   }
@@ -310,8 +302,18 @@ function isSafeEntry(entry: SandboxFileEntry) {
     entry.name !== ".git" &&
     !entry.name.includes("/") &&
     !entry.name.includes("\\") &&
-    !/[\u0000-\u001f\u007f]/u.test(entry.name)
+    !hasAsciiControlCharacter(entry.name)
   );
+}
+
+function hasAsciiControlCharacter(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function compareEntries(left: ProjectFileEntry, right: ProjectFileEntry) {

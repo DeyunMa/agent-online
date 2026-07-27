@@ -1,33 +1,21 @@
 import { Hono, type Context } from "hono";
 
 import type { ProjectPreviewStatus } from "../application/project-preview";
-import type {
-  ApiErrorResponse,
-  ProjectPreviewResponse,
-} from "../shared/api";
-import {
-  getAuthenticatedUser,
-  type AuthenticatedUser,
-} from "./auth-context";
+import type { ApiErrorResponse, ProjectPreviewResponse } from "../shared/api";
+import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
 import {
   createPreviewCapabilityCodec,
   previewContentBasePath,
   type PreviewCapabilityClaims,
 } from "./preview-capability";
-import {
-  createServerServices,
-  type ServerServices,
-} from "./services";
+import { createServerServices, type ServerServices } from "./services";
 
 type AppContext = Context<AppEnv>;
 
 export type PreviewApiDependencies = {
   createServices(env: AppBindings): ServerServices;
-  getAuthenticatedUser(
-    env: AppBindings,
-    headers: Headers,
-  ): Promise<AuthenticatedUser | null>;
+  getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
   now(): Date;
 };
 
@@ -92,9 +80,7 @@ export function removeStyle(id) {
 }
 `.trim();
 
-export function createPreviewApi(
-  overrides: Partial<PreviewApiDependencies> = {},
-) {
+export function createPreviewApi(overrides: Partial<PreviewApiDependencies> = {}) {
   const dependencies = { ...defaultDependencies, ...overrides };
   const api = new Hono<AppEnv>();
 
@@ -104,9 +90,7 @@ export function createPreviewApi(
       return accessError(c, access.kind);
     }
 
-    const status = await access.services.projectPreviews.inspect(
-      access.projectId,
-    );
+    const status = await access.services.projectPreviews.inspect(access.projectId);
     if (status.kind === "provider_error") {
       return previewUnavailable(c);
     }
@@ -114,9 +98,7 @@ export function createPreviewApi(
       return internalError(c);
     }
 
-    return c.json(
-      await toPreviewResponse(c.env, access.projectId, status),
-    );
+    return c.json(await toPreviewResponse(c.env, access.projectId, status));
   });
 
   api.post("/projects/:projectId/preview/start", async (c) => {
@@ -128,9 +110,7 @@ export function createPreviewApi(
       return accessError(c, access.kind);
     }
 
-    const result = await access.services.projectPreviews.start(
-      access.projectId,
-    );
+    const result = await access.services.projectPreviews.start(access.projectId);
     if (result.kind === "project_busy") {
       return projectBusy(c);
     }
@@ -144,10 +124,7 @@ export function createPreviewApi(
       return previewUnavailable(c);
     }
 
-    return c.json(
-      await toPreviewResponse(c.env, access.projectId, result.status),
-      201,
-    );
+    return c.json(await toPreviewResponse(c.env, access.projectId, result.status), 201);
   });
 
   api.post("/projects/:projectId/preview/stop", async (c) => {
@@ -159,9 +136,7 @@ export function createPreviewApi(
       return accessError(c, access.kind);
     }
 
-    const result = await access.services.projectPreviews.stop(
-      access.projectId,
-    );
+    const result = await access.services.projectPreviews.stop(access.projectId);
     if (result.kind === "project_busy") {
       return projectBusy(c);
     }
@@ -182,21 +157,12 @@ export function createPreviewApi(
     if (!projectId || !token) {
       return notFound(c);
     }
-    const claims = await verifyContentCapability(
-      c.env,
-      token,
-      projectId,
-      dependencies.now,
-    );
+    const claims = await verifyContentCapability(c.env, token, projectId, dependencies.now);
     if (!claims) {
       return notFound(c);
     }
 
-    const upstreamPath = parseUpstreamPath(
-      c.req.raw,
-      projectId,
-      token,
-    );
+    const upstreamPath = parseUpstreamPath(c.req.raw, projectId, token);
     if (!upstreamPath) {
       return notFound(c);
     }
@@ -220,38 +186,21 @@ export function createPreviewApi(
       return previewUnavailable(c);
     }
 
-    const baseUrl = previewContentBasePath(
-      projectId,
-      token,
-    );
+    const baseUrl = previewContentBasePath(projectId, token);
     if (isViteClientResourcePath(upstreamPath, baseUrl)) {
       return createViteClientStubResponse(c.req.method === "HEAD");
     }
     return preparePreviewResponse(result.response, baseUrl);
   };
 
-  api.on(
-    ["GET", "HEAD"],
-    "/projects/:projectId/preview/content/:token",
-    contentHandler,
-  );
-  api.on(
-    ["GET", "HEAD"],
-    "/projects/:projectId/preview/content/:token/*",
-    contentHandler,
-  );
+  api.on(["GET", "HEAD"], "/projects/:projectId/preview/content/:token", contentHandler);
+  api.on(["GET", "HEAD"], "/projects/:projectId/preview/content/:token/*", contentHandler);
 
   return api;
 }
 
-async function getOwnedProject(
-  c: AppContext,
-  dependencies: PreviewApiDependencies,
-) {
-  const user = await dependencies.getAuthenticatedUser(
-    c.env,
-    c.req.raw.headers,
-  );
+async function getOwnedProject(c: AppContext, dependencies: PreviewApiDependencies) {
+  const user = await dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
   if (!user) {
     return { kind: "unauthorized" as const };
   }
@@ -313,25 +262,19 @@ async function verifyContentCapability(
   }
 }
 
-function parseUpstreamPath(
-  request: Request,
-  projectId: string,
-  token: string,
-) {
+function parseUpstreamPath(request: Request, projectId: string, token: string) {
   const url = new URL(request.url);
   const prefix =
     `/api/projects/${encodeURIComponent(projectId)}` +
     `/preview/content/${encodeURIComponent(token)}`;
-  if (
-    url.pathname !== prefix &&
-    !url.pathname.startsWith(`${prefix}/`)
-  ) {
+  if (url.pathname !== prefix && !url.pathname.startsWith(`${prefix}/`)) {
     return null;
   }
   const path = url.pathname.slice(prefix.length) || "/";
   if (
     path.length > 2_048 ||
-    /[\r\n\u0000]/.test(path) ||
+    path.includes("\0") ||
+    /[\r\n]/.test(path) ||
     path.split("/").some((segment) => segment === "..")
   ) {
     return null;
@@ -359,13 +302,7 @@ function pickPreviewRequestHeaders(headers: Headers) {
 
 function preparePreviewResponse(upstream: Response, baseUrl: string) {
   const headers = new Headers();
-  for (const name of [
-    "accept-ranges",
-    "content-range",
-    "content-type",
-    "etag",
-    "last-modified",
-  ]) {
+  for (const name of ["accept-ranges", "content-range", "content-type", "etag", "last-modified"]) {
     const value = upstream.headers.get(name);
     if (value) {
       headers.set(name, value);
@@ -379,21 +316,15 @@ function preparePreviewResponse(upstream: Response, baseUrl: string) {
   headers.set("x-content-type-options", "nosniff");
 
   if (upstream.status >= 300 && upstream.status < 400) {
-    const location = rewriteRedirectLocation(
-      upstream.headers.get("location"),
-      baseUrl,
-    );
+    const location = rewriteRedirectLocation(upstream.headers.get("location"), baseUrl);
     if (!location) {
-      return new Response(
-        JSON.stringify({ error: "preview_unavailable" }),
-        {
-          headers: {
-            "content-type": "application/json",
-            "cache-control": "no-store",
-          },
-          status: 502,
+      return new Response(JSON.stringify({ error: "preview_unavailable" }), {
+        headers: {
+          "content-type": "application/json",
+          "cache-control": "no-store",
         },
-      );
+        status: 502,
+      });
     }
     headers.set("location", location);
   }
@@ -403,19 +334,13 @@ function preparePreviewResponse(upstream: Response, baseUrl: string) {
     status: upstream.status,
     statusText: upstream.statusText,
   });
-  if (
-    upstream.body &&
-    upstream.headers.get("content-type")?.toLowerCase().includes("text/html")
-  ) {
+  if (upstream.body && upstream.headers.get("content-type")?.toLowerCase().includes("text/html")) {
     return rewritePreviewHtml(response, baseUrl);
   }
   return response;
 }
 
-function rewriteRedirectLocation(
-  location: string | null,
-  baseUrl: string,
-) {
+function rewriteRedirectLocation(location: string | null, baseUrl: string) {
   if (!location || /^[a-z][a-z0-9+.-]*:/i.test(location) || location.startsWith("//")) {
     return null;
   }
@@ -453,17 +378,11 @@ function rewritePreviewHtml(response: Response, baseUrl: string) {
       element(element) {
         const value = element.getAttribute(attribute);
         if (value) {
-          if (
-            selector === "script" &&
-            isViteClientResourcePath(value, baseUrl)
-          ) {
+          if (selector === "script" && isViteClientResourcePath(value, baseUrl)) {
             element.remove();
             return;
           }
-          element.setAttribute(
-            attribute,
-            rewriteRootRelativeUrl(value, baseUrl),
-          );
+          element.setAttribute(attribute, rewriteRootRelativeUrl(value, baseUrl));
         }
       },
     });
@@ -471,10 +390,7 @@ function rewritePreviewHtml(response: Response, baseUrl: string) {
   return rewriter.transform(response);
 }
 
-export function isViteClientResourcePath(
-  value: string,
-  baseUrl: string,
-) {
+export function isViteClientResourcePath(value: string, baseUrl: string) {
   const withoutBase = value.startsWith(baseUrl)
     ? value.slice(baseUrl.length)
     : value.replace(/^\/+/, "");
@@ -516,10 +432,7 @@ function requireSecret(value: string | undefined) {
   return value;
 }
 
-function accessError(
-  c: AppContext,
-  kind: "not_found" | "unauthorized",
-) {
+function accessError(c: AppContext, kind: "not_found" | "unauthorized") {
   return kind === "unauthorized" ? unauthorized(c) : notFound(c);
 }
 

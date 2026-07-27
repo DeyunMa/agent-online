@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2，以及 D3 Files、当前用户跨 Run Usage、受控 Terminal、受控 Project Preview 和只读 Changes 均已通过远程验收；Goose adapter、组合模板与私有 Cloudflare 产品链路已通过受控 spike。Goose UI 仍关闭。
+> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-27 已补强 D1 原子完成、ModelGateway 资源上限、服务端路由分层和统一质量门禁。Goose UI 仍关闭。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -108,7 +108,7 @@ sequenceDiagram
     GM-->>MG: 响应与实际 usage
     MG->>DB: 累加 AgentRun usage
     AG-->>WF: 最终公开回复
-    WF->>DB: 写 assistant Message，结束 AgentRun
+    WF->>DB: 原子写 succeeded、usage 时长与 assistant Message
     UI->>API: 订阅状态 SSE
     API-->>UI: D1 状态与最终 usage
 ```
@@ -142,13 +142,6 @@ sequenceDiagram
 | `/api/projects/:id/preview/stop` | 终止当前固定 Preview 进程、删除临时 D1 行并安排 Lease idle cleanup。 |
 | `/api/projects/:id/preview/content/:token/*` | 使用绑定 Project/PreviewSession/expiry 的短时 capability 代理 GET/HEAD 内容；不接受任意端口。 |
 | `/api/usage` | 认证后按当前 `user_id` 返回全量 AgentRun 总计、Project 和 AgentRuntime 聚合，不返回用户或 Provider 私有字段。 |
-
-以下 API 留待后续 Runtime 或管理能力阶段实现：
-
-| 路径 | 作用 |
-| --- | --- |
-| `/api/projects/:id/sandbox` | 查看应用级 Lease 的公开状态。 |
-| `/api/admin/usage` | 仅 `ADMIN_EMAILS` allowlist 使用的基础汇总。 |
 
 所有 API 都以应用级资源 ID 工作。公共 API 不接受或返回 `provider_ref`；`agent_runtime_id` 只能由服务端 registry 和策略白名单解析，不能直接转换为 shell 命令。
 

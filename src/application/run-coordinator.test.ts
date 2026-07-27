@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentEvent, AgentExecution, AgentRuntime } from "../agent/contract";
 import { piRuntime } from "../agent/pi-runtime";
-import { isTerminalAgentRun } from "../domain/agent-run";
+import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -40,7 +40,9 @@ describe("RunCoordinator", () => {
       startedAt: "2026-07-25T00:00:00.000Z",
       status: "succeeded",
     });
-    expect(fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to])).toEqual([
+    expect(
+      fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to]),
+    ).toEqual([
       ["queued", "starting"],
       ["starting", "running"],
       ["running", "succeeded"],
@@ -71,7 +73,7 @@ describe("RunCoordinator", () => {
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
   });
 
-  it("persists one visible assistant reply before completing a successful Run", async () => {
+  it("atomically persists one visible assistant reply with a successful Run", async () => {
     const fixture = createFixture();
     const coordinator = fixture.createCoordinator(completingRuntime(0, "Final visible reply"));
 
@@ -97,7 +99,9 @@ describe("RunCoordinator", () => {
     const cancelledRun = await managedRun.cancel("cancelled");
 
     expect(cancelledRun.status).toBe("cancelled");
-    expect(fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to])).toEqual([
+    expect(
+      fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to]),
+    ).toEqual([
       ["queued", "starting"],
       ["starting", "running"],
       ["running", "cancelling"],
@@ -123,13 +127,44 @@ describe("RunCoordinator", () => {
     const cancelledRun = await managedRun.completion;
 
     expect(cancelledRun.status).toBe("cancelled");
-    expect(fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to])).toEqual([
+    expect(
+      fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to]),
+    ).toEqual([
       ["queued", "starting"],
       ["starting", "running"],
       ["running", "cancelling"],
       ["cancelling", "cancelled"],
     ]);
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
+  });
+
+  it("does not persist a reply when cancellation wins the atomic completion race", async () => {
+    const fixture = createFixture();
+    const runtime = blockingRuntime(0, "Reply that must not be persisted");
+    const coordinator = fixture.createCoordinator(runtime.agentRuntime);
+    fixture.agentRunRepository.beforeCompleteSucceeded = async () => {
+      fixture.agentRunRepository.beforeCompleteSucceeded = null;
+      await fixture.agentRunRepository.transition({
+        from: "running",
+        runId: fixture.agentRunRepository.run.id,
+        to: "cancelling",
+      });
+    };
+
+    const managedRun = await coordinator.start(startInput(fixture));
+    runtime.complete();
+    const cancelledRun = await managedRun.completion;
+
+    expect(cancelledRun.status).toBe("cancelled");
+    expect(fixture.messageRepository.records).toEqual([]);
+    expect(
+      fixture.agentRunRepository.transitions.map((transition) => [transition.from, transition.to]),
+    ).toEqual([
+      ["queued", "starting"],
+      ["starting", "running"],
+      ["running", "cancelling"],
+      ["cancelling", "cancelled"],
+    ]);
   });
 
   it("marks the Run and Lease failed when Agent startup fails", async () => {
@@ -175,8 +210,8 @@ function startInput(fixture: ReturnType<typeof createFixture>) {
 }
 
 function createFixture() {
-  const agentRunRepository = new FakeAgentRunRepository(createAgentRun());
   const messageRepository = new FakeMessageRepository();
+  const agentRunRepository = new FakeAgentRunRepository(createAgentRun(), messageRepository);
   const sandboxLeaseRepository = new FakeSandboxLeaseRepository(createSandboxLease());
   const sandboxRuntime = new FakeSandboxRuntime();
 
@@ -189,7 +224,6 @@ function createFixture() {
         createId: () => "assistant_message_1",
         getAgentRuntime: () => agentRuntime,
         getSandboxRuntime: () => sandboxRuntime,
-        messageRepository,
         sandboxLeaseRepository,
       };
       return new RunCoordinator(dependencies);
@@ -261,7 +295,7 @@ function completingRuntime(exitCode: number, finalText: string | null = null): A
   };
 }
 
-function blockingRuntime() {
+function blockingRuntime(exitCode = 143, finalText: string | null = null) {
   let releaseEvents: () => void = () => undefined;
   const release = new Promise<void>((resolve) => {
     releaseEvents = resolve;
@@ -284,7 +318,7 @@ function blockingRuntime() {
           async *events() {
             yield startedEvent(input);
             await release;
-            yield completedEvent(input, 143);
+            yield completedEvent(input, exitCode, finalText);
           },
           providerProcessRef: process.providerProcessRef,
         };
@@ -354,10 +388,16 @@ class SequenceClock implements Clock {
 
 class FakeAgentRunRepository implements AgentRunRepository {
   readonly transitions: Array<Parameters<AgentRunRepository["transition"]>[0]> = [];
+  beforeCompleteSucceeded: (() => Promise<void> | void) | null = null;
 
-  constructor(readonly run: AgentRunRecord) {}
+  constructor(
+    readonly run: AgentRunRecord,
+    private readonly messages: FakeMessageRepository,
+  ) {}
 
-  async createQueuedWithInput(_input: Parameters<AgentRunRepository["createQueuedWithInput"]>[0]): Promise<never> {
+  async createQueuedWithInput(
+    _input: Parameters<AgentRunRepository["createQueuedWithInput"]>[0],
+  ): Promise<never> {
     throw new Error("Not used by RunCoordinator tests");
   }
 
@@ -366,11 +406,15 @@ class FakeAgentRunRepository implements AgentRunRepository {
   }
 
   async findActiveByProjectId(projectId: string) {
-    return this.run.projectId === projectId && !isTerminalAgentRun(this.run.status) ? this.run : null;
+    return this.run.projectId === projectId && !isTerminalAgentRun(this.run.status)
+      ? this.run
+      : null;
   }
 
   async findActiveOwnedByProjectId(projectId: string, userId: string) {
-    return this.run.projectId === projectId && this.run.userId === userId && !isTerminalAgentRun(this.run.status)
+    return this.run.projectId === projectId &&
+      this.run.userId === userId &&
+      !isTerminalAgentRun(this.run.status)
       ? this.run
       : null;
   }
@@ -404,7 +448,45 @@ class FakeAgentRunRepository implements AgentRunRepository {
     return this.run;
   }
 
+  async completeSucceeded(input: Parameters<AgentRunRepository["completeSucceeded"]>[0]) {
+    await this.beforeCompleteSucceeded?.();
+    if (this.run.id !== input.runId || this.run.status !== "running") {
+      return null;
+    }
+
+    this.transitions.push({
+      failureReason: null,
+      finishedAt: input.finishedAt,
+      from: "running",
+      runId: input.runId,
+      to: "succeeded",
+    });
+    Object.assign(this.run, {
+      failureReason: null,
+      finishedAt: input.finishedAt,
+      providerProcessRef: null,
+      status: "succeeded",
+    });
+    this.run.usage.sandboxDurationMs = Math.max(
+      this.run.usage.sandboxDurationMs,
+      input.sandboxDurationMs,
+    );
+    if (input.assistantMessage) {
+      this.messages.recordAssistant({
+        agentRunId: this.run.id,
+        content: input.assistantMessage.content,
+        id: input.assistantMessage.id,
+        now: input.finishedAt,
+        projectId: this.run.projectId,
+      });
+    }
+    return this.run;
+  }
+
   async transition(input: Parameters<AgentRunRepository["transition"]>[0]) {
+    if (!canTransitionAgentRun(input.from, input.to)) {
+      throw new Error(`Invalid AgentRun transition from ${input.from} to ${input.to}`);
+    }
     this.transitions.push(input);
     if (this.run.status !== input.from) {
       return null;
@@ -421,16 +503,12 @@ class FakeAgentRunRepository implements AgentRunRepository {
     }
     return this.run;
   }
-
-  async updateUsage() {
-    return this.run;
-  }
 }
 
 class FakeMessageRepository implements MessageRepository {
   readonly records: MessageRecord[] = [];
 
-  async appendAssistant(input: {
+  recordAssistant(input: {
     agentRunId: string;
     content: string;
     id: string;
@@ -451,7 +529,10 @@ class FakeMessageRepository implements MessageRepository {
   }
 
   async findById(messageId: string, projectId: string) {
-    return this.records.find((message) => message.id === messageId && message.projectId === projectId) ?? null;
+    return (
+      this.records.find((message) => message.id === messageId && message.projectId === projectId) ??
+      null
+    );
   }
 
   async listByProjectId(projectId: string) {
@@ -465,9 +546,7 @@ class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
   constructor(readonly lease: SandboxLeaseRecord) {}
 
   async claimIdleAfterActivityForStop(
-    input: Parameters<
-      SandboxLeaseRepository["claimIdleAfterActivityForStop"]
-    >[0],
+    input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],
   ) {
     if (
       this.lease.id !== input.leaseId ||
@@ -486,9 +565,7 @@ class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
     return true;
   }
 
-  async claimForManualStop(
-    input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0],
-  ) {
+  async claimForManualStop(input: Parameters<SandboxLeaseRepository["claimForManualStop"]>[0]) {
     if (
       this.lease.id !== input.leaseId ||
       this.lease.providerRef !== input.expectedProviderRef ||

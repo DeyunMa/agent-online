@@ -2,9 +2,9 @@
 
 > 文档状态：当前 schema 基准
 >
-> 校准日期：2026-07-26
+> 校准日期：2026-07-27
 >
-> 权威来源：`migrations/0001_app.sql` 至 `migrations/0005_preview_sessions.sql`
+> 权威来源：`migrations/0001_app.sql` 至 `migrations/0006_integrity_guards.sql`
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
@@ -160,7 +160,7 @@ erDiagram
 - `messages_by_project_created_at(project_id, created_at ASC)`。
 - `messages_one_assistant_per_run`：每个非空 `agent_run_id` 最多一条 assistant Message。
 
-用户输入 Message 与 queued AgentRun 在同一个 D1 batch 中创建。assistant Message 使用按 Project 递增的 sequence，并在 Run 成功完成时至多写入一次。
+用户输入 Message 与 queued AgentRun 在同一个 D1 batch 中创建。Run 成功时，succeeded 状态、sandbox duration、assistant Message 和 Project `updated_at` 在另一个 D1 batch 中共同提交；若 Run 已进入 `cancelling` 或其他状态，该 batch 不写 assistant Message。
 
 ### 4.4 `agent_runs`
 
@@ -202,6 +202,20 @@ starting/running/cancelling -> failed | timed_out | interrupted
 - `agent_runs_by_project_created_at(project_id, created_at DESC)`。
 - `agent_runs_by_user_created_at(user_id, created_at DESC)`。
 - 列表 API 只读取最新 50 条，但表本身不自动删除更早记录。
+
+### 4.5 跨表完整性与状态机 trigger
+
+`0006_integrity_guards.sql` 在外键和唯一索引之外增加以下数据库最终边界：
+
+| Trigger | 强制规则 |
+| --- | --- |
+| `agent_runs_validate_insert_ownership` | Run 的 `user_id` 必须拥有 Project；Lease 必须属于同一 Project 且 Runtime 一致；输入 Message 必须是同 Project 的未关联 user Message。 |
+| `agent_runs_validate_status_transition` | 只允许当前领域状态机中的迁移；终态不能再次迁移。 |
+| `messages_validate_agent_link` | user Message 不能关联 Run；assistant Message 必须关联同 Project 的 succeeded Run。 |
+| `terminal_sessions_validate_lease` | TerminalSession 的 Lease 必须属于同一 Project。 |
+| `preview_sessions_validate_lease` | PreviewSession 的 Lease 必须属于同一 Project，且私有 Provider sandbox 引用必须与当前 Lease 一致。 |
+
+application 层仍负责提前校验和友好错误，但不能替代这些约束。关键迁移、trigger、D1 batch 回滚和仓储 SQL 由 `@cloudflare/vitest-pool-workers` 在真实 Workers/D1 测试运行时执行，不再只依赖 mock SQL 测试。
 
 ## 5. 临时协调表
 
