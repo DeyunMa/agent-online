@@ -24,7 +24,7 @@
 | 待办 | 用户需要提供或确认 | 项目侧动作 |
 | --- | --- | --- |
 | Cloudflare 身份 | 目标 Account 已确认，Wrangler OAuth 已连接。 | 已完成；本机其他 Account 环境变量需按资源台账显式排除。 |
-| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 `0001` 至 `0006`；九项发布预检和 Hosted Preview E2E 已通过。 |
+| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 `0001` 至 `0007`；九项发布预检和 Hosted Preview E2E 已通过。 |
 | Worker 地址 | `workers.dev`。 | 已设置同源 `BETTER_AUTH_URL`，未配置自定义域。 |
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |

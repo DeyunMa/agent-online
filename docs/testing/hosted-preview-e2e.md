@@ -62,14 +62,14 @@ Project 删除功能。
 
 ## 最近执行
 
-2026-07-27 针对 Preview 版本 `c722c868-a0f0-4bfd-b2f4-97654d026bce` 完整通过：
+2026-07-27 针对 Preview 版本 `e42fedb1-e386-4427-b283-2ffda2318a9a` 再次完整通过：
 
 - Chromium：1 个 Hosted Preview 用例通过；
 - 两个真实 Pi Run 分别验证成功执行与取消；
 - 最终 Message、聚合 usage、Files 内容和刷新后消息一致性通过；
 - JSON API 响应在交付给页面前完成私有字段审计；
 - 测试主动停止沙箱，随后九项远程预检全部为零；
-- D1 中全部 Lease 均为 `stopped`，保存 Provider 引用的 Lease 为 0。
+- D1 已应用 `0007_agent_run_failure_codes.sql`，Run status/failure code 非法组合为 0。
 
 发布过程和本地门禁结果见
 [2026-07-27 Preview 发布与 Hosted E2E](../status/2026-07-27-preview-release.md)。

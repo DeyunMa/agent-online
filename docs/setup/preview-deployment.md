@@ -1,9 +1,8 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-27 已按本文顺序完成架构加固代码、`0006_integrity_guards.sql` 和统一
-> 质量门禁的私有 Preview 发布，并通过 Hosted Preview E2E。错误语义代码对应的
-> `0007_agent_run_failure_codes.sql` 尚未远程应用和部署。本文继续作为后续发布与重建
-> 流程。
+> 状态：2026-07-27 已按本文顺序完成架构加固代码、`0006_integrity_guards.sql`、
+> `0007_agent_run_failure_codes.sql` 和统一质量门禁的私有 Preview 发布，并通过
+> Hosted Preview E2E。本文继续作为后续发布与重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -143,6 +142,12 @@ env -u CLOUDFLARE_API_TOKEN \
 
 如果无法先锁定当前已部署版本，则停止发布；不能在仍可能创建旧格式 Run 时提前应用
 trigger，也不能让读取 `failure_code` 的新代码长期运行在旧 schema 上。
+
+本流程已于 2026-07-27 实际执行：迁移前旧代码锁定版本为
+`305c1f6a-238e-46c7-85e6-532d05032f54`，新代码锁定版本为
+`4a6e38dd-0062-4a18-92a3-f6b93f9ceff0`，最终解锁版本为
+`e42fedb1-e386-4427-b283-2ffda2318a9a`。锁定前后九项预检均通过，远程 D1 的
+status/failure code 非法组合计数为零，Hosted E2E 通过。
 
 锁定部署必须验证：
 

@@ -1,9 +1,8 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-07-27 的私有 Cloudflare 环境。架构加固代码和
-> `0006_integrity_guards.sql` 已按锁定、预检、迁移、解锁顺序部署，并通过 Hosted
-> Preview E2E。`0007_agent_run_failure_codes.sql` 目前只存在于本地代码，尚未应用到
-> 远程 Preview。
+> 状态：本文记录截至 2026-07-27 的私有 Cloudflare 环境。架构加固代码、
+> `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 均已按锁定、
+> 预检、迁移、锁定 smoke、解锁顺序部署，并通过 Hosted Preview E2E。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -31,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `c722c868-a0f0-4bfd-b2f4-97654d026bce` |
+| 当前部署版本 | `e42fedb1-e386-4427-b283-2ffda2318a9a` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -58,13 +57,11 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0004_terminal_sessions.sql`
 - `0005_preview_sessions.sql`
 - `0006_integrity_guards.sql`
-
-待发布：
-
 - `0007_agent_run_failure_codes.sql`
 
-`0006` 已在 `RUNS_ENABLED=false` 的锁定版本下应用。迁移前九项只读完整性预检全部为
-零，迁移后先完成锁定 smoke，再恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
+`0006` 和 `0007` 均在 `RUNS_ENABLED=false` 的维护窗口应用。`0007` 发布先部署迁移前
+旧代码锁定版本，九项只读完整性预检全部为零，再迁移、部署新代码锁定版本并完成
+登录/API smoke，最后恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
 [私有 Preview 部署](./preview-deployment.md)执行。
 
 D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage，以及当前 Terminal/Preview 的临时协调行。Terminal/Preview 停止后对应行删除；Changes 不新增表，不保存 Git status/diff/history。没有创建 R2、KV、Durable Object 或文件快照。
@@ -122,7 +119,12 @@ Preview 在 `wrangler.jsonc` 中启用：
 - Workers Traces：关闭。
 - 外部日志导出、Tail Worker 和 Sentry：未配置。
 
-当前应用记录 Worker invocation，并在 Gemini 上游拒绝请求时增加受控协议诊断：只包含 HTTP 状态、错误类别、消息角色和工具/签名数量，不包含 prompt、消息正文、代码文件、终端输出、签名值或 Secret。Run/Preview 启动失败只记录安全阶段名和错误类名，不记录 Provider 标识、内部端口、签名 capability 或 config 内容。若以后增加日志字段，必须先复核该边界。
+当前应用以结构化 console 事件记录固定 event、stage、diagnostic code、`requestId`、
+`runId`、受控 Runtime/Model ID、Run 终态和聚合 usage。事件不包含 prompt、消息/Agent
+输出、文件路径或内容、终端输出、Provider 引用、内部端口、capability、原始异常
+message/stack 或 Secret。Cloudflare tail 已实际验证
+`MODEL_CAPABILITY_INVALID / model_gateway.request_failed` 事件的 schema 与脱敏边界。
+Workflow 重试可能产生重复事件；日志不是计费或审计账本，业务终态以 D1 为准。
 
 Cloudflare Workers Free 当前包含每天 200,000 条日志事件并保留 3 天；该额度和保留期可能变化，见 [Workers Logs 官方说明](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)。
 
@@ -174,6 +176,14 @@ Preview 已验证：
   Files 读取、第二 Run 取消、刷新后一致性、沙箱停止和全部 JSON API 响应脱敏检查。
   完成后九项远程预检全部为零；11 条 Lease 全部为 `stopped`，保存 Provider 引用的
   Lease 为 0。
+- 错误语义发布对应代码提交 `3480a48`。先以迁移前版本
+  `305c1f6a-238e-46c7-85e6-532d05032f54` 锁定新 Run 并完成九项预检，再应用
+  `0007`，部署新代码锁定版本 `4a6e38dd-0062-4a18-92a3-f6b93f9ceff0` 完成登录、
+  旧 Run `failureCode`、统一错误体和 request ID smoke；最终解锁版本为
+  `e42fedb1-e386-4427-b283-2ffda2318a9a`。
+- 最终版本再次通过 Hosted Preview E2E；结束后九项预检为零，D1 中
+  status/failure code 非法组合为零；12 条 Lease 全部为 `stopped` 且不保存 Provider
+  引用，TerminalSession/PreviewSession 均为零，结构化 Cloudflare tail 探针通过。
 
 尚未验证：
 

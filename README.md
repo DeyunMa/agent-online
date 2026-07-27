@@ -98,7 +98,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
 | [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md) | Run/D1 原子性、模块边界、资源上限、凭据扫描和统一自动化门禁。 |
 | [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md) | 锁定迁移、部署版本、完整产品 E2E 和最终远程清理证据。 |
-| [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、测试与未部署边界。 |
+| [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、Preview 发布与验收结果。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

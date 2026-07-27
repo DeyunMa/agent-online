@@ -1,8 +1,10 @@
 # 2026-07-27 Preview 发布与 Hosted E2E
 
-> 状态：架构加固代码、D1 `0006_integrity_guards.sql`、最终 Preview 部署和真实 Hosted
-> Preview E2E 已完成。当前仍是 allowlist 私有 Preview，不是公开生产环境。
+> 状态：架构加固、错误语义与结构化日志代码，D1 `0006_integrity_guards.sql` 和
+> `0007_agent_run_failure_codes.sql`，最终 Preview 部署和真实 Hosted Preview E2E
+> 均已完成。当前仍是 allowlist 私有 Preview，不是公开生产环境。
 > 关联：[架构加固](./2026-07-27-architecture-hardening.md) ·
+> [错误语义与结构化日志](./2026-07-27-errors-and-observability.md) ·
 > [部署流程](../setup/preview-deployment.md) ·
 > [资源台账](../setup/cloudflare-preview-resources.md) ·
 > [Hosted E2E](../testing/hosted-preview-e2e.md)
@@ -75,9 +77,9 @@ Hosted Preview E2E 不进入默认 `pnpm check`，避免普通提交创建真实
 
 - `/api/health`：正常；
 - `/api/capabilities`：`runCreationEnabled: true`，公开 AgentRuntime 只有 Pi；
-- D1 migration：`0001` 至 `0006` 全部应用；
+- D1 migration：`0001` 至 `0007` 全部应用；
 - 九项发布预检：全部为零；
-- SandboxLease：现有 11 条全部为 `stopped`；
+- SandboxLease：现有 12 条全部为 `stopped`；
 - 保存 Provider 引用的 Lease：0；
 - TerminalSession 与 PreviewSession：0。
 
@@ -91,3 +93,28 @@ E2E Project、Message、终态 AgentRun 和 usage 记录按 V1 设计保留为�
 - Goose 仍是服务端 `spike`，不出现在公开 capability 或 UI。
 - Files/Changes 与 Provider 文件系统读取仍是尽力一致，不宣称严格事务原子性。
 - 真实 E2B/Gemini E2E 会产生实际外部用量，只在发布或专项验收时显式执行。
+
+## 7. 错误语义与结构化日志发布
+
+代码提交 `3480a48` 推送后，`0007` 按维护窗口发布：
+
+1. 从迁移前提交构建锁定版本
+   `305c1f6a-238e-46c7-85e6-532d05032f54`，确认
+   `runCreationEnabled=false`。
+2. 远程九项只读预检全部为零。
+3. 应用 `0007_agent_run_failure_codes.sql`，确认远程 migration 记录存在且
+   status/failure code 非法组合为零。
+4. 部署新代码锁定版本 `4a6e38dd-0062-4a18-92a3-f6b93f9ceff0`。
+5. 真实登录后验证 Project/Run 列表、旧 Run `failureCode`、直接创建 Run 返回
+   `503 run.creation_disabled`，且错误体和 `x-request-id` 一致。
+6. 解锁最终版本 `e42fedb1-e386-4427-b283-2ffda2318a9a`，等待能力传播并确认
+   `runCreationEnabled=true`。
+7. Hosted Preview E2E 在 27.1 秒内通过：真实 Pi/Gemini 成功 Run、usage、Files、
+   第二 Run 取消、刷新恢复、响应脱敏和沙箱停止全部正确。
+8. E2E 后九项预检再次为零，D1 failure code 组合仍全部合法。
+9. Cloudflare tail 收到受控
+   `MODEL_CAPABILITY_INVALID / model_gateway.request_failed` 事件，包含 request ID、
+   stage 和 severity，不包含请求正文、Key 或 Provider 标识。
+
+本次没有修改 trace sampling、Secret 或环境变量，也没有接入 Sentry/OTel。结构化日志
+继续使用现有 Workers Logs，Run 产品状态和 usage 继续以 D1 为权威。
