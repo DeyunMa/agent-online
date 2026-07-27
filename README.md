@@ -34,14 +34,14 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Project Inspector 已启用只读 Changes：仅在现有 E2B Lease 中读取 `/workspace` 当前 Git working tree/index，使用固定 Git 命令、清空进程环境、拒绝危险或额外的 repository config scope，并分别展示 staged/unstaged 的有界 diff。不能安全公开的路径会明确标记为隐藏，不会误报 working tree clean。它不保存历史，也不能把变更归因到某一次 Run。
 - `pnpm check` 统一执行依赖方向、源码凭据扫描、Biome lint/format、类型检查、Node 单元测试、Cloudflare Workers 真实 D1 迁移/触发器测试、production build/产物凭据扫描和 Playwright 浏览器 smoke。GitHub Actions 在 `main` 和 Pull Request 上执行同一门禁；真实 E2B/Gemini E2E 保持显式 opt-in，避免每次提交产生沙箱成本。
 - 顶层 production 资源尚未配置，通用 `pnpm deploy` 会被配置 guard 拒绝；当前远程
-  目标只有带显式 Cloudflare Account guard 的私有 Preview。`0006` 已按锁定、
-  九项只读 D1 完整性预检、迁移和解锁顺序发布；同一流程保留为后续 trigger 变更的
-  发布门禁。
+  目标只有带显式 Cloudflare Account guard 的私有 Preview。`0006` 与 `0007` 均已按
+  锁定、九项只读 D1 完整性预检、迁移和解锁顺序发布；同一流程保留为后续 trigger
+  变更的发布门禁。
 - Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
-D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。本轮不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，对应的远程发布结果见 [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md)。后续文档中的“当前状态”以该基线和更晚的阶段记录为准。
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。本轮不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，对应的远程发布结果见 [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 

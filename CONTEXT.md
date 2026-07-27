@@ -32,14 +32,15 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 erDiagram
     USER ||--o{ PROJECT : owns
     PROJECT ||--o{ MESSAGE : contains
-    PROJECT ||--|| SANDBOX_LEASE : has
+    PROJECT ||--o| SANDBOX_LEASE : has
     PROJECT ||--o{ AGENT_RUN : executes
     PROJECT ||--o| TERMINAL_SESSION : temporarily_owns
     PROJECT ||--o| PREVIEW_SESSION : temporarily_previews
     SANDBOX_LEASE ||--o{ AGENT_RUN : serves
     SANDBOX_LEASE ||--o| TERMINAL_SESSION : serves
     SANDBOX_LEASE ||--o| PREVIEW_SESSION : serves
-    AGENT_RUN ||--o{ MESSAGE : produces_visible_output
+    AGENT_RUN o|--|| MESSAGE : consumes_input
+    AGENT_RUN ||--o| MESSAGE : produces_final_reply
 ```
 
 `Project.default_agent_runtime_id` 保存默认 Runtime；`AgentRun.agent_runtime_id` 保存该次实际执行的 Runtime。`sandbox_leases.project_id` 唯一，表示一个 Project 没有 Lease 历史表；Provider 实例重建时只更新同一逻辑 Lease 的私有引用和状态。
@@ -64,7 +65,7 @@ erDiagram
 16. Preview 只运行平台固定的 Vite preset、固定 `/workspace` 和固定内部端口。浏览器只拿到绑定 Project/PreviewSession/expiry 的同源短时 capability，不能拿到 Provider host、traffic token、内部端口或任意启动参数。
 17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
 18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
-19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
+19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、status/failure code 合法组合、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
 20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。
 
 ## 有意不建模的内容

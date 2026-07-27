@@ -9,7 +9,7 @@
 > [资源台账](../setup/cloudflare-preview-resources.md) ·
 > [Hosted E2E](../testing/hosted-preview-e2e.md)
 
-## 1. 发布范围
+## 1. `0006` 发布范围
 
 本次发布不新增产品功能，交付的是已完成审计的架构与工程加固：
 
@@ -22,7 +22,7 @@
 
 基础代码提交为 `edc6a73`（`refactor(architecture): harden release boundaries`）。
 
-## 2. 远程发布顺序
+## 2. `0006` 远程发布顺序
 
 实际执行顺序与部署文档一致：
 
@@ -40,7 +40,7 @@
 只返回执行汇总而不返回 SELECT 行，旧实现因此按设计失败关闭；修正后仍要求完整且唯一
 的九项检查集合，任一缺失、非法或非零都拒绝继续发布。
 
-## 3. Hosted Preview E2E
+## 3. `0006` Hosted Preview E2E
 
 最终 `pnpm test:e2e:preview` 以退出码 0 通过，真实覆盖：
 
@@ -59,7 +59,7 @@
 Playwright 误点 Run history。响应脱敏审计使用路由层先读取再转交页面，避免 reload
 导致旧响应体不可读；测试结束前会等待在途审计关闭。
 
-## 4. 完整门禁
+## 4. `0006` 完整门禁
 
 发布后再次执行 `pnpm check`，结果：
 
@@ -73,7 +73,7 @@ Playwright 误点 Run history。响应脱敏审计使用路由层先读取再转
 Hosted Preview E2E 不进入默认 `pnpm check`，避免普通提交创建真实 E2B 沙箱和 Gemini
 请求；本次发布经明确授权单独执行。
 
-## 5. 最终远程状态
+## 5. 当前远程状态
 
 - `/api/health`：正常；
 - `/api/capabilities`：`runCreationEnabled: true`，公开 AgentRuntime 只有 Pi；
@@ -94,7 +94,7 @@ E2E Project、Message、终态 AgentRun 和 usage 记录按 V1 设计保留为�
 - Files/Changes 与 Provider 文件系统读取仍是尽力一致，不宣称严格事务原子性。
 - 真实 E2B/Gemini E2E 会产生实际外部用量，只在发布或专项验收时显式执行。
 
-## 7. 错误语义与结构化日志发布
+## 7. `0007` 错误语义与结构化日志发布
 
 代码提交 `3480a48` 推送后，`0007` 按维护窗口发布：
 

@@ -27,6 +27,7 @@
 | assistant Message | 每个 AgentRun 最多一条最终回复 | D1 部分唯一索引 | 重复完成不会写第二条。 |
 | Run 跨表归属 | User、Project、Lease、Runtime、输入 Message 必须一致 | D1 trigger | 整个创建 batch 回滚。 |
 | Run 状态迁移 | 只能走领域状态机，终态不可变 | application + D1 trigger | 非法更新中止。 |
+| Run failure code | 必须与当前 status 构成合法组合 | D1 trigger | 非法插入或更新中止。 |
 | Terminal/Preview Lease | 临时行必须引用同 Project Lease；Preview Provider ref 还必须匹配 Lease | D1 trigger | claim/insert 中止。 |
 
 ### 1.1 操作互斥矩阵
@@ -111,7 +112,7 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | future clock skew | 最多 30 秒 | capability 校验。 |
 | ModelGateway 请求体 | 最多 4 MiB | 先检查 `Content-Length`，并对实际 stream 字节数再次设限。 |
 | ModelGateway 成功响应 | 最多缓冲 8 MiB | 超限或非法 UTF-8 返回通用 `502`。 |
-| ModelGateway 错误诊断 | 最多读取 64 KiB | 只记录分类、上游状态和受控协议摘要。 |
+| ModelGateway 错误诊断 | 最多读取 64 KiB | 只记录固定诊断码、分类和上游 HTTP 状态；不记录正文或协议摘要。 |
 
 ModelGateway 的 OpenAI 兼容请求限制：
 

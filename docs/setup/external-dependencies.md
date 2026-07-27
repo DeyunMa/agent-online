@@ -33,7 +33,7 @@
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
-顶层 production 资源仍未配置，`pnpm deploy` 会主动失败。本次 `0006` 发布已完成
+顶层 production 资源仍未配置，`pnpm deploy` 会主动失败。`0006` 与 `0007` 均已完成
 关闭 Run、排空、九项只读 D1 预检、迁移、锁定 smoke、重新打开 Run 和 Hosted
 Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用同一锁定流程；
 发布后 E2E 需要受邀测试账号，但不新增第三方服务。
@@ -66,7 +66,7 @@ Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用
 | 管理用量视图 | 独立管理员授权设计。 | 未实现 `/api/admin/usage`，也不存在 `ADMIN_EMAILS` 配置。 |
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |
-| 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有独立 `SandboxRuntime` Adapter、能力声明和 E2E。 |
+| 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有 Provider 无关的窄接口和 E2B adapter；第二个真实 Provider adapter、能力声明和 E2E 均未实现。 |
 | 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | Goose adapter、组合模板、事件、ModelGateway、D1/Workflow/TTL 已通过；输出脱敏和浏览器公开验收仍待完成。 |
 
 ## 5. 当前明确不需要

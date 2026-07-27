@@ -184,8 +184,10 @@ Provider reference、Key、capability、异常 message 或 stack。
 - 普通产品 API 由唯一 renderer 将内部 outcome 显式映射为稳定 public error code、
   HTTP status 和 `retryable`。
 - AgentRun 只持久化稳定 `failure_code`；D1 trigger 强制其与 Run status 的合法组合。
-- runtime/agent/model/persistence catch 在各自接缝归一化成固定 diagnostic code，原始异常
-  只作为瞬时原因，不进入浏览器、D1 或普通结构化事件。
+- 当前结构化诊断覆盖 Run 创建、分发、执行与协调、ModelGateway、Preview 启动、
+  Run 后 idle cleanup 和未处理 HTTP；这些接缝将异常归一化成固定 diagnostic code。
+  合同中预留但尚未接线的 code 不代表已有对应观测。原始异常只作为瞬时原因，不进入
+  浏览器、D1 或普通结构化事件。
 - `src/server/observability/` 当前 adapter 只输出 Cloudflare Workers 可索引的结构化
   console 记录，不依赖 Sentry 或其他外部服务。
 - Workflow 重试和取消竞争可能产生重复事件；日志采用至少一次语义，业务终态与 usage
