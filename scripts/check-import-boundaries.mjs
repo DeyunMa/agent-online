@@ -11,11 +11,15 @@ const sourceFiles = [
 const forbiddenLayerImports = new Map([
   ["agent", new Set(["application", "client", "server"])],
   ["application", new Set(["client", "server"])],
-  ["client", new Set(["agent", "application", "runtime", "server"])],
-  ["domain", new Set(["agent", "application", "client", "runtime", "server"])],
+  ["client", new Set(["agent", "application", "observability", "runtime", "server"])],
+  ["domain", new Set(["agent", "application", "client", "observability", "runtime", "server"])],
+  ["observability", new Set(["agent", "application", "client", "domain", "runtime", "server"])],
   ["runtime", new Set(["agent", "application", "client", "server"])],
   ["server", new Set(["client"])],
-  ["shared", new Set(["agent", "application", "client", "domain", "runtime", "server"])],
+  [
+    "shared",
+    new Set(["agent", "application", "client", "domain", "observability", "runtime", "server"]),
+  ],
 ]);
 const violations = [];
 

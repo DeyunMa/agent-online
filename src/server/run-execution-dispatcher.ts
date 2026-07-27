@@ -8,8 +8,10 @@ import type { AgentRunExecutionStarter } from "../application/create-agent-run";
 import { RunCoordinator } from "../application/run-coordinator";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { SandboxRuntime } from "../runtime/contract";
+import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
+import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 import { getE2BExecutionConfig } from "./runtime-config";
 
 export interface RunExecutionDispatcher extends AgentRunExecutionStarter {
@@ -21,11 +23,13 @@ export function createInlineFakeDispatcher(
   sandboxLeases: SandboxLeaseRepository,
   runtime: SandboxRuntime,
   getAgentRuntime: (id: AgentRuntimeId) => AgentRuntime,
+  diagnostics?: DiagnosticReporter,
 ): RunExecutionDispatcher {
   const coordinator = new RunCoordinator({
     agentRunRepository: agentRuns,
     clock: { now: () => new Date() },
     createId: () => crypto.randomUUID(),
+    diagnostics,
     getAgentRuntime,
     getSandboxRuntime(id) {
       if (runtime.kind !== id) {
@@ -58,15 +62,22 @@ export function createInlineFakeDispatcher(
   };
 }
 
-export function createWorkflowDispatcher(env: AppBindings): RunExecutionDispatcher {
+export function createWorkflowDispatcher(
+  env: AppBindings,
+  diagnosticContext: DiagnosticContext = {},
+): RunExecutionDispatcher {
+  const diagnostics = createStructuredDiagnosticReporter(diagnosticContext);
   return {
     async cancel(run) {
-      const cancelled = await createE2BRunExecution(env).service.cancel({
+      const cancelled = await createE2BRunExecution(env, {
+        ...diagnosticContext,
+        runId: run.id,
+      }).service.cancel({
         projectId: run.projectId,
         runId: run.id,
       });
       await terminateWorkflowBestEffort(env, run.id);
-      await scheduleRunIdleCleanupBestEffort(env, run.projectId, run.id);
+      await scheduleRunIdleCleanupBestEffort(env, run.projectId, run.id, diagnostics);
       return cancelled;
     },
     async start(input) {
@@ -88,6 +99,7 @@ export async function scheduleRunIdleCleanupBestEffort(
   env: AppBindings,
   projectId: string,
   runId: string,
+  diagnostics?: DiagnosticReporter,
 ) {
   try {
     await createWorkflowInstance(env, {
@@ -98,7 +110,14 @@ export async function scheduleRunIdleCleanupBestEffort(
         runId,
       },
     });
-  } catch (_error) {
+  } catch {
+    diagnostics?.report({
+      errorCode: "RUN_DISPATCH_FAILED",
+      event: "sandbox.idle_cleanup_failed",
+      outcome: "failed",
+      runId,
+      stage: "idle_cleanup",
+    });
     // E2B's own timeout remains the final cleanup bound.
   }
 }

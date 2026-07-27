@@ -67,7 +67,7 @@ describe("RunCoordinator", () => {
     const completedRun = await managedRun.completion;
 
     expect(completedRun).toMatchObject({
-      failureReason: "Agent process exited with code 7",
+      failureCode: "run.agent_process_failed",
       status: "failed",
     });
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
@@ -180,7 +180,7 @@ describe("RunCoordinator", () => {
     const managedRun = await coordinator.start(startInput(fixture));
 
     await expect(managedRun.completion).resolves.toMatchObject({
-      failureReason: "Agent run startup failed at start_agent",
+      failureCode: "run.start_failed",
       status: "failed",
     });
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("failed");
@@ -193,7 +193,7 @@ describe("RunCoordinator", () => {
     const managedRun = await coordinator.start(startInput(fixture));
 
     await expect(managedRun.completion).resolves.toMatchObject({
-      failureReason: "Agent runtime failed",
+      failureCode: "run.agent_protocol_failed",
       status: "failed",
     });
     expect(fixture.sandboxLeaseRepository.lease.status).toBe("failed");
@@ -237,7 +237,7 @@ function createAgentRun(): AgentRunRecord {
   return {
     agentRuntimeId: "pi",
     createdAt: "2026-07-25T00:00:00.000Z",
-    failureReason: null,
+    failureCode: null,
     finishedAt: null,
     id: "run_1",
     inputMessageId: "message_1",
@@ -455,14 +455,14 @@ class FakeAgentRunRepository implements AgentRunRepository {
     }
 
     this.transitions.push({
-      failureReason: null,
+      failureCode: null,
       finishedAt: input.finishedAt,
       from: "running",
       runId: input.runId,
       to: "succeeded",
     });
     Object.assign(this.run, {
-      failureReason: null,
+      failureCode: null,
       finishedAt: input.finishedAt,
       providerProcessRef: null,
       status: "succeeded",
@@ -493,7 +493,7 @@ class FakeAgentRunRepository implements AgentRunRepository {
     }
 
     Object.assign(this.run, {
-      failureReason: input.failureReason ?? this.run.failureReason,
+      failureCode: input.failureCode ?? this.run.failureCode,
       finishedAt: input.finishedAt ?? this.run.finishedAt,
       startedAt: input.startedAt ?? this.run.startedAt,
       status: input.to,

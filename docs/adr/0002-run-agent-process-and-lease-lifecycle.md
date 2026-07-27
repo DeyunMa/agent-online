@@ -97,7 +97,7 @@ stateDiagram-v2
 | `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `created_at`, `updated_at` | 用户可见的工作空间和对话容器。 |
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有且可覆盖。 |
 | `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户输入和最终可展示助手回复。 |
-| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, token/请求/时长字段、时间戳、`failure_reason` | 一次 Agent 执行的状态、关联和基础计量。 |
+| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, token/请求/时长字段、时间戳、稳定 `failure_code` | 一次 Agent 执行的状态、关联和基础计量；失败语义由 ADR-0008 修订。 |
 
 `agent_runs` 至少应保存：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`、`created_at`、`started_at`、`finished_at`。这些来自真实 ModelGateway 和 SandboxRuntime 事件，可按 `user_id` 汇总为内部管理视图和用户基础用量视图。
 

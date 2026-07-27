@@ -21,6 +21,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
 - Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
+- 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。无外部依赖的结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup，且不记录用户内容或 Provider 私有值。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消优先只终止当前 Agent 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
@@ -74,6 +75,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [ADR-0005](./docs/adr/0005-controlled-project-terminal.md) | Project Terminal 的 PTY capability、同源 WebSocket、D1 互斥和回收。 |
 | [ADR-0006](./docs/adr/0006-controlled-project-preview.md) | 固定 Vite Preview、同源签名内容网关、临时 D1 所有权和回收。 |
 | [ADR-0007](./docs/adr/0007-controlled-project-changes.md) | 固定 Git 命令、危险配置拒绝、有界 status/diff 和当前工作树语义。 |
+| [ADR-0008](./docs/adr/0008-errors-and-execution-correlation.md) | `requestId/runId` 关联、公共/持久化/诊断错误分层与结构化日志。 |
 | [系统总览](./docs/architecture/01-system-overview.md) | 单 Worker 请求流与浏览器、Worker、Agent、沙箱之间的数据路径。 |
 | [沙箱与 Agent 运行时](./docs/architecture/02-sandbox-runtime.md) | `SandboxLease` 生命周期、`SandboxRuntime` 与 `AgentRuntime` 的合同。 |
 | [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与可选观测。 |
@@ -96,6 +98,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-26 D4 Goose Spike](./docs/status/2026-07-26-d4-goose-spike.md) | Goose adapter、组合模板、真实 E2E、门控状态与剩余产品验收。 |
 | [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md) | Run/D1 原子性、模块边界、资源上限、凭据扫描和统一自动化门禁。 |
 | [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md) | 锁定迁移、部署版本、完整产品 E2E 和最终远程清理证据。 |
+| [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、测试与未部署边界。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

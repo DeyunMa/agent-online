@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { ProjectTerminalConnection } from "../application/project-terminal";
 import { maxTerminalInputBytes } from "../application/project-terminal";
+import type { DiagnosticContext } from "../observability/contract";
 import type {
   TerminalClientMessage,
   TerminalServerErrorCode,
@@ -11,6 +12,7 @@ import type {
 } from "../shared/terminal";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import { createServerServices, type ServerServices } from "./services";
 
 const terminalClientMessageSchema = z.discriminatedUnion("type", [
@@ -39,7 +41,7 @@ type AppContext = Context<AppEnv>;
 type TerminalWebSocketUpgrade = (c: AppContext, events: WSEvents<WebSocket>) => Promise<Response>;
 
 export type TerminalApiDependencies = {
-  createServices(env: AppBindings): ServerServices;
+  createServices(env: AppBindings, diagnosticContext?: DiagnosticContext): ServerServices;
   getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
   upgrade: TerminalWebSocketUpgrade;
 };
@@ -57,16 +59,18 @@ export function createTerminalApi(overrides: Partial<TerminalApiDependencies> = 
   api.get("/projects/:projectId/terminal", async (c) => {
     const user = await dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
     if (!user) {
-      return apiError(c, "unauthorized", 401);
+      return renderApiError(c, "auth.unauthorized");
     }
     if (!isSameOriginWebSocket(c.req.raw)) {
-      return apiError(c, "forbidden", 403);
+      return renderApiError(c, "request.forbidden");
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, {
+      requestId: c.get("requestId"),
+    });
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
-      return apiError(c, "not_found", 404);
+      return renderApiError(c, "resource.not_found");
     }
 
     return dependencies.upgrade(
@@ -357,12 +361,4 @@ function isSameOriginWebSocket(request: Request) {
   } catch {
     return false;
   }
-}
-
-function apiError(
-  c: AppContext,
-  error: "forbidden" | "not_found" | "unauthorized",
-  status: 401 | 403 | 404,
-) {
-  return c.json({ error, requestId: c.get("requestId") }, status);
 }

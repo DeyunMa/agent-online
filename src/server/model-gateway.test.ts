@@ -394,7 +394,7 @@ describe("OpenAI-compatible ModelGateway", () => {
   });
 
   it("bounds upstream error diagnostics without logging response content", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const report = vi.fn();
     const gateway = createOpenAiCompatibleModelGateway({
       async authorize() {
         return {
@@ -408,6 +408,7 @@ describe("OpenAI-compatible ModelGateway", () => {
         new Response("private-upstream-body".repeat(4_096), {
           status: 429,
         }),
+      diagnostics: { report },
       geminiApiKey: "test-gemini-key",
     });
 
@@ -423,12 +424,14 @@ describe("OpenAI-compatible ModelGateway", () => {
     );
 
     expect(response.status).toBe(502);
-    expect(consoleError).toHaveBeenCalledWith(
-      "ModelGateway upstream request rejected",
+    expect(report).toHaveBeenCalledWith(
       expect.objectContaining({
+        errorCode: "MODEL_UPSTREAM_REJECTED",
+        event: "model_gateway.request_failed",
+        runId: "run-1",
         upstreamHttpStatus: 429,
       }),
     );
-    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("private-upstream-body");
+    expect(JSON.stringify(report.mock.calls)).not.toContain("private-upstream-body");
   });
 });

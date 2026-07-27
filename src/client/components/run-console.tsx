@@ -17,6 +17,7 @@ import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run"
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
 import type { BrowserApiError } from "../api";
 import {
+  agentRunFailureLabel,
   agentRunStatusLabel,
   agentRunStatusTone,
   formatDateTime,
@@ -100,7 +101,9 @@ export function RunStatusBar({
       <time dateTime={run.createdAt}>{formatDateTime(run.createdAt)}</time>
       <span>{formatRunDuration(run)}</span>
       <div className="run-status-spacer" />
-      {run.failureReason ? <p className="run-status-error">{run.failureReason}</p> : null}
+      {run.failureCode ? (
+        <p className="run-status-error">{agentRunFailureLabel(run.failureCode)}</p>
+      ) : null}
       {streamError ? <p className="run-status-note">{streamError.message}</p> : null}
       {cancelError ? <ErrorState compact error={cancelError} /> : null}
       {!terminal ? (

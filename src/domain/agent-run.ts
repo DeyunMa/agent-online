@@ -1,4 +1,5 @@
 import type { AgentRunStatus } from "../shared/protocol";
+import type { AgentRunFailureCode } from "../shared/error-codes";
 
 export { agentRunStatuses } from "../shared/protocol";
 export type { AgentRunStatus } from "../shared/protocol";
@@ -33,4 +34,23 @@ export function canTransitionAgentRun(from: AgentRunStatus, to: AgentRunStatus) 
 
 export function isTerminalAgentRun(status: AgentRunStatus) {
   return terminalStatuses.has(status);
+}
+
+export function isValidAgentRunFailure(
+  status: AgentRunStatus,
+  failureCode: AgentRunFailureCode | null,
+) {
+  if (status === "timed_out") {
+    return failureCode === "run.timed_out";
+  }
+  if (status === "interrupted") {
+    return failureCode === "run.interrupted";
+  }
+  if (status === "failed") {
+    return (
+      failureCode !== null && failureCode !== "run.timed_out" && failureCode !== "run.interrupted"
+    );
+  }
+
+  return failureCode === null;
 }

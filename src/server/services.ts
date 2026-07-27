@@ -15,6 +15,7 @@ import {
 } from "../application/project-sandbox";
 import { ProjectTerminalService } from "../application/project-terminal";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import { createE2BRunExecution } from "./e2b-run-execution";
@@ -43,6 +44,7 @@ import {
   scheduleTerminalExpiry,
   scheduleTerminalIdleCleanupBestEffort,
 } from "./run-execution-dispatcher";
+import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 
 export type { RunExecutionDispatcher } from "./run-execution-dispatcher";
 
@@ -53,6 +55,7 @@ export interface ProjectSandboxController {
 export type ServerServices = {
   agentRuns: AgentRunRepository;
   createAgentRuns: CreateAgentRunService;
+  diagnostics: DiagnosticReporter;
   enabledAgentRuntimeIds: readonly AgentRuntimeId[];
   messages: MessageRepository;
   projectChanges: ProjectChangesService;
@@ -65,7 +68,11 @@ export type ServerServices = {
   sandboxLeases: SandboxLeaseRepository;
 };
 
-export function createServerServices(env: AppBindings): ServerServices {
+export function createServerServices(
+  env: AppBindings,
+  diagnosticContext: DiagnosticContext = {},
+): ServerServices {
+  const diagnostics = createStructuredDiagnosticReporter(diagnosticContext);
   const agentRuns = new D1AgentRunRepository(env.DB);
   const messages = new D1MessageRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
@@ -85,7 +92,7 @@ export function createServerServices(env: AppBindings): ServerServices {
       return requireRuntime(fakeRuntime, id);
     }
 
-    e2bRuntime ??= createE2BRunExecution(env).runtime;
+    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
     return requireRuntime(e2bRuntime, id);
   };
   const getTerminalRuntime = (id: RuntimeKind) => {
@@ -93,7 +100,7 @@ export function createServerServices(env: AppBindings): ServerServices {
       return null;
     }
 
-    e2bRuntime ??= createE2BRunExecution(env).runtime;
+    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
     return e2bRuntime;
   };
   const getChangesRuntime = (id: RuntimeKind) => {
@@ -101,7 +108,7 @@ export function createServerServices(env: AppBindings): ServerServices {
       return null;
     }
 
-    e2bRuntime ??= createE2BRunExecution(env).runtime;
+    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
     return e2bRuntime;
   };
   const runExecutions =
@@ -111,8 +118,9 @@ export function createServerServices(env: AppBindings): ServerServices {
           sandboxLeases,
           getSandboxRuntime("fake"),
           agentRuntimePolicy.resolve,
+          diagnostics,
         )
-      : createWorkflowDispatcher(env);
+      : createWorkflowDispatcher(env, diagnosticContext);
 
   return {
     agentRuns,
@@ -121,11 +129,13 @@ export function createServerServices(env: AppBindings): ServerServices {
       clock: { now: () => new Date() },
       createId: () => crypto.randomUUID(),
       defaultModelId: getDefaultModelId(env),
+      diagnostics,
       runExecutions,
       sandboxLeases,
       sandboxRuntimeId,
       workingDirectory: defaultWorkingDirectory,
     }),
+    diagnostics,
     enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
     messages,
     projectChanges: new ProjectChangesService({
@@ -149,10 +159,12 @@ export function createServerServices(env: AppBindings): ServerServices {
       createId: () => crypto.randomUUID(),
       getSandboxRuntime: getTerminalRuntime,
       previewSessions,
-      reportFailure: ({ errorName, stage }) => {
-        console.error("project_preview_failure", {
-          errorName,
-          stage,
+      reportFailure: () => {
+        diagnostics.report({
+          errorCode: "PREVIEW_START_FAILED",
+          event: "project_preview.failed",
+          outcome: "failed",
+          stage: "preview_start",
         });
       },
       sandboxLeases,

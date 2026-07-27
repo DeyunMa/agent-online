@@ -2,6 +2,7 @@ import type { AgentRuntimeId } from "../agent/contract";
 import type { AgentRunStatus } from "../domain/agent-run";
 import type { SandboxLeaseStatus } from "../domain/sandbox-lease";
 import type { RuntimeKind } from "../runtime/contract";
+import type { AgentRunFailureCode } from "../shared/error-codes";
 
 export type ProjectRecord = {
   createdAt: string;
@@ -35,7 +36,7 @@ export type AgentRunUsageDelta = AgentRunUsage;
 export type AgentRunRecord = {
   agentRuntimeId: AgentRuntimeId;
   createdAt: string;
-  failureReason: string | null;
+  failureCode: AgentRunFailureCode | null;
   finishedAt: string | null;
   id: string;
   inputMessageId: string | null;
@@ -286,7 +287,7 @@ export interface AgentRunRepository {
     sandboxDurationMs: number;
   }): Promise<AgentRunRecord | null>;
   transition(input: {
-    failureReason?: string | null;
+    failureCode?: AgentRunFailureCode | null;
     finishedAt?: string | null;
     from: AgentRunStatus;
     runId: string;

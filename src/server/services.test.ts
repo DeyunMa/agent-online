@@ -47,7 +47,7 @@ function createRun(): AgentRunRecord {
   return {
     agentRuntimeId: "pi",
     createdAt: "2026-07-25T00:00:00.000Z",
-    failureReason: null,
+    failureCode: null,
     finishedAt: null,
     id: "run_1",
     inputMessageId: "message_1",

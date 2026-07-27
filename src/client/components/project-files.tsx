@@ -264,6 +264,6 @@ function formatFileSize(bytes: number) {
 function isUnavailableError(error: Error | null): error is BrowserApiError {
   return (
     error instanceof BrowserApiError &&
-    (error.code === "project_busy" || error.code === "sandbox_unavailable")
+    (error.code === "project.busy" || error.code === "sandbox.not_active")
   );
 }

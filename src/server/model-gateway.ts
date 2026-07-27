@@ -1,3 +1,9 @@
+import {
+  type DiagnosticEvent,
+  type DiagnosticReporter,
+  noopDiagnosticReporter,
+} from "../observability/contract";
+
 export type ModelGatewayCapability = {
   maxOutputTokens: number;
   modelId: string;
@@ -14,6 +20,7 @@ export type ModelGatewayUsage = {
 
 export type ModelGatewayOptions = {
   authorize(request: Request): Promise<ModelGatewayCapability | null>;
+  diagnostics?: DiagnosticReporter;
   endpointPath?: string;
   fetchImplementation?: typeof fetch;
   geminiApiKey: string;
@@ -50,6 +57,7 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
   const endpointPath = options.endpointPath ?? defaultEndpointPath;
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const modelApiBaseUrl = (options.modelApiBaseUrl ?? defaultModelApiBaseUrl).replace(/\/$/, "");
+  const diagnostics = options.diagnostics ?? noopDiagnosticReporter;
 
   return async function handleOpenAiChatCompletion(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -60,7 +68,13 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
     let capability: ModelGatewayCapability | null;
     try {
       capability = await options.authorize(request);
-    } catch (_error) {
+    } catch {
+      diagnostics.report({
+        errorCode: "MODEL_CAPABILITY_INVALID",
+        event: "model_gateway.request_failed",
+        outcome: "failed",
+        stage: "authorize",
+      });
       return gatewayError(
         500,
         "authorization_error",
@@ -69,6 +83,12 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
     }
 
     if (!capability) {
+      diagnostics.report({
+        errorCode: "MODEL_CAPABILITY_INVALID",
+        event: "model_gateway.request_failed",
+        outcome: "rejected",
+        stage: "authorize",
+      });
       return gatewayError(
         401,
         "invalid_api_key",
@@ -124,15 +144,29 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
           method: "POST",
         },
       );
-    } catch (_error) {
+    } catch {
+      diagnostics.report({
+        errorCode: "MODEL_UPSTREAM_REJECTED",
+        event: "model_gateway.request_failed",
+        modelId: capability.modelId,
+        outcome: "failed",
+        runId: capability.runId,
+        stage: "upstream_fetch",
+      });
       return gatewayError(502, "model_unavailable", "The upstream model request failed.");
     }
 
     if (!upstreamResponse.ok) {
-      console.error("ModelGateway upstream request rejected", {
-        ...(await readUpstreamErrorDiagnostic(upstreamResponse)),
-        ...summarizeToolProtocol(upstreamRequest.messages),
+      const upstreamDiagnostic = await readUpstreamErrorDiagnostic(upstreamResponse);
+      diagnostics.report({
+        errorCode: "MODEL_UPSTREAM_REJECTED",
+        event: "model_gateway.request_failed",
+        modelId: capability.modelId,
+        outcome: "failed",
         runId: capability.runId,
+        stage: "upstream_response",
+        upstreamCategory: upstreamDiagnostic.errorCategory,
+        upstreamHttpStatus: upstreamDiagnostic.upstreamHttpStatus,
       });
       return gatewayError(502, "model_unavailable", "The upstream model request was rejected.");
     }
@@ -141,6 +175,14 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
     try {
       const body = await readBoundedText(upstreamResponse.body, maxUpstreamResponseBytes);
       if (body.kind !== "ok") {
+        diagnostics.report({
+          errorCode: "MODEL_UPSTREAM_REJECTED",
+          event: "model_gateway.request_failed",
+          modelId: capability.modelId,
+          outcome: "failed",
+          runId: capability.runId,
+          stage: "upstream_response",
+        });
         return gatewayError(
           502,
           "invalid_model_response",
@@ -150,7 +192,15 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
         );
       }
       upstreamBody = body.value;
-    } catch (_error) {
+    } catch {
+      diagnostics.report({
+        errorCode: "MODEL_UPSTREAM_REJECTED",
+        event: "model_gateway.request_failed",
+        modelId: capability.modelId,
+        outcome: "failed",
+        runId: capability.runId,
+        stage: "upstream_response",
+      });
       return gatewayError(
         502,
         "invalid_model_response",
@@ -163,6 +213,14 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
       : upstreamBody;
     const usage = readOpenAiUsage(responseBody, parsed.stream);
     if (!usage) {
+      diagnostics.report({
+        errorCode: "MODEL_UPSTREAM_REJECTED",
+        event: "model_gateway.request_failed",
+        modelId: capability.modelId,
+        outcome: "failed",
+        runId: capability.runId,
+        stage: "upstream_response",
+      });
       return gatewayError(
         502,
         "invalid_model_response",
@@ -172,7 +230,15 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
 
     try {
       await options.onUsage?.(usage, capability);
-    } catch (_error) {
+    } catch {
+      diagnostics.report({
+        errorCode: "MODEL_USAGE_WRITE_FAILED",
+        event: "model_gateway.request_failed",
+        modelId: capability.modelId,
+        outcome: "failed",
+        runId: capability.runId,
+        stage: "usage_write",
+      });
       return gatewayError(
         500,
         "usage_recording_failed",
@@ -194,7 +260,7 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
 
 async function readUpstreamErrorDiagnostic(response: Response) {
   const diagnostic: {
-    errorCategory: string;
+    errorCategory: NonNullable<DiagnosticEvent["upstreamCategory"]>;
     upstreamErrorCode?: number | string;
     upstreamErrorStatus?: string;
     upstreamHttpStatus: number;
@@ -249,35 +315,6 @@ function categorizeUpstreamError(message: string) {
   }
 
   return "other";
-}
-
-function summarizeToolProtocol(messages: Array<Record<string, unknown>>) {
-  let assistantToolCalls = 0;
-  let signedAssistantToolCalls = 0;
-
-  for (const message of messages) {
-    if (message.role !== "assistant" || !Array.isArray(message.tool_calls)) {
-      continue;
-    }
-
-    for (const toolCall of message.tool_calls) {
-      if (!isRecord(toolCall)) {
-        continue;
-      }
-
-      assistantToolCalls += 1;
-      if (readGoogleThoughtSignature(toolCall)) {
-        signedAssistantToolCalls += 1;
-      }
-    }
-  }
-
-  return {
-    assistantToolCalls,
-    messageCount: messages.length,
-    messageRoles: messages.map((message) => message.role),
-    signedAssistantToolCalls,
-  };
 }
 
 function normalizeStreamingToolProtocol(body: string) {

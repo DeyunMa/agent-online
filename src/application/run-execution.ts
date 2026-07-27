@@ -1,6 +1,13 @@
 import type { AgentRunInput, AgentRuntime, AgentRuntimeId } from "../agent/contract";
 import { isTerminalAgentRun } from "../domain/agent-run";
+import {
+  type DiagnosticErrorCode,
+  type DiagnosticReporter,
+  type DiagnosticStage,
+  noopDiagnosticReporter,
+} from "../observability/contract";
 import type { RuntimeHandle, RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type { AgentRunFailureCode } from "../shared/error-codes";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -31,6 +38,7 @@ export type RunExecutionServiceDependencies = {
   agentRuns: AgentRunRepository;
   clock: Clock;
   createId(): string;
+  diagnostics?: DiagnosticReporter;
   getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   issueModelAccess(input: {
@@ -61,10 +69,37 @@ export class RunExecutionService {
       return run;
     }
 
+    this.report({
+      agentRuntimeId: run.agentRuntimeId,
+      event: "agent_run.execution_started",
+      modelId: run.modelId,
+      outcome: "started",
+      runId: run.id,
+      runStatus: run.status,
+      sandboxRuntimeId: run.sandboxRuntimeId,
+    });
+
     if (run.status !== "queued") {
-      return this.recoverUnownedRun(run);
+      if (run.status !== "cancelling") {
+        this.report({
+          agentRuntimeId: run.agentRuntimeId,
+          errorCode: "RUN_STATE_CONFLICT",
+          event: "agent_run.stage_failed",
+          failureCode: "run.interrupted",
+          modelId: run.modelId,
+          outcome: "failed",
+          runId: run.id,
+          runStatus: run.status,
+          sandboxRuntimeId: run.sandboxRuntimeId,
+          stage: "claim_run",
+        });
+      }
+      const recovered = await this.recoverUnownedRun(run);
+      this.reportFinished(recovered);
+      return recovered;
     }
 
+    let stage: DiagnosticStage = "load_input";
     try {
       const message = await this.dependencies.messages.findById(
         requireValue(run.inputMessageId, "AgentRun input message"),
@@ -74,9 +109,11 @@ export class RunExecutionService {
         throw new Error("AgentRun input message is unavailable");
       }
 
+      stage = "load_lease";
       const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
       assertSandboxLease(run, sandboxLease);
 
+      stage = "issue_model_access";
       const issuedAt = this.dependencies.clock.now();
       const expiresAt = new Date(issuedAt.getTime() + this.dependencies.runTimeoutMs);
       const modelAccess = await this.dependencies.issueModelAccess({
@@ -88,10 +125,12 @@ export class RunExecutionService {
         agentRunRepository: this.dependencies.agentRuns,
         clock: this.dependencies.clock,
         createId: this.dependencies.createId,
+        diagnostics: this.dependencies.diagnostics,
         getAgentRuntime: this.dependencies.getAgentRuntime,
         getSandboxRuntime: this.dependencies.getSandboxRuntime,
         sandboxLeaseRepository: this.dependencies.sandboxLeases,
       });
+      stage = "claim_run";
       const managedRun = await coordinator.start({
         agentRun: run,
         modelAccess,
@@ -100,16 +139,39 @@ export class RunExecutionService {
         workingDirectory: this.dependencies.workingDirectory,
       });
 
-      return await completionWithTimeout(
+      stage = "consume_events";
+      const completed = await completionWithTimeout(
         managedRun,
         Math.max(1, expiresAt.getTime() - this.dependencies.clock.now().getTime()),
       );
-    } catch (_error) {
-      return this.convergeExecutionFailure(run.id);
+      this.reportFinished(completed);
+      return completed;
+    } catch {
+      const failure = classifyExecutionFailure(stage);
+      this.report({
+        agentRuntimeId: run.agentRuntimeId,
+        errorCode: failure.errorCode,
+        event: "agent_run.stage_failed",
+        failureCode: failure.failureCode,
+        modelId: run.modelId,
+        outcome: "failed",
+        runId: run.id,
+        sandboxRuntimeId: run.sandboxRuntimeId,
+        stage,
+      });
+      const completed = await this.convergeExecutionFailure(run.id, failure.failureCode);
+      this.reportFinished(completed);
+      return completed;
     }
   }
 
   async cancel(input: AgentRunExecutionInput): Promise<AgentRunRecord> {
+    const run = await this.cancelRun(input);
+    this.reportFinished(run);
+    return run;
+  }
+
+  private async cancelRun(input: AgentRunExecutionInput): Promise<AgentRunRecord> {
     let run = await this.requireRun(input);
     if (isTerminalAgentRun(run.status)) {
       return run;
@@ -145,7 +207,7 @@ export class RunExecutionService {
     }
 
     return this.transitionOrReload(run, "cancelled", {
-      failureReason: null,
+      failureCode: null,
       finishedAt,
     });
   }
@@ -186,8 +248,25 @@ export class RunExecutionService {
 
     try {
       await runtime.stop(toRuntimeHandle(sandboxLease, providerRef), "idle");
+      this.report({
+        detached: true,
+        event: "sandbox.idle_cleanup_finished",
+        outcome: "succeeded",
+        runId: run.id,
+        stage: "idle_cleanup",
+        stopped: true,
+      });
       return { detached: true, stopped: true };
-    } catch (_error) {
+    } catch {
+      this.report({
+        detached: true,
+        errorCode: "SANDBOX_PROCESS_FAILED",
+        event: "sandbox.idle_cleanup_failed",
+        outcome: "failed",
+        runId: run.id,
+        stage: "idle_cleanup",
+        stopped: false,
+      });
       // The Lease was atomically detached first. Provider timeout bounds any orphan.
       return { detached: true, stopped: false };
     }
@@ -230,7 +309,10 @@ export class RunExecutionService {
     }
   }
 
-  private async convergeExecutionFailure(runId: string): Promise<AgentRunRecord> {
+  private async convergeExecutionFailure(
+    runId: string,
+    failureCode: AgentRunFailureCode,
+  ): Promise<AgentRunRecord> {
     const current = await this.dependencies.agentRuns.findById(runId);
     if (!current) {
       throw new Error(`AgentRun not found: ${runId}`);
@@ -240,7 +322,7 @@ export class RunExecutionService {
     }
     if (current.status === "queued") {
       return this.transitionOrReload(current, "failed", {
-        failureReason: "Agent run execution could not be started",
+        failureCode,
         finishedAt: this.timestamp(),
       });
     }
@@ -271,8 +353,7 @@ export class RunExecutionService {
     }
 
     return this.transitionOrReload(current, targetStatus, {
-      failureReason:
-        targetStatus === "interrupted" ? "Agent run execution owner was interrupted" : null,
+      failureCode: targetStatus === "interrupted" ? "run.interrupted" : null,
       finishedAt,
     });
   }
@@ -344,7 +425,7 @@ export class RunExecutionService {
     run: AgentRunRecord,
     to: AgentRunRecord["status"],
     values: {
-      failureReason?: string | null;
+      failureCode?: AgentRunFailureCode | null;
       finishedAt?: string | null;
     } = {},
   ) {
@@ -385,6 +466,33 @@ export class RunExecutionService {
 
   private timestamp() {
     return this.dependencies.clock.now().toISOString();
+  }
+
+  private report(event: Parameters<DiagnosticReporter["report"]>[0]) {
+    (this.dependencies.diagnostics ?? noopDiagnosticReporter).report(event);
+  }
+
+  private reportFinished(run: AgentRunRecord) {
+    this.report({
+      agentRuntimeId: run.agentRuntimeId,
+      event: "agent_run.execution_finished",
+      failureCode: run.failureCode ?? undefined,
+      inputTokens: run.usage.inputTokens,
+      modelId: run.modelId,
+      modelRequestCount: run.usage.modelRequestCount,
+      outcome:
+        run.status === "succeeded"
+          ? "succeeded"
+          : run.status === "cancelled"
+            ? "rejected"
+            : "failed",
+      outputTokens: run.usage.outputTokens,
+      runId: run.id,
+      runStatus: run.status,
+      sandboxDurationMs: run.usage.sandboxDurationMs,
+      sandboxRuntimeId: run.sandboxRuntimeId,
+      totalTokens: run.usage.totalTokens,
+    });
   }
 }
 
@@ -433,4 +541,42 @@ function requireValue(value: string | null, name: string) {
   }
 
   return value;
+}
+
+function classifyExecutionFailure(stage: DiagnosticStage): {
+  errorCode: DiagnosticErrorCode;
+  failureCode: AgentRunFailureCode;
+} {
+  switch (stage) {
+    case "load_input":
+      return {
+        errorCode: "RUN_INPUT_UNAVAILABLE",
+        failureCode: "run.internal_failed",
+      };
+    case "load_lease":
+      return {
+        errorCode: "LEASE_INCONSISTENT",
+        failureCode: "run.sandbox_failed",
+      };
+    case "issue_model_access":
+      return {
+        errorCode: "MODEL_CAPABILITY_INVALID",
+        failureCode: "run.model_failed",
+      };
+    case "consume_events":
+      return {
+        errorCode: "AGENT_PROTOCOL_INVALID",
+        failureCode: "run.agent_protocol_failed",
+      };
+    case "claim_run":
+      return {
+        errorCode: "RUN_STATE_CONFLICT",
+        failureCode: "run.internal_failed",
+      };
+    default:
+      return {
+        errorCode: "UNEXPECTED",
+        failureCode: "run.internal_failed",
+      };
+  }
 }

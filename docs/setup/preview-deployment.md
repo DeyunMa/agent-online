@@ -1,8 +1,9 @@
 # Cloudflare 私有 Preview 部署
 
 > 状态：2026-07-27 已按本文顺序完成架构加固代码、`0006_integrity_guards.sql` 和统一
-> 质量门禁的私有 Preview 发布，并通过 Hosted Preview E2E。本文继续作为后续发布与
-> 重建流程。
+> 质量门禁的私有 Preview 发布，并通过 Hosted Preview E2E。错误语义代码对应的
+> `0007_agent_run_failure_codes.sql` 尚未远程应用和部署。本文继续作为后续发布与重建
+> 流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -126,13 +127,31 @@ env -u CLOUDFLARE_API_TOKEN \
 5. 保持 `RUNS_ENABLED=false` 完成锁定 smoke。若预检不为零，不迁移、不直接改远程
    数据；先按[协调状态恢复](../operations/coordination-recovery.md)诊断并重新排空。
 
+### 5.1 发布 `0007_agent_run_failure_codes.sql`
+
+`0007` 是 additive schema 变更，但新代码会读取 `failure_code`，而新 trigger 也会
+拒绝旧 Worker 写入没有 failure code 的终态。因此远程 Preview 必须按以下维护窗口
+发布，不能直接执行普通 deploy：
+
+1. 在**当前已部署版本**上先把 `RUNS_ENABLED` 设为 `false`，不要同时替换为新代码。
+2. 等待所有非终态 Run/Workflow 收敛，关闭 Terminal/Preview，并执行只读 preflight。
+3. 在锁定状态下应用全部待执行 migration，确认包含
+   `0007_agent_run_failure_codes.sql`。
+4. 部署本阶段新代码，仍保持 `RUNS_ENABLED=false`。
+5. 验证 Project/Run 列表、旧 Run 的 `failureCode`、统一错误体和日志脱敏。
+6. 再把 `RUNS_ENABLED` 恢复为 `true` 并执行 Hosted E2E。
+
+如果无法先锁定当前已部署版本，则停止发布；不能在仍可能创建旧格式 Run 时提前应用
+trigger，也不能让读取 `failure_code` 的新代码长期运行在旧 schema 上。
+
 锁定部署必须验证：
 
 1. `/api/health` 正常。
 2. `/api/capabilities` 返回 `runCreationEnabled: false`。
 3. allowlist 邮箱可以注册、登录、创建和读取自己的 Project。
 4. 非 allowlist 邮箱无法注册或登录。
-5. 新建 Run 按钮和输入框禁用；直接调用创建 Run API 也返回 `runs_disabled`，且不写入 Message、Lease 或 AgentRun。
+5. 新建 Run 按钮和输入框禁用；直接调用创建 Run API 也返回
+   `run.creation_disabled`，且不写入 Message、Lease 或 AgentRun。
 
 ## 6. 打开真实 Run
 
@@ -152,14 +171,15 @@ env -u CLOUDFLARE_API_TOKEN \
 受控 Project Preview 另按以下顺序验收：
 
 1. 确认数据库已包含 `0005_preview_sessions.sql`；新建环境应一次应用全部迁移，现有
-   Preview 则按第 5 节先补 `0006_integrity_guards.sql`。随后确认
+   Preview 则按第 5 节依次补未应用迁移，当前最新为
+   `0007_agent_run_failure_codes.sql`。随后确认
    `/api/capabilities` 仅公开 `previewEnabled=true`，不公开内部端口或 Provider 字段。
 2. 在已有空闲 E2B Lease 且 `/workspace/node_modules/.bin/vite` 存在时启动 Preview；
    无 Lease、活动 Run/Terminal、缺少 Vite 或 Provider 故障必须返回明确状态。
 3. 在 iframe 加载真实 HTML/JS/CSS，保持 Preview 运行后执行 Pi 修改同一 Project，
    手动 Reload 必须看到新内容。
 4. Preview 运行期间连接 Terminal，验证二者复用同一 `/workspace`；整沙箱 Stop 必须
-   返回 `project_busy`。
+   返回 `project.busy`。
 5. 显式停止 Preview，确认 D1 临时行删除、旧内容 capability 失效，并在之后成功停止
    沙箱。
 6. 检查桌面/移动布局、浏览器控制台、响应头和 DOM，不能出现 Provider host、
@@ -170,7 +190,7 @@ env -u CLOUDFLARE_API_TOKEN \
 1. 使用显式安装 Git/Bash/coreutils 的当前不可变组合模板创建新沙箱。
 2. 在同一 repository 制造 staged rename + unstaged modification、普通修改、untracked、
    binary 和超大 diff，确认列表与两段详情语义准确、超量明确 `truncated`。
-3. 活动 Terminal/Run 时必须显示或返回 `project_busy`；非 Git repository 是明确空态。
+3. 活动 Terminal/Run 时必须显示或返回 `project.busy`；非 Git repository 是明确空态。
 4. 添加危险 `filter.*`/include/fsmonitor 等本地配置时请求必须拒绝，并确认配置中的程序
    没有执行；清理配置后恢复。
 5. 列表和详情响应必须为 `Cache-Control: private, no-store`，公开 JSON/DOM 不包含

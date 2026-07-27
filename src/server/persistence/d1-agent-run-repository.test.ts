@@ -24,7 +24,7 @@ describe("D1 AgentRun repository", () => {
         {
           agent_runtime_id: "goose",
           created_at: "2026-07-25T00:00:00.000Z",
-          failure_reason: null,
+          failure_code: null,
           finished_at: null,
           id: "run-1",
           input_message_id: "message-1",
@@ -83,7 +83,7 @@ describe("D1 AgentRun repository", () => {
         {
           agent_runtime_id: "pi",
           created_at: "2026-07-25T00:00:00.000Z",
-          failure_reason: null,
+          failure_code: null,
           finished_at: "2026-07-25T00:01:00.000Z",
           id: "run-1",
           input_message_id: "message-1",
@@ -184,7 +184,7 @@ describe("D1 AgentRun repository", () => {
     db.firstRows.push({
       agent_runtime_id: "pi",
       created_at: "2026-07-25T00:01:00.000Z",
-      failure_reason: null,
+      failure_code: null,
       finished_at: null,
       id: "run-2",
       input_message_id: "message-2",
@@ -227,7 +227,7 @@ describe("D1 AgentRun repository", () => {
       {
         agent_runtime_id: "pi",
         created_at: "2026-07-25T00:02:00.000Z",
-        failure_reason: null,
+        failure_code: null,
         finished_at: "2026-07-25T00:03:00.000Z",
         id: "run-2",
         input_message_id: "message-2",
@@ -272,7 +272,7 @@ describe("D1 AgentRun repository", () => {
         {
           agent_runtime_id: "pi",
           created_at: "2026-07-25T00:02:00.000Z",
-          failure_reason: null,
+          failure_code: null,
           finished_at: null,
           id: "run-2",
           input_message_id: "message-2",
@@ -322,7 +322,7 @@ describe("D1 AgentRun repository", () => {
         {
           agent_runtime_id: "pi",
           created_at: "2026-07-25T00:02:00.000Z",
-          failure_reason: null,
+          failure_code: null,
           finished_at: null,
           id: "run-2",
           input_message_id: "message-2",
@@ -375,7 +375,7 @@ describe("D1 AgentRun repository", () => {
     db.firstRows.push({
       agent_runtime_id: "pi",
       created_at: "2026-07-25T00:01:00.000Z",
-      failure_reason: null,
+      failure_code: null,
       finished_at: null,
       id: "run-1",
       input_message_id: "message-1",
@@ -405,7 +405,7 @@ describe("D1 AgentRun repository", () => {
     db.firstRows.push({
       agent_runtime_id: "pi",
       created_at: "2026-07-25T00:01:00.000Z",
-      failure_reason: null,
+      failure_code: null,
       finished_at: null,
       id: "run-1",
       input_message_id: "message-1",

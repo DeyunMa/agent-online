@@ -1,6 +1,12 @@
 import type { AgentExecution, AgentRuntime, AgentRuntimeId } from "../agent/contract";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { AgentRunStatus } from "../domain/agent-run";
+import {
+  type DiagnosticErrorCode,
+  type DiagnosticReporter,
+  type DiagnosticStage,
+  noopDiagnosticReporter,
+} from "../observability/contract";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -8,6 +14,7 @@ import type {
   SandboxLeaseRepository,
 } from "./ports";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type { AgentRunFailureCode, FailedAgentRunFailureCode } from "../shared/error-codes";
 
 export type Clock = {
   now(): Date;
@@ -17,6 +24,7 @@ export type RunCoordinatorDependencies = {
   agentRunRepository: AgentRunRepository;
   clock: Clock;
   createId(): string;
+  diagnostics?: DiagnosticReporter;
   getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   sandboxLeaseRepository: SandboxLeaseRepository;
@@ -84,7 +92,7 @@ class ManagedRun implements CoordinatedAgentRun {
 
   async start() {
     let claimed = false;
-    let startupStage = "claim_run";
+    let startupStage: DiagnosticStage = "claim_run";
 
     try {
       await this.transition("queued", "starting", { startedAt: this.timestamp() });
@@ -158,7 +166,8 @@ class ManagedRun implements CoordinatedAgentRun {
         throw error;
       }
 
-      await this.failSafely(`Agent run startup failed at ${startupStage}`);
+      const failure = classifyStartupFailure(startupStage);
+      await this.failSafely(failure.failureCode, failure.errorCode, startupStage);
     }
   }
 
@@ -184,7 +193,7 @@ class ManagedRun implements CoordinatedAgentRun {
       }
 
       if (reason === "failed") {
-        return this.fail("Agent run was terminated");
+        return this.fail("run.internal_failed", "UNEXPECTED", "cancel");
       }
 
       return this.complete(reason === "cancelled" ? "cancelled" : "timed_out");
@@ -193,7 +202,7 @@ class ManagedRun implements CoordinatedAgentRun {
 
   private async complete(
     status: "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted",
-    failureReason?: string,
+    failureCode?: AgentRunFailureCode,
     finalText?: string | null,
   ): Promise<AgentRunRecord> {
     if (this.terminal) {
@@ -205,7 +214,7 @@ class ManagedRun implements CoordinatedAgentRun {
     if (status === "succeeded") {
       const visibleReply = finalText?.trim();
       if (!visibleReply && this.currentRun.sandboxRuntimeId !== "fake") {
-        return this.fail("Agent completed without a visible reply");
+        return this.fail("run.no_visible_reply", "AGENT_PROTOCOL_INVALID", "persist_completion");
       }
 
       const completedRun = await this.dependencies.agentRunRepository.completeSucceeded({
@@ -239,7 +248,13 @@ class ManagedRun implements CoordinatedAgentRun {
 
     await this.recordSandboxDuration(finishedAt);
     const completedRun = await this.transition(this.currentRun.status, status, {
-      failureReason: failureReason ?? null,
+      failureCode:
+        failureCode ??
+        (status === "timed_out"
+          ? "run.timed_out"
+          : status === "interrupted"
+            ? "run.interrupted"
+            : null),
       finishedAt,
     });
     this.terminal = true;
@@ -294,7 +309,8 @@ class ManagedRun implements CoordinatedAgentRun {
             return;
           }
 
-          await this.complete("failed", `Agent process exited with code ${event.exitCode}`);
+          this.reportFailure("AGENT_PROCESS_FAILED", "run.agent_process_failed", "consume_events");
+          await this.complete("failed", "run.agent_process_failed");
         });
 
         if (this.terminal) {
@@ -303,18 +319,30 @@ class ManagedRun implements CoordinatedAgentRun {
       }
 
       if (!this.terminal) {
-        await this.serialized(() => this.fail("Agent runtime ended without a completion event"));
+        await this.serialized(() =>
+          this.fail("run.agent_protocol_failed", "AGENT_PROTOCOL_INVALID", "consume_events"),
+        );
       }
-    } catch (_error) {
+    } catch {
       if (!this.terminal) {
-        await this.serialized(() => this.failSafely("Agent runtime failed"));
+        await this.serialized(() =>
+          this.failSafely("run.agent_protocol_failed", "AGENT_PROTOCOL_INVALID", "consume_events"),
+        );
       }
     }
   }
 
-  private async fail(reason: string): Promise<AgentRunRecord> {
+  private async fail(
+    failureCode: FailedAgentRunFailureCode,
+    errorCode?: DiagnosticErrorCode,
+    stage?: DiagnosticStage,
+  ): Promise<AgentRunRecord> {
     if (this.terminal) {
       return this.currentRun;
+    }
+
+    if (errorCode) {
+      this.reportFailure(errorCode, failureCode, stage);
     }
 
     await this.refreshCurrentRun();
@@ -329,7 +357,7 @@ class ManagedRun implements CoordinatedAgentRun {
     const finishedAt = this.timestamp();
     await this.recordSandboxDuration(finishedAt);
     const failedRun = await this.transition(this.currentRun.status, "failed", {
-      failureReason: reason,
+      failureCode,
       finishedAt,
     });
     this.terminal = true;
@@ -344,9 +372,13 @@ class ManagedRun implements CoordinatedAgentRun {
     }
   }
 
-  private async failSafely(reason: string): Promise<AgentRunRecord> {
+  private async failSafely(
+    failureCode: FailedAgentRunFailureCode,
+    errorCode?: DiagnosticErrorCode,
+    stage?: DiagnosticStage,
+  ): Promise<AgentRunRecord> {
     try {
-      return await this.fail(reason);
+      return await this.fail(failureCode, errorCode, stage);
     } catch (error) {
       this.reject(error);
       return this.currentRun;
@@ -386,7 +418,7 @@ class ManagedRun implements CoordinatedAgentRun {
     from: AgentRunStatus,
     to: AgentRunStatus,
     values: {
-      failureReason?: string | null;
+      failureCode?: AgentRunFailureCode | null;
       finishedAt?: string | null;
       startedAt?: string | null;
     } = {},
@@ -478,6 +510,25 @@ class ManagedRun implements CoordinatedAgentRun {
   private timestamp() {
     return this.dependencies.clock.now().toISOString();
   }
+
+  private reportFailure(
+    errorCode: DiagnosticErrorCode,
+    failureCode: FailedAgentRunFailureCode,
+    stage?: DiagnosticStage,
+  ) {
+    (this.dependencies.diagnostics ?? noopDiagnosticReporter).report({
+      agentRuntimeId: this.currentRun.agentRuntimeId,
+      errorCode,
+      event: "agent_run.stage_failed",
+      failureCode,
+      modelId: this.currentRun.modelId,
+      outcome: "failed",
+      runId: this.currentRun.id,
+      runStatus: this.currentRun.status,
+      sandboxRuntimeId: this.currentRun.sandboxRuntimeId,
+      stage,
+    });
+  }
 }
 
 function assertStartInput(input: StartAgentRunInput) {
@@ -501,5 +552,44 @@ function assertStartInput(input: StartAgentRunInput) {
 
   if (isTerminalAgentRun(agentRun.status)) {
     throw new Error("RunCoordinator cannot start a terminal AgentRun");
+  }
+}
+
+function classifyStartupFailure(stage: DiagnosticStage): {
+  errorCode: DiagnosticErrorCode;
+  failureCode: FailedAgentRunFailureCode;
+} {
+  switch (stage) {
+    case "ensure_sandbox":
+      return {
+        errorCode: "SANDBOX_ENSURE_FAILED",
+        failureCode: "run.sandbox_failed",
+      };
+    case "resolve_sandbox_runtime":
+    case "mark_lease_starting":
+    case "mark_lease_ready":
+    case "mark_lease_busy":
+      return {
+        errorCode: "LEASE_INCONSISTENT",
+        failureCode: "run.sandbox_failed",
+      };
+    case "resolve_agent_runtime":
+    case "start_agent":
+      return {
+        errorCode: "AGENT_PROCESS_FAILED",
+        failureCode: "run.start_failed",
+      };
+    case "claim_run":
+    case "persist_process_ref":
+    case "mark_run_running":
+      return {
+        errorCode: "RUN_STATE_CONFLICT",
+        failureCode: "run.internal_failed",
+      };
+    default:
+      return {
+        errorCode: "UNEXPECTED",
+        failureCode: "run.internal_failed",
+      };
   }
 }

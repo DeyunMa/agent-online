@@ -3,6 +3,7 @@ import { defaultPreviewSessionDurationMs } from "../application/project-preview"
 import { defaultTerminalSessionDurationMs } from "../application/project-terminal";
 import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import type { RuntimeKind } from "../runtime/contract";
+import type { DiagnosticContext } from "../observability/contract";
 import type { AppBindings } from "./env";
 import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import {
@@ -12,6 +13,7 @@ import {
 } from "./persistence/d1-repositories";
 import { createRunCapabilityCodec } from "./run-capability";
 import { getE2BExecutionConfig, type E2BExecutionConfig } from "./runtime-config";
+import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 
 export type E2BRunExecution = {
   config: E2BExecutionConfig;
@@ -19,7 +21,10 @@ export type E2BRunExecution = {
   service: RunExecutionService;
 };
 
-export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
+export function createE2BRunExecution(
+  env: AppBindings,
+  diagnosticContext: DiagnosticContext = {},
+): E2BRunExecution {
   const config = getE2BExecutionConfig(env);
   const agentRuntimePolicy = getAgentRuntimePolicy(env, "e2b");
   const longestActivityMs = Math.max(
@@ -44,6 +49,7 @@ export function createE2BRunExecution(env: AppBindings): E2BRunExecution {
       agentRuns: new D1AgentRunRepository(env.DB),
       clock: { now: () => new Date() },
       createId: () => crypto.randomUUID(),
+      diagnostics: createStructuredDiagnosticReporter(diagnosticContext),
       getAgentRuntime: agentRuntimePolicy.resolve,
       getSandboxRuntime(id: RuntimeKind) {
         if (id !== runtime.kind) {

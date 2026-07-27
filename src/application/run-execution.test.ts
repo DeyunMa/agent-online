@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentExecution, AgentRuntime } from "../agent/contract";
 import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
+import type { DiagnosticEvent } from "../observability/contract";
 import type {
   EnsureLeaseInput,
   ProcessTerminationReason,
@@ -48,6 +49,37 @@ describe("RunExecutionService", () => {
       role: "assistant",
     });
     expect(completed.providerProcessRef).toBeNull();
+    expect(fixture.diagnosticEvents.map((event) => event.event)).toEqual([
+      "agent_run.execution_started",
+      "agent_run.execution_finished",
+    ]);
+    expect(JSON.stringify(fixture.diagnosticEvents)).not.toContain(
+      "Build the requested application",
+    );
+  });
+
+  it("classifies an Agent process failure without persisting provider details", async () => {
+    const fixture = createFixture();
+    const service = fixture.createService(failingAgent());
+
+    const completed = await service.execute({
+      projectId: "project_1",
+      runId: "run_1",
+    });
+
+    expect(completed).toMatchObject({
+      failureCode: "run.agent_process_failed",
+      status: "failed",
+    });
+    expect(fixture.diagnosticEvents).toContainEqual(
+      expect.objectContaining({
+        errorCode: "AGENT_PROCESS_FAILED",
+        event: "agent_run.stage_failed",
+        failureCode: "run.agent_process_failed",
+        runId: "run_1",
+      }),
+    );
+    expect(JSON.stringify(fixture.diagnosticEvents)).not.toContain("sandbox_1");
   });
 
   it("times out a long-running execution through the AgentRuntime", async () => {
@@ -214,6 +246,7 @@ function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRe
   );
   const runtime = new RecordingSandboxRuntime();
   const clock = new MonotonicClock();
+  const diagnosticEvents: DiagnosticEvent[] = [];
 
   return {
     agentRuns,
@@ -222,6 +255,11 @@ function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRe
         agentRuns,
         clock,
         createId: () => "assistant_message_1",
+        diagnostics: {
+          report(event) {
+            diagnosticEvents.push(event);
+          },
+        },
         getAgentRuntime: () => agentRuntime,
         getSandboxRuntime: () => runtime,
         async issueModelAccess({ run: currentRun }) {
@@ -238,9 +276,33 @@ function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRe
         workingDirectory: "/workspace",
       });
     },
+    diagnosticEvents,
     messages,
     runtime,
     sandboxLeases,
+  };
+}
+
+function failingAgent(): AgentRuntime {
+  return {
+    capabilities,
+    id: "pi",
+    async start(_context, input): Promise<AgentExecution> {
+      return {
+        async cancel() {},
+        async *events() {
+          yield {
+            agentRuntimeId: "pi",
+            agentRunId: input.agentRunId,
+            exitCode: 7,
+            finalText: null,
+            sandboxLeaseId: input.sandboxLeaseId,
+            type: "agent.completed",
+          };
+        },
+        providerProcessRef: "private-process-ref",
+      };
+    },
   };
 }
 
@@ -554,7 +616,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       return null;
     }
     Object.assign(run, {
-      failureReason: null,
+      failureCode: null,
       finishedAt: input.finishedAt,
       providerProcessRef: null,
       status: "succeeded",
@@ -581,7 +643,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
       return null;
     }
     Object.assign(run, {
-      failureReason: input.failureReason === undefined ? run.failureReason : input.failureReason,
+      failureCode: input.failureCode === undefined ? run.failureCode : input.failureCode,
       finishedAt: input.finishedAt === undefined ? run.finishedAt : input.finishedAt,
       startedAt: input.startedAt === undefined ? run.startedAt : input.startedAt,
       status: input.to,
@@ -607,7 +669,7 @@ function createRun(overrides: Partial<AgentRunRecord> = {}): AgentRunRecord {
   return {
     agentRuntimeId: "pi",
     createdAt: "2026-07-25T00:00:00.000Z",
-    failureReason: null,
+    failureCode: null,
     finishedAt: null,
     id: "run_1",
     inputMessageId: "message_1",

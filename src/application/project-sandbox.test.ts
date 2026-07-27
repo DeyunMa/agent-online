@@ -198,7 +198,7 @@ function createActiveRun(lease: SandboxLeaseRecord): AgentRunRecord {
   return {
     agentRuntimeId: "pi",
     createdAt: lease.createdAt,
-    failureReason: null,
+    failureCode: null,
     finishedAt: null,
     id: "run-1",
     inputMessageId: "message-1",

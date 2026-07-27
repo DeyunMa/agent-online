@@ -2,7 +2,8 @@
 
 > 状态：本文记录截至 2026-07-27 的私有 Cloudflare 环境。架构加固代码和
 > `0006_integrity_guards.sql` 已按锁定、预检、迁移、解锁顺序部署，并通过 Hosted
-> Preview E2E。
+> Preview E2E。`0007_agent_run_failure_codes.sql` 目前只存在于本地代码，尚未应用到
+> 远程 Preview。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -57,6 +58,10 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0004_terminal_sessions.sql`
 - `0005_preview_sessions.sql`
 - `0006_integrity_guards.sql`
+
+待发布：
+
+- `0007_agent_run_failure_codes.sql`
 
 `0006` 已在 `RUNS_ENABLED=false` 的锁定版本下应用。迁移前九项只读完整性预检全部为
 零，迁移后先完成锁定 smoke，再恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
@@ -143,7 +148,8 @@ Preview 已验证：
 - Files 在真实 E2B Lease 上完成目录和文本读取；空闲回收和手动 Stop 后显示明确停止状态，不创建新沙箱、不请求文件且不展示陈旧缓存。
 - `/api/capabilities` 返回 `previewEnabled=true`；Project Inspector 只在现有 E2B Lease 上启动固定 `vite-v1`，浏览器不能传入 command、port、cwd、env 或 Provider URL。
 - 真实 Preview 成功加载 V1 HTML/JS/CSS；保持 Preview 运行时完成 Pi Run 修改同一 `/workspace`，手动 Reload 后显示 V2，CSS 注入和 Vite 文件缓存失效均生效。
-- Preview 运行时完成真实 Terminal 连接和文件读取；Run 与 Terminal 可复用同一沙箱，整沙箱 Stop 返回 `409 project_busy`。
+- Preview 运行时完成真实 Terminal 连接和文件读取；Run 与 Terminal 可复用同一沙箱，
+  整沙箱 Stop 返回 `409 project.busy`。
 - 显式停止 Preview 后临时 D1 行清空，随后手动 Stop 成功；最终 Lease 为 `stopped`，Provider 引用、PreviewSession 和 TerminalSession 均已清理。
 - 独立 `preview-expiry` Workflow smoke 以 50 秒 future expiry 完成 sleep 与 release，返回 `released=false` 表示目标 Project 当时已无待释放 Preview，不影响 D1。
 - `1440x900` 与 `390x844` 的干净浏览器会话均加载真实 V2 页面，控制台 0 error/warning；响应和 DOM 未出现 E2B host、sandbox ID、内部端口或 Key。

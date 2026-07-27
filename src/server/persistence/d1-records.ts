@@ -15,6 +15,7 @@ import type { AgentRuntimeId } from "../../agent/contract";
 import type { AgentRunStatus } from "../../domain/agent-run";
 import type { SandboxLeaseStatus } from "../../domain/sandbox-lease";
 import type { RuntimeKind } from "../../runtime/contract";
+import type { AgentRunFailureCode } from "../../shared/error-codes";
 
 export type ProjectRow = {
   created_at: string;
@@ -38,7 +39,7 @@ export type SandboxLeaseRow = {
 export type AgentRunRow = {
   agent_runtime_id: AgentRuntimeId;
   created_at: string;
-  failure_reason: string | null;
+  failure_code: AgentRunFailureCode | null;
   finished_at: string | null;
   id: string;
   input_message_id: string | null;
@@ -144,7 +145,7 @@ export const agentRunColumns = `
   model_request_count,
   provider_process_ref,
   sandbox_duration_ms,
-  failure_reason,
+  failure_code,
   created_at,
   started_at,
   finished_at
@@ -211,7 +212,7 @@ export function toAgentRunRecord(row: AgentRunRow): AgentRunRecord {
   return {
     agentRuntimeId: row.agent_runtime_id,
     createdAt: row.created_at,
-    failureReason: row.failure_reason,
+    failureCode: row.failure_code,
     finishedAt: row.finished_at,
     id: row.id,
     inputMessageId: row.input_message_id,

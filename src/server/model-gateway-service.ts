@@ -1,14 +1,17 @@
 import type { AgentRunRepository } from "../application/ports";
+import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import { createOpenAiCompatibleModelGateway, type ModelGatewayUsage } from "./model-gateway";
 import type { AppBindings } from "./env";
 import { D1AgentRunRepository } from "./persistence/d1-repositories";
 import { createRunCapabilityCodec } from "./run-capability";
+import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 
 export const modelGatewayEndpointPath = "/api/model-gateway/v1/chat/completions";
 
 export type RunAuthorizedModelGatewayOptions = {
   agentRuns: Pick<AgentRunRepository, "addUsageDelta" | "findById">;
   capabilitySecret: string;
+  diagnostics?: DiagnosticReporter;
   fetchImplementation?: typeof fetch;
   geminiApiKey: string;
   now?: () => Date;
@@ -50,6 +53,7 @@ export function createRunAuthorizedModelGateway(options: RunAuthorizedModelGatew
       };
     },
     endpointPath: modelGatewayEndpointPath,
+    diagnostics: options.diagnostics,
     fetchImplementation: options.fetchImplementation,
     geminiApiKey: options.geminiApiKey,
     onUsage: async (usage, capability) => {
@@ -64,7 +68,10 @@ export function createRunAuthorizedModelGateway(options: RunAuthorizedModelGatew
   });
 }
 
-export function createWorkerModelGateway(env: AppBindings) {
+export function createWorkerModelGateway(
+  env: AppBindings,
+  diagnosticContext: DiagnosticContext = {},
+) {
   if (!env.BETTER_AUTH_SECRET || !env.GEMINI_API_KEY) {
     throw new Error("ModelGateway is not configured. Set BETTER_AUTH_SECRET and GEMINI_API_KEY.");
   }
@@ -72,6 +79,7 @@ export function createWorkerModelGateway(env: AppBindings) {
   return createRunAuthorizedModelGateway({
     agentRuns: new D1AgentRunRepository(env.DB),
     capabilitySecret: env.BETTER_AUTH_SECRET,
+    diagnostics: createStructuredDiagnosticReporter(diagnosticContext),
     geminiApiKey: env.GEMINI_API_KEY,
   });
 }

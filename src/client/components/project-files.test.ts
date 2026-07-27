@@ -33,7 +33,7 @@ describe("ProjectFiles", () => {
       truncated: false,
     };
     const unavailableError = new BrowserApiError({
-      code: "sandbox_unavailable",
+      code: "sandbox.not_active",
       message: "sandbox stopped",
       status: 409,
     });

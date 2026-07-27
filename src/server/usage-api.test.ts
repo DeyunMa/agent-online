@@ -61,7 +61,10 @@ describe("Usage API", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
-      error: "unauthorized",
+      error: {
+        code: "auth.unauthorized",
+        retryable: false,
+      },
       requestId: "test-request",
     });
     expect(queryCreated).toBe(false);

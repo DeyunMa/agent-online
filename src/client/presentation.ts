@@ -1,5 +1,6 @@
 import { isTerminalAgentRun, type AgentRunStatus } from "../domain/agent-run";
 import type { AgentRunResponse, SandboxLeaseResponse } from "../shared/api";
+import type { AgentRunFailureCode } from "../shared/error-codes";
 
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -84,6 +85,22 @@ export function agentRunStatusTone(status: AgentRunStatus) {
   }
 
   return "tone-warning";
+}
+
+export function agentRunFailureLabel(failureCode: AgentRunFailureCode) {
+  const labels: Record<AgentRunFailureCode, string> = {
+    "run.agent_process_failed": "Agent 进程执行失败。",
+    "run.agent_protocol_failed": "Agent 返回了无法处理的执行结果。",
+    "run.internal_failed": "平台未能完成本次执行。",
+    "run.interrupted": "执行所有者中断，本次 Run 已结束。",
+    "run.model_failed": "模型调用未能完成。",
+    "run.no_visible_reply": "Agent 已结束，但没有生成可展示的回复。",
+    "run.sandbox_failed": "项目沙箱启动或运行失败。",
+    "run.start_failed": "Agent Run 无法启动。",
+    "run.timed_out": "Agent Run 超过最长执行时间。",
+  };
+
+  return labels[failureCode];
 }
 
 export function formatRunDuration(run: AgentRunResponse) {

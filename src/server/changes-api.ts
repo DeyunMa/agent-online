@@ -5,21 +5,22 @@ import type {
   ProjectChangesFailure,
   ProjectChangesSnapshot,
 } from "../application/project-changes";
+import type { DiagnosticContext } from "../observability/contract";
 import type {
-  ApiErrorResponse,
   ProjectChangeDiffResponse,
   ProjectChangeEntryResponse,
   ProjectChangesResponse,
 } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import { createServerServices, type ServerServices } from "./services";
 
 type AppContext = Context<AppEnv>;
 type ChangesServices = Pick<ServerServices, "projectChanges" | "projects">;
 
 export type ChangesApiDependencies = {
-  createServices(env: AppBindings): ChangesServices;
+  createServices(env: AppBindings, diagnosticContext?: DiagnosticContext): ChangesServices;
   getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
 };
 
@@ -72,7 +73,9 @@ async function getOwnedProject(c: AppContext, dependencies: ChangesApiDependenci
     return { kind: "unauthorized" as const };
   }
 
-  const services = dependencies.createServices(c.env);
+  const services = dependencies.createServices(c.env, {
+    requestId: c.get("requestId"),
+  });
   const projectId = c.req.param("projectId");
   if (!projectId) {
     return { kind: "not_found" as const };
@@ -84,38 +87,26 @@ async function getOwnedProject(c: AppContext, dependencies: ChangesApiDependenci
 }
 
 function accessError(c: AppContext, kind: "not_found" | "unauthorized") {
-  return kind === "unauthorized" ? apiError(c, "unauthorized", 401) : apiError(c, "not_found", 404);
+  return kind === "unauthorized"
+    ? renderApiError(c, "auth.unauthorized")
+    : renderApiError(c, "resource.not_found");
 }
 
 function changesError(c: AppContext, failure: ProjectChangesFailure) {
   switch (failure.kind) {
     case "path_not_found":
-      return apiError(c, failure.kind, 404);
+      return renderApiError(c, "project_path.not_found");
     case "project_busy":
-      return apiError(c, failure.kind, 409);
+      return renderApiError(c, "project.busy");
     case "sandbox_unavailable":
-      return apiError(c, failure.kind, 409);
+      return renderApiError(c, "sandbox.not_active");
     case "unsupported_path":
-      return apiError(c, failure.kind, 400);
+      return renderApiError(c, "project_path.unsupported");
     case "provider_error":
-      return apiError(c, "internal_error", 503);
+      return renderApiError(c, "sandbox.provider_unavailable");
     case "runtime_mismatch":
-      return apiError(c, "internal_error", 500);
+      return renderApiError(c, "internal.unexpected");
   }
-}
-
-function apiError(
-  c: AppContext,
-  error: ApiErrorResponse["error"],
-  status: 400 | 401 | 404 | 409 | 500 | 503,
-) {
-  return c.json(
-    {
-      error,
-      requestId: c.get("requestId") || crypto.randomUUID(),
-    },
-    status,
-  );
 }
 
 function toProjectChangesResponse(changes: ProjectChangesSnapshot): ProjectChangesResponse {

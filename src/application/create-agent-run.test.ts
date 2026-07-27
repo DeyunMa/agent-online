@@ -16,6 +16,7 @@ describe("CreateAgentRunService", () => {
     const lease = sandboxLease();
     const run = agentRun();
     const start = vi.fn(async () => ({ completion: null }));
+    const report = vi.fn();
     const service = createService({
       agentRuns: agentRunRepository({
         createQueuedWithInput: async () => ({
@@ -24,6 +25,7 @@ describe("CreateAgentRunService", () => {
           run,
         }),
       }),
+      diagnostics: { report },
       runExecutions: { start },
       sandboxLeases: sandboxLeaseRepository({
         getOrCreate: async () => lease,
@@ -44,6 +46,12 @@ describe("CreateAgentRunService", () => {
       sandboxLease: lease,
       workingDirectory: "/workspace",
     });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "agent_run.created",
+        runId: run.id,
+      }),
+    );
   });
 
   it("preserves the atomic project_busy result without dispatching", async () => {
@@ -73,11 +81,12 @@ describe("CreateAgentRunService", () => {
     const queued = agentRun();
     const failed: AgentRunRecord = {
       ...queued,
-      failureReason: "Agent run could not be started",
+      failureCode: "run.start_failed",
       finishedAt: now,
       status: "failed",
     };
     const transition = vi.fn(async () => failed);
+    const report = vi.fn();
     const service = createService({
       agentRuns: agentRunRepository({
         createQueuedWithInput: async () => ({
@@ -87,6 +96,7 @@ describe("CreateAgentRunService", () => {
         }),
         transition,
       }),
+      diagnostics: { report },
       runExecutions: {
         async start() {
           throw new Error("Workflow unavailable");
@@ -110,12 +120,19 @@ describe("CreateAgentRunService", () => {
       run: { status: "failed" },
     });
     expect(transition).toHaveBeenCalledWith({
-      failureReason: "Agent run could not be started",
+      failureCode: "run.start_failed",
       finishedAt: now,
       from: "queued",
       runId: queued.id,
       to: "failed",
     });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "RUN_DISPATCH_FAILED",
+        event: "agent_run.dispatch_failed",
+        runId: queued.id,
+      }),
+    );
   });
 });
 
@@ -186,7 +203,7 @@ function agentRun(): AgentRunRecord {
   return {
     agentRuntimeId: "pi",
     createdAt: now,
-    failureReason: null,
+    failureCode: null,
     finishedAt: null,
     id: "run-1",
     inputMessageId: "message-1",

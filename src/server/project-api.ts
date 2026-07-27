@@ -9,11 +9,13 @@ import {
 } from "./project-api-dependencies";
 import { registerProjectFilesRoutes } from "./project-files-api";
 import {
-  internalError,
   notFound,
   parseRequest,
   projectBusy,
+  requestDiagnosticContext,
   requireAuthenticatedUser,
+  sandboxProviderUnavailable,
+  serviceUnavailable,
   toMessageResponse,
   toProjectResponse,
   unauthorized,
@@ -36,7 +38,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const projects = await services.projects.listOwned(user.id);
     const responses = await Promise.all(
       projects.map(async (project) =>
@@ -59,13 +61,15 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const now = dependencies.now().toISOString();
-    const project = await dependencies.createServices(c.env).projects.create({
-      defaultAgentRuntimeId: "pi",
-      id: dependencies.createId(),
-      now,
-      title: input.title,
-      userId: user.id,
-    });
+    const project = await dependencies
+      .createServices(c.env, requestDiagnosticContext(c))
+      .projects.create({
+        defaultAgentRuntimeId: "pi",
+        id: dependencies.createId(),
+        now,
+        title: input.title,
+        userId: user.id,
+      });
 
     return c.json(toProjectResponse(project, null), 201);
   });
@@ -76,7 +80,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
@@ -93,7 +97,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
@@ -103,8 +107,11 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     if (stopped.kind === "project_busy") {
       return projectBusy(c);
     }
-    if (stopped.kind === "conflict" || stopped.kind === "provider_error") {
-      return internalError(c, 503);
+    if (stopped.kind === "provider_error") {
+      return sandboxProviderUnavailable(c);
+    }
+    if (stopped.kind === "conflict") {
+      return serviceUnavailable(c);
     }
 
     return c.json(toProjectResponse(project, stopped.lease));
@@ -116,7 +123,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);

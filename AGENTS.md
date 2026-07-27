@@ -15,10 +15,12 @@ Agent Online is a personal, development-stage Coding Agent SaaS project. It is a
 - Preserve `User -> Project -> SandboxLease` ownership. Each Project has one logical SandboxLease record and at most one active provider sandbox. Browsers never receive provider sandbox IDs, internal ports, provider credentials, or raw model keys.
 - Keep one deployable Worker. Do not split frontend/backend or turn `AgentRuntime` into a separate service without an explicit architecture decision.
 - `src/client/` must not import `src/server/`; `src/domain/` stays framework/provider independent; `src/agent/` depends only on generic `SandboxRuntime` contracts, not provider SDKs.
+- `src/observability/` contains only Provider-independent diagnostic contracts. Domain and Shared must not depend on it; application and outer adapters may depend on its narrow `DiagnosticReporter` interface.
 - `SandboxRuntime` owns sandbox lifecycle and generic process/file capabilities. Terminal, Preview, and Changes are separate narrow runtime capabilities. Application modules should depend only on the capability they use. `AgentRuntime` owns an individual Agent protocol and normalized events. Do not merge those responsibilities.
 - Pi is the default and currently validated AgentRuntime. Additional runtimes require an accepted ADR, a dedicated adapter, an explicit server allowlist or feature flag, ModelGateway compatibility, cancellation/final-output/usage tests, and a real end-to-end validation before UI exposure. Goose follows ADR-0004 and is executable only under `GOOSE_RUNTIME_MODE`; `spike` may accept an explicit authenticated API request but must remain absent from public capabilities and UI. Reserved IDs alone never imply support.
 - Platform model access must go through a Worker-side gateway. Never inject raw Gemini keys into a sandbox, browser response, log, or persisted data. BYOK is deferred until a separate decision.
 - V1 stores product state in D1: authentication, Project metadata, user-visible messages, `AgentRun` lifecycle, per-run aggregate usage, and only the current ephemeral Terminal/Preview coordination records. Never persist Terminal input/output, Preview content/history, or Git status/diff/history. Changes is a bounded read of the current sandbox working tree/index and cannot be attributed to one Run; it must reject extra repository config scopes and explicitly mark unsupported paths instead of reporting clean. The sandbox filesystem is the only workspace copy; a stopped or expired sandbox may lose its files.
+- Use `requestId` only for one Worker invocation and the existing `runId` as the cross-invocation AgentRun correlation root. Public API errors, persisted Run failure codes, and internal diagnostic codes are separate contracts. Never log or persist raw Provider errors, prompts, replies, file contents, capabilities, credentials, provider references, or process references.
 - `AgentRun` is one short-lived Agent execution, normally one user turn. A Project has at most one non-terminal AgentRun or one Terminal hard lock, and those activities are mutually exclusive; wall-clock expiry alone never unlocks a Terminal. Preview startup also requires both to be absent, but a running Preview may coexist with a later Run or Terminal and must block whole-sandbox stop/idle cleanup. Do not reintroduce durable Agent sessions, reconnectable Terminals, arbitrary preview commands/ports, workspace revision history, or raw transcript retention without a new ADR.
 
 ## Development Data Policy
@@ -35,6 +37,7 @@ Agent Online is a personal, development-stage Coding Agent SaaS project. It is a
 | `src/client/` | React UI and browser data access. |
 | `src/server/` | Hono routes, Better Auth, configuration, and trusted HTTP boundaries. |
 | `src/domain/` | Provider-independent Project and SandboxLease rules. |
+| `src/observability/` | Provider-independent diagnostic event and reporter contracts. |
 | `src/application/` | Use-case ports and orchestration contracts, including `RunCoordinator`. |
 | `src/runtime/` | SandboxRuntime contract and provider adapters. |
 | `src/agent/` | AgentRuntime contract, registry, and Agent adapters. |

@@ -316,8 +316,8 @@ function changeSummaryLabel(change: ProjectChangeEntryResponse) {
 function isUnavailableError(error: Error | null): error is BrowserApiError {
   return (
     error instanceof BrowserApiError &&
-    (error.code === "path_not_found" ||
-      error.code === "project_busy" ||
-      error.code === "sandbox_unavailable")
+    (error.code === "project_path.not_found" ||
+      error.code === "project.busy" ||
+      error.code === "sandbox.not_active")
   );
 }

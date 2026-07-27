@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-27 已补强 D1 原子完成、跨表完整性、真实迁移测试和统一工程门禁。Goose 浏览器选择仍未开放。
+> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-27 已补强 D1 原子完成、跨表完整性、稳定错误码、结构化执行关联、真实迁移测试和统一工程门禁。Goose 浏览器选择仍未开放。
 
 ## 产品定义
 
@@ -16,7 +16,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `Project` | 用户在 UI 中看见的代码项目和对话容器。 | D1 持久化元数据和消息；不保存代码副本。沙箱丢失后可保留 Project，但文件允许丢失。 |
 | `Message` | 用户或助手在某个 Project 中可见的一条持久化消息。 | 只保存用户输入和最终可展示回复，不保存原始工具输出或推理。 |
 | `SandboxLease` | 应用为 Project 保留的唯一逻辑沙箱记录。 | 不是供应商真实 sandbox ID；同一时刻映射到 0 或 1 个真实沙箱，不保留实例历史。 |
-| `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、取消、时间和聚合用量。 |
+| `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、稳定 failure code、取消、时间和聚合用量。 |
 | `AgentRunWorkflow` | 每个 AgentRun 一个的 Cloudflare Workflow 执行所有者。 | 只接收 Project/Run 应用 ID；D1 仍是产品事实，不保存 raw transcript。 |
 | `TerminalSession` | 一个 Project 当前临时 PTY 的 D1 互斥记录。 | 关闭即删除；不保存终端输入、输出、滚屏或审计历史，浏览器看不到私有 PID。 |
 | `PreviewSession` | 一个 Project 当前临时 Preview 进程的 D1 所有权记录。 | 只保存固定端口、私有进程引用和 expiry；停止即删除，不保存页面、日志、截图或访问历史。 |
@@ -65,6 +65,7 @@ erDiagram
 17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
 18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
 19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
+20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。
 
 ## 有意不建模的内容
 

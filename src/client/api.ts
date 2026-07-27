@@ -15,22 +15,26 @@ import type {
   ProjectResponse,
   UserUsageResponse,
 } from "../shared/api";
+import { isPublicErrorCode, type PublicErrorCode } from "../shared/error-codes";
 
 export class BrowserApiError extends Error {
-  readonly code: ApiErrorResponse["error"] | "network_error";
+  readonly code: PublicErrorCode | "network_error";
   readonly requestId: string | null;
+  readonly retryable: boolean;
   readonly status: number | null;
 
   constructor(input: {
-    code: ApiErrorResponse["error"] | "network_error";
+    code: PublicErrorCode | "network_error";
     message: string;
     requestId?: string | null;
+    retryable?: boolean;
     status?: number | null;
   }) {
     super(input.message);
     this.name = "BrowserApiError";
     this.code = input.code;
     this.requestId = input.requestId ?? null;
+    this.retryable = input.retryable ?? false;
     this.status = input.status ?? null;
   }
 }
@@ -88,9 +92,10 @@ async function readJson(response: Response): Promise<unknown> {
 function toBrowserApiError(status: number, body: unknown) {
   if (isApiErrorResponse(body)) {
     return new BrowserApiError({
-      code: body.error,
-      message: messageForApiError(body.error),
+      code: body.error.code,
+      message: messageForApiError(body.error.code),
       requestId: body.requestId,
+      retryable: body.error.retryable,
       status,
     });
   }
@@ -108,40 +113,49 @@ function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
     value !== null &&
     "error" in value &&
     "requestId" in value &&
-    typeof value.error === "string" &&
+    typeof value.error === "object" &&
+    value.error !== null &&
+    "code" in value.error &&
+    "retryable" in value.error &&
+    isPublicErrorCode(value.error.code) &&
+    typeof value.error.retryable === "boolean" &&
     typeof value.requestId === "string"
   );
 }
 
-function messageForApiError(error: ApiErrorResponse["error"]) {
+function messageForApiError(error: PublicErrorCode) {
   switch (error) {
-    case "agent_runtime_unavailable":
+    case "agent_runtime.unavailable":
       return "所选 Agent 当前不可用，请选择其他 Agent。";
-    case "unauthorized":
+    case "auth.unauthorized":
       return "登录状态已失效，请重新登录。";
-    case "forbidden":
+    case "request.forbidden":
       return "你没有访问此项目的权限。";
-    case "not_found":
+    case "resource.not_found":
       return "未找到请求的项目或执行记录。";
-    case "path_not_found":
+    case "project_path.not_found":
       return "文件路径已不存在，请刷新目录后重试。";
-    case "preview_unavailable":
+    case "preview.unavailable":
       return "项目 Preview 暂时不可用，请确认项目根目录已安装 Vite 后重试。";
-    case "project_busy":
+    case "project.busy":
       return "该项目已有正在执行的任务。";
-    case "runs_disabled":
+    case "run.creation_disabled":
       return "Agent Run 当前已由维护者暂停。";
-    case "sandbox_unavailable":
+    case "sandbox.not_active":
       return "项目沙箱未启动或已停止。运行一次 Agent 后再重试。";
-    case "file_too_large":
+    case "sandbox.provider_unavailable":
+      return "沙箱服务暂时不可用，请稍后重试。";
+    case "file.too_large":
       return "该文件超过在线预览大小限制。";
-    case "unsupported_file":
+    case "file.content_unsupported":
       return "当前只支持预览 UTF-8 文本文件。";
-    case "unsupported_path":
+    case "project_path.unsupported":
       return "该文件路径不允许在线访问。";
-    case "validation_error":
+    case "request.invalid":
       return "输入内容不符合要求，请检查后重试。";
-    case "internal_error":
+    case "service.unavailable":
+      return "依赖服务暂时不可用，请稍后重试。";
+    case "internal.unexpected":
       return "服务暂时无法完成请求，请稍后重试。";
   }
 }

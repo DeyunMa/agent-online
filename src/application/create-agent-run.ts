@@ -1,4 +1,5 @@
 import type { AgentRuntimeId } from "../agent/contract";
+import { type DiagnosticReporter, noopDiagnosticReporter } from "../observability/contract";
 import type { RuntimeKind } from "../runtime/contract";
 import type { AgentRunRecord, AgentRunRepository, SandboxLeaseRepository } from "./ports";
 import type { StartAgentRunInput } from "./run-coordinator";
@@ -25,6 +26,7 @@ export type CreateAgentRunServiceDependencies = {
   clock: { now(): Date };
   createId(): string;
   defaultModelId: string;
+  diagnostics?: DiagnosticReporter;
   runExecutions: AgentRunExecutionStarter;
   sandboxLeases: SandboxLeaseRepository;
   sandboxRuntimeId: RuntimeKind;
@@ -71,6 +73,17 @@ export class CreateAgentRunService {
       return created;
     }
 
+    const diagnostics = this.dependencies.diagnostics ?? noopDiagnosticReporter;
+    diagnostics.report({
+      agentRuntimeId: created.run.agentRuntimeId,
+      event: "agent_run.created",
+      modelId: created.run.modelId,
+      outcome: "succeeded",
+      runId: created.run.id,
+      runStatus: created.run.status,
+      sandboxRuntimeId: created.run.sandboxRuntimeId,
+    });
+
     try {
       const execution = await this.dependencies.runExecutions.start({
         agentRun: created.run,
@@ -83,9 +96,19 @@ export class CreateAgentRunService {
         kind: "created",
         run: created.run,
       };
-    } catch (_error) {
+    } catch {
+      diagnostics.report({
+        agentRuntimeId: created.run.agentRuntimeId,
+        errorCode: "RUN_DISPATCH_FAILED",
+        event: "agent_run.dispatch_failed",
+        modelId: created.run.modelId,
+        outcome: "failed",
+        runId: created.run.id,
+        sandboxRuntimeId: created.run.sandboxRuntimeId,
+        stage: "dispatch",
+      });
       const failed = await this.dependencies.agentRuns.transition({
-        failureReason: "Agent run could not be started",
+        failureCode: "run.start_failed",
         finishedAt: this.dependencies.clock.now().toISOString(),
         from: "queued",
         runId: created.run.id,

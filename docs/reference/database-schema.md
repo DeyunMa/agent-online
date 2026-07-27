@@ -4,7 +4,7 @@
 >
 > 校准日期：2026-07-27
 >
-> 权威来源：`migrations/0001_app.sql` 至 `migrations/0006_integrity_guards.sql`
+> 权威来源：`migrations/0001_app.sql` 至 `migrations/0007_agent_run_failure_codes.sql`
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
@@ -179,7 +179,8 @@ erDiagram
 | `model_request_count` | 非负 `INTEGER`，默认 `0` | 成功记录 usage 的模型请求数。 |
 | `sandbox_duration_ms` | 非负 `INTEGER`，默认 `0` | 真实 Sandbox Run 的执行时长。 |
 | `provider_process_ref` | `TEXT NULL` | Worker 私有的 Agent 进程引用。 |
-| `failure_reason` | `TEXT NULL` | 脱敏后的平台失败原因。 |
+| `failure_code` | 受控 `TEXT NULL` | 稳定 Run 失败码；由状态组合 trigger 约束。 |
+| `failure_reason` | `TEXT NULL` | 远程增量迁移保留的遗留物理列；当前产品代码不读取且每次状态迁移都会清空。 |
 | `created_at` / `started_at` / `finished_at` | `TEXT` | 生命周期时间；后两者可空。 |
 
 状态集合：
@@ -196,6 +197,15 @@ starting/running/cancelling -> failed | timed_out | interrupted
 
 终态为 `succeeded`、`failed`、`cancelled`、`timed_out`、`interrupted`，终态不可再次迁移。
 
+`failure_code` 组合必须满足：
+
+- `succeeded`、`cancelled` 和全部非终态为 `NULL`；
+- `timed_out` 固定为 `run.timed_out`；
+- `interrupted` 固定为 `run.interrupted`；
+- `failed` 必须是 `run.start_failed`、`run.sandbox_failed`、
+  `run.agent_protocol_failed`、`run.agent_process_failed`、`run.model_failed`、
+  `run.no_visible_reply` 或 `run.internal_failed`。
+
 约束和索引：
 
 - `agent_runs_one_active_per_project` 是部分唯一索引：同一 Project 在 `queued`、`starting`、`running`、`cancelling` 中最多一行。
@@ -211,6 +221,7 @@ starting/running/cancelling -> failed | timed_out | interrupted
 | --- | --- |
 | `agent_runs_validate_insert_ownership` | Run 的 `user_id` 必须拥有 Project；Lease 必须属于同一 Project 且 Runtime 一致；输入 Message 必须是同 Project 的未关联 user Message。 |
 | `agent_runs_validate_status_transition` | 只允许当前领域状态机中的迁移；终态不能再次迁移。 |
+| `agent_runs_validate_failure_code_insert/update` | 强制 Run status 与稳定 `failure_code` 的合法组合，禁止失败自由文本承担产品语义。 |
 | `messages_validate_agent_link` | user Message 不能关联 Run；assistant Message 必须关联同 Project 的 succeeded Run。 |
 | `terminal_sessions_validate_lease` | TerminalSession 的 Lease 必须属于同一 Project。 |
 | `preview_sessions_validate_lease` | PreviewSession 的 Lease 必须属于同一 Project，且私有 Provider sandbox 引用必须与当前 Lease 一致。 |

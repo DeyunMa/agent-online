@@ -4,6 +4,7 @@ import { UserUsageService, type UserUsageQuery } from "../application/user-usage
 import type { UserUsageResponse } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import { D1UserUsageRepository } from "./persistence/d1-repositories";
 
 type AppContext = Context<AppEnv>;
@@ -40,11 +41,5 @@ export function createUsageApi(overrides: Partial<UsageApiDependencies> = {}) {
 }
 
 function unauthorized(c: AppContext) {
-  return c.json(
-    {
-      error: "unauthorized" as const,
-      requestId: c.get("requestId") || crypto.randomUUID(),
-    },
-    401,
-  );
+  return renderApiError(c, "auth.unauthorized");
 }

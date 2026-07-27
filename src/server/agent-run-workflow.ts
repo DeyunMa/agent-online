@@ -2,13 +2,14 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import { NonRetryableError } from "cloudflare:workflows";
 
 import { createE2BRunExecution } from "./e2b-run-execution";
+import type { DiagnosticContext } from "../observability/contract";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
 import { createProjectPreviewService, createProjectTerminalService } from "./services";
 
 export class AgentRunWorkflow extends WorkflowEntrypoint<AppBindings, AgentRunWorkflowPayload> {
   async run(event: Readonly<WorkflowEvent<AgentRunWorkflowPayload>>, step: WorkflowStep) {
     const payload = validatePayload(event.payload);
-    const { config, service } = createE2BRunExecution(this.env);
+    const { config, service } = createE2BRunExecution(this.env, diagnosticContext(payload));
 
     if (payload.kind === "preview-expiry") {
       await step.sleepUntil("wait for preview session expiry", new Date(payload.expiresAt));
@@ -148,6 +149,20 @@ export class AgentRunWorkflow extends WorkflowEntrypoint<AppBindings, AgentRunWo
       runId: payload.runId,
       stopped: cleanup.stopped,
     };
+  }
+}
+
+function diagnosticContext(payload: AgentRunWorkflowPayload): DiagnosticContext {
+  switch (payload.kind) {
+    case "execute":
+    case "idle-cleanup":
+      return { runId: payload.runId };
+    case "terminal-expiry":
+    case "terminal-idle-cleanup":
+      return { terminalSessionId: payload.terminalSessionId };
+    case "preview-expiry":
+    case "preview-idle-cleanup":
+      return { previewSessionId: payload.previewSessionId };
   }
 }
 

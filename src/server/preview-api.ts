@@ -1,9 +1,11 @@
 import { Hono, type Context } from "hono";
 
 import type { ProjectPreviewStatus } from "../application/project-preview";
-import type { ApiErrorResponse, ProjectPreviewResponse } from "../shared/api";
+import type { DiagnosticContext } from "../observability/contract";
+import type { ProjectPreviewResponse } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import {
   createPreviewCapabilityCodec,
   previewContentBasePath,
@@ -14,7 +16,7 @@ import { createServerServices, type ServerServices } from "./services";
 type AppContext = Context<AppEnv>;
 
 export type PreviewApiDependencies = {
-  createServices(env: AppBindings): ServerServices;
+  createServices(env: AppBindings, diagnosticContext?: DiagnosticContext): ServerServices;
   getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
   now(): Date;
 };
@@ -167,7 +169,7 @@ export function createPreviewApi(overrides: Partial<PreviewApiDependencies> = {}
       return notFound(c);
     }
     const result = await dependencies
-      .createServices(c.env)
+      .createServices(c.env, { requestId: c.get("requestId") })
       .projectPreviews.fetch(projectId, claims.previewSessionId, {
         headers: pickPreviewRequestHeaders(c.req.raw.headers),
         method: c.req.method as "GET" | "HEAD",
@@ -204,7 +206,9 @@ async function getOwnedProject(c: AppContext, dependencies: PreviewApiDependenci
   if (!user) {
     return { kind: "unauthorized" as const };
   }
-  const services = dependencies.createServices(c.env);
+  const services = dependencies.createServices(c.env, {
+    requestId: c.get("requestId"),
+  });
   const projectId = c.req.param("projectId");
   if (!projectId) {
     return { kind: "not_found" as const };
@@ -437,43 +441,29 @@ function accessError(c: AppContext, kind: "not_found" | "unauthorized") {
 }
 
 function unauthorized(c: AppContext) {
-  return error(c, "unauthorized", 401);
+  return renderApiError(c, "auth.unauthorized");
 }
 
 function forbidden(c: AppContext) {
-  return error(c, "forbidden", 403);
+  return renderApiError(c, "request.forbidden");
 }
 
 function notFound(c: AppContext) {
-  return error(c, "not_found", 404);
+  return renderApiError(c, "resource.not_found");
 }
 
 function projectBusy(c: AppContext) {
-  return error(c, "project_busy", 409);
+  return renderApiError(c, "project.busy");
 }
 
 function sandboxUnavailable(c: AppContext) {
-  return error(c, "sandbox_unavailable", 409);
+  return renderApiError(c, "sandbox.not_active");
 }
 
 function previewUnavailable(c: AppContext) {
-  return error(c, "preview_unavailable", 503);
+  return renderApiError(c, "preview.unavailable");
 }
 
 function internalError(c: AppContext) {
-  return error(c, "internal_error", 500);
-}
-
-function error(
-  c: AppContext,
-  code: ApiErrorResponse["error"],
-  status: 401 | 403 | 404 | 409 | 500 | 503,
-) {
-  return c.json<ApiErrorResponse>(
-    {
-      error: code,
-      requestId: c.get("requestId"),
-    },
-    status,
-  );
+  return renderApiError(c, "internal.unexpected");
 }

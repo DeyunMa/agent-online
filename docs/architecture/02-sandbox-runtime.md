@@ -181,14 +181,15 @@ stateDiagram-v2
 `ensureLease()`，因此浏览文件不会创建或替换沙箱。只有 `filesystemScope=lease`
 且 Lease 状态为 `idle` 或 `ready` 的 Runtime 可以读取；fake 的文件仅存在于
 一次 `createServerServices()` 创建的实例内，跨请求没有连续性，所以返回
-`sandbox_unavailable`。
+application outcome `sandbox_unavailable`，HTTP adapter 映射为 `sandbox.not_active`。
 
 第一版限制为：
 
 - 路径最多 512 字符、32 层，逐段拒绝空段、`.`、`..`、反斜线、控制字符和 `.git`；
 - 逐层列目录并拒绝符号链接，目录最多返回 500 项；
 - 文件最多 256 KiB，只返回合法 UTF-8 文本并拒绝明显二进制内容；
-- Project 有非终态 Run 时返回 `project_busy`；
+- Project 有非终态 Run 时 application 返回 `project_busy`，普通 API 映射为
+  `project.busy`；
 - API 和 UI 不返回 Provider ID、内部绝对路径或符号链接目标。
 
 活动 Run 检查、Lease 读取和 Provider 文件读取不是一个原子事务；逐层检查与最终
@@ -207,7 +208,8 @@ Lease 沙箱并启动 E2B PTY。它固定 `/workspace`，限制尺寸、单条�
 活动 Terminal 期间：
 
 - D1 trigger 拒绝新 AgentRun；
-- Files 与手动 Stop 返回 `project_busy`；
+- Files 与手动 Stop 的普通 API 返回 `project.busy`；Terminal WebSocket 控制协议仍
+  使用自己的 `project_busy` code；
 - Run/Terminal idle cleanup 的原子 claim 会失败；
 - 浏览器只看到 `ready`、PTY bytes、`closed` 和通用错误码。
 
@@ -244,7 +246,8 @@ GET/HEAD。Worker 移除 Cookie、Authorization、Provider Location/host/control
 
 `ProjectChangesService` 只接受 Project ID，以及列表中刚读取出的精确相对路径。它不调用
 `ensureLease()`，不初始化 Git，也不接收 command、revision、cwd、env 或任意 pathspec。
-活动 AgentRun/Terminal 时返回 `project_busy`；Preview running 可以共存。活动检查、
+活动 AgentRun/Terminal 时 application 返回 `project_busy`、普通 API 映射为
+`project.busy`；Preview running 可以共存。活动检查、
 Lease 读取、status 与 diff 不是事务，因此结果只表示请求时的尽力一致当前视图。
 
 E2B 实现固定 `/workspace/.git` 和系统 Git/Bash/coreutils 路径，以空环境运行；

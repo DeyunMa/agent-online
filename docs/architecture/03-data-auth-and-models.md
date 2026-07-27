@@ -39,11 +39,11 @@ Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth �
 | `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `created_at`, `updated_at` | 持久 Project 元数据和对话归属。 |
 | `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户消息和最终 assistant 消息。 |
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
-| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、关联、当前私有进程引用和基础计量。 |
+| `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `failure_code`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、稳定失败分类、关联、当前私有进程引用和基础计量。 |
 | `terminal_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 PTY 的硬互斥与私有终止引用；关闭即删除，不是历史表。`expires_at` 只供 Workflow 调度，不能自动解锁。 |
 | `preview_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `status`, `port`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 Preview 的所有权与私有终止引用；固定端口 3000，停止即删除，不是页面或访问历史。 |
 
-`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。ModelGateway 用原子 delta 累加模型 usage；沙箱时长用幂等 `MAX` 写入，避免 Workflow 重试重复累计。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_reason`。
+`agent_runs` 的用量字段是：`input_tokens`、`output_tokens`、`total_tokens`、`model_request_count`、`sandbox_duration_ms`。ModelGateway 用原子 delta 累加模型 usage；沙箱时长用幂等 `MAX` 写入，避免 Workflow 重试重复累计。辅助字段为 `created_at`、`started_at`、`finished_at`、`failure_code`。`failure_reason` 只因远程增量迁移暂留为未使用物理列。
 
 数据库需要以下互斥约束：
 
@@ -118,7 +118,9 @@ Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token �
 
 ## 6. 未集成的可选观测：Sentry
 
-Sentry 不是运行依赖，当前代码也不读取 `SENTRY_DSN`。若以后单独批准接入，只能上传脱敏错误和低采样服务端 trace，标签使用应用级 Run ID、Runtime 种类和状态等无敏感元数据。
+当前代码通过 `DiagnosticReporter` 输出受控结构化事件，使用 `requestId` 关联一次 Worker invocation，使用现有 `runId` 关联跨请求、Workflow、ModelGateway、取消和 idle cleanup 的完整业务执行。D1 不保存 trace event，也不新增重复的持久化 `trace_id`。
+
+Sentry 不是运行依赖，当前代码也不读取 `SENTRY_DSN`。若以后单独批准接入，只能作为 `DiagnosticReporter` 的外层 adapter 上传脱敏错误和低采样服务端 trace，标签使用应用级 Run ID、Runtime 种类和状态等无敏感元数据。
 
 第一版不要启用 Session Replay、日志全量导出或 AI Agent transcript 追踪；这些能力更容易意外收集 prompt、文件或终端输出。接入前应明确 `beforeSend`/数据清洗策略、采样率和错误阈值。
 

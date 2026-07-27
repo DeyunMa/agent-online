@@ -8,14 +8,15 @@ import type {
   SandboxLeaseRecord,
 } from "../application/ports";
 import type { ProjectFilesFailure } from "../application/project-files";
+import type { DiagnosticContext } from "../observability/contract";
 import type {
   AgentRunResponse,
-  ApiErrorResponse,
   MessageResponse,
   ProjectResponse,
   SandboxLeaseResponse,
 } from "../shared/api";
 import type { AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import type { ProjectApiDependencies } from "./project-api-dependencies";
 
 export type AppContext = Context<AppEnv>;
@@ -36,6 +37,10 @@ export function requireAuthenticatedUser(c: AppContext, dependencies: ProjectApi
   return dependencies.getAuthenticatedUser(c.env, c.req.raw.headers);
 }
 
+export function requestDiagnosticContext(c: AppContext): DiagnosticContext {
+  return { requestId: c.get("requestId") };
+}
+
 export function toProjectResponse(
   project: ProjectRecord,
   sandboxLease: SandboxLeaseRecord | null,
@@ -54,7 +59,7 @@ export function toAgentRunResponse(run: AgentRunRecord): AgentRunResponse {
   return {
     agentRuntimeId: run.agentRuntimeId,
     createdAt: run.createdAt,
-    failureReason: run.failureReason,
+    failureCode: run.failureCode,
     finishedAt: run.finishedAt,
     id: run.id,
     inputMessageId: run.inputMessageId,
@@ -79,50 +84,58 @@ export function toMessageResponse(message: MessageRecord): MessageResponse {
 }
 
 export function unauthorized(c: AppContext) {
-  return apiError(c, "unauthorized", 401);
+  return renderApiError(c, "auth.unauthorized");
 }
 
 export function validationError(c: AppContext) {
-  return apiError(c, "validation_error", 400);
+  return renderApiError(c, "request.invalid");
 }
 
 export function notFound(c: AppContext) {
-  return apiError(c, "not_found", 404);
+  return renderApiError(c, "resource.not_found");
 }
 
 export function projectBusy(c: AppContext) {
-  return apiError(c, "project_busy", 409);
+  return renderApiError(c, "project.busy");
 }
 
 export function agentRuntimeUnavailable(c: AppContext) {
-  return apiError(c, "agent_runtime_unavailable", 409);
+  return renderApiError(c, "agent_runtime.unavailable");
 }
 
 export function runsDisabled(c: AppContext) {
-  return apiError(c, "runs_disabled", 503);
+  return renderApiError(c, "run.creation_disabled");
 }
 
 export function projectFilesError(c: AppContext, error: ProjectFilesFailure["kind"]) {
   switch (error) {
     case "file_too_large":
-      return apiError(c, error, 413);
+      return renderApiError(c, "file.too_large");
     case "path_not_found":
-      return apiError(c, error, 404);
+      return renderApiError(c, "project_path.not_found");
     case "project_busy":
-      return apiError(c, error, 409);
+      return renderApiError(c, "project.busy");
     case "sandbox_unavailable":
-      return apiError(c, error, 409);
+      return renderApiError(c, "sandbox.not_active");
     case "unsupported_file":
-      return apiError(c, error, 415);
+      return renderApiError(c, "file.content_unsupported");
     case "unsupported_path":
-      return apiError(c, error, 400);
+      return renderApiError(c, "project_path.unsupported");
     case "provider_error":
-      return internalError(c, 503);
+      return sandboxProviderUnavailable(c);
   }
 }
 
-export function internalError(c: AppContext, status: 500 | 503 = 500) {
-  return apiError(c, "internal_error", status);
+export function internalError(c: AppContext) {
+  return renderApiError(c, "internal.unexpected");
+}
+
+export function serviceUnavailable(c: AppContext) {
+  return renderApiError(c, "service.unavailable");
+}
+
+export function sandboxProviderUnavailable(c: AppContext) {
+  return renderApiError(c, "sandbox.provider_unavailable");
 }
 
 function toSandboxLeaseResponse(sandboxLease: SandboxLeaseRecord): SandboxLeaseResponse {
@@ -132,18 +145,4 @@ function toSandboxLeaseResponse(sandboxLease: SandboxLeaseRecord): SandboxLeaseR
     status: sandboxLease.status,
     updatedAt: sandboxLease.updatedAt,
   };
-}
-
-function apiError(
-  c: AppContext,
-  error: ApiErrorResponse["error"],
-  status: 400 | 401 | 404 | 409 | 413 | 415 | 500 | 503,
-) {
-  return c.json(
-    {
-      error,
-      requestId: c.get("requestId") || crypto.randomUUID(),
-    },
-    status,
-  );
 }

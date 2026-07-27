@@ -6,6 +6,7 @@ import type { ProjectApiDependencies } from "./project-api-dependencies";
 import {
   notFound,
   projectFilesError,
+  requestDiagnosticContext,
   requireAuthenticatedUser,
   unauthorized,
 } from "./project-api-support";
@@ -20,7 +21,7 @@ export function registerProjectFilesRoutes(
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
@@ -39,7 +40,7 @@ export function registerProjectFilesRoutes(
       return unauthorized(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);

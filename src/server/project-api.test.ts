@@ -21,6 +21,7 @@ import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run
 import { ProjectSandboxService } from "../application/project-sandbox";
 import { ProjectTerminalService } from "../application/project-terminal";
 import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
+import { noopDiagnosticReporter } from "../observability/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import type {
   AgentRunResponse,
@@ -46,7 +47,10 @@ describe("Project API", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
-      error: "unauthorized",
+      error: {
+        code: "auth.unauthorized",
+        retryable: false,
+      },
       requestId: "test-request",
     });
   });
@@ -100,9 +104,13 @@ describe("Project API", () => {
     );
 
     expect(invalid.status).toBe(400);
-    await expect(invalid.json()).resolves.toMatchObject({ error: "validation_error" });
+    await expect(invalid.json()).resolves.toMatchObject({
+      error: { code: "request.invalid", retryable: false },
+    });
     expect(inaccessible.status).toBe(404);
-    await expect(inaccessible.json()).resolves.toMatchObject({ error: "not_found" });
+    await expect(inaccessible.json()).resolves.toMatchObject({
+      error: { code: "resource.not_found", retryable: false },
+    });
   });
 
   it("stops an owned Project sandbox without exposing its provider reference", async () => {
@@ -172,7 +180,7 @@ describe("Project API", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      error: "project_busy",
+      error: { code: "project.busy", retryable: true },
     });
   });
 
@@ -277,7 +285,9 @@ describe("Project API", () => {
     expect(activeResponse.status).toBe(200);
     expect(active).toMatchObject({ id: created.id, status: "queued" });
     expect(secondResponse.status).toBe(409);
-    await expect(secondResponse.json()).resolves.toMatchObject({ error: "project_busy" });
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      error: { code: "project.busy", retryable: true },
+    });
   });
 
   it("persists an explicitly selected enabled AgentRuntime", async () => {
@@ -336,7 +346,7 @@ describe("Project API", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
-      error: "agent_runtime_unavailable",
+      error: { code: "agent_runtime.unavailable", retryable: false },
     });
     expect(fixture.agentRuns.records.size).toBe(0);
     expect(fixture.messages.records).toHaveLength(0);
@@ -365,7 +375,7 @@ describe("Project API", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      error: "runs_disabled",
+      error: { code: "run.creation_disabled", retryable: false },
     });
     expect(fixture.agentRuns.records.size).toBe(0);
     expect(fixture.messages.records).toHaveLength(0);
@@ -493,6 +503,7 @@ function createFixture(
   const services: ServerServices = {
     agentRuns,
     createAgentRuns,
+    diagnostics: noopDiagnosticReporter,
     enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
     messages,
     projectChanges: {} as ServerServices["projectChanges"],
@@ -743,7 +754,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     const run: AgentRunRecord = {
       agentRuntimeId: input.agentRuntimeId,
       createdAt: input.now,
-      failureReason: null,
+      failureCode: null,
       finishedAt: null,
       id: input.agentRunId,
       inputMessageId: input.inputMessageId,
@@ -842,7 +853,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     }
 
     Object.assign(run, {
-      failureReason: null,
+      failureCode: null,
       finishedAt: input.finishedAt,
       providerProcessRef: null,
       status: "succeeded",
@@ -873,7 +884,7 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     }
 
     Object.assign(run, {
-      failureReason: input.failureReason ?? run.failureReason,
+      failureCode: input.failureCode ?? run.failureCode,
       finishedAt: input.finishedAt ?? run.finishedAt,
       startedAt: input.startedAt ?? run.startedAt,
       status: input.to,

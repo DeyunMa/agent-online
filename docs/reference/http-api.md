@@ -13,7 +13,7 @@
 ### 1.1 鉴权与所有权
 
 - 浏览器登录状态由 Better Auth 的同源 cookie 提供。
-- Project 子资源接口先按当前 User 查询 Project；不是所有者时统一返回 `404 not_found`，不暴露资源是否存在。
+- Project 子资源接口先按当前 User 查询 Project；不是所有者时统一返回 `404 resource.not_found`，不暴露资源是否存在。
 - Terminal WebSocket、Preview start/stop 额外要求 `Origin` 与请求 URL 同源。
 - Preview 内容使用短时签名 capability URL，不向上游暴露 Provider host/port/token。
 - ModelGateway 使用只绑定一个 Run、Project、Model 和期限的 Bearer capability，不接受浏览器会话替代。
@@ -23,44 +23,48 @@
 Worker 为每个请求生成 `requestId`：
 
 - 响应头：`x-request-id: <uuid>`
-- 普通 API 错误体：`{ "error": "<code>", "requestId": "<uuid>" }`
+- 普通 API 错误体：`{ "error": { "code": "<code>", "retryable": false }, "requestId": "<uuid>" }`
 
 Provider 私有错误、密钥、sandbox ID 和 process ID 不进入公开错误体。
+
+`requestId` 只关联一次 Worker invocation；跨创建请求、Workflow、ModelGateway、取消和
+idle cleanup 的完整 AgentRun 使用已有 `runId` 关联。平台不额外持久化重复的
+`trace_id`。
 
 ### 1.3 普通错误模型
 
 ```ts
 type ApiErrorResponse = {
-  error:
-    | "agent_runtime_unavailable"
-    | "forbidden"
-    | "file_too_large"
-    | "internal_error"
-    | "not_found"
-    | "path_not_found"
-    | "preview_unavailable"
-    | "project_busy"
-    | "runs_disabled"
-    | "sandbox_unavailable"
-    | "unauthorized"
-    | "unsupported_file"
-    | "unsupported_path"
-    | "validation_error";
+  error: {
+    code: PublicErrorCode;
+    retryable: boolean;
+  };
   requestId: string;
 };
 ```
 
-| HTTP 状态 | 常见错误 | 含义 |
-| --- | --- | --- |
-| `400` | `validation_error`、`unsupported_path` | JSON/字段不合法，或路径超出受控范围。 |
-| `401` | `unauthorized` | 没有有效登录会话。 |
-| `403` | `forbidden` | 同源检查失败。 |
-| `404` | `not_found`、`path_not_found` | 路由、资源或文件不存在。 |
-| `409` | `project_busy`、`sandbox_unavailable`、`agent_runtime_unavailable` | 当前 Project 状态不允许操作。 |
-| `413` | `file_too_large` | 文件超过读取上限。 |
-| `415` | `unsupported_file` | 不是可公开的普通 UTF-8 文本文件。 |
-| `500` | `internal_error` | 内部状态或 Runtime 不一致。 |
-| `503` | `runs_disabled`、`preview_unavailable`、`internal_error` | 部署开关关闭或外部 Provider 暂不可用。 |
+| Code | HTTP | Retryable | 含义 |
+| --- | --- | --- | --- |
+| `auth.unauthorized` | `401` | false | 没有有效登录会话。 |
+| `request.forbidden` | `403` | false | 同源或权限检查失败。 |
+| `request.invalid` | `400` | false | JSON 或字段不合法。 |
+| `resource.not_found` | `404` | false | 路由或所有权过滤后的资源不存在。 |
+| `project.busy` | `409` | true | 当前 Run、Terminal 或 Preview 启动占用 Project。 |
+| `run.creation_disabled` | `503` | false | 维护者关闭了新 Run。 |
+| `agent_runtime.unavailable` | `409` | false | Runtime 未公开或未启用。 |
+| `sandbox.not_active` | `409` | false | Project 当前没有可附着的沙箱。 |
+| `sandbox.provider_unavailable` | `503` | true | Sandbox Provider 调用失败。 |
+| `project_path.not_found` | `404` | false | 文件或 Changes 路径不存在。 |
+| `project_path.unsupported` | `400` | false | 路径超出受控范围。 |
+| `file.too_large` | `413` | false | 文件超过读取上限。 |
+| `file.content_unsupported` | `415` | false | 不是可公开的 UTF-8 文本。 |
+| `preview.unavailable` | `503` | true | 固定 Preview 无法启动或访问。 |
+| `service.unavailable` | `503` | true | 通用依赖暂不可用。 |
+| `internal.unexpected` | `500` | true | 未知内部错误；使用 `requestId` 定位。 |
+
+`retryable=true` 只允许 UI 提示用户人工重试，不能自动重放非幂等 POST。普通产品 API
+只能通过 `src/server/http/api-errors.ts` 输出该结构。Better Auth、Terminal WebSocket、
+Preview 内容代理和 ModelGateway 保留各自已有的协议 envelope。
 
 ## 2. 公开 DTO
 
@@ -100,7 +104,17 @@ type AgentRunResponse = {
   status:
     | "queued" | "starting" | "running" | "cancelling"
     | "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted";
-  failureReason: string | null;
+  failureCode:
+    | "run.start_failed"
+    | "run.sandbox_failed"
+    | "run.agent_protocol_failed"
+    | "run.agent_process_failed"
+    | "run.model_failed"
+    | "run.no_visible_reply"
+    | "run.timed_out"
+    | "run.interrupted"
+    | "run.internal_failed"
+    | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -181,10 +195,16 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 - 未传 `agentRuntimeId` 时使用 Project 默认值。
 - Runtime 必须在服务端 execution policy 中启用；浏览器 UI 只应使用 capability 返回的 public Runtime。
 - 用户 Message 与 queued AgentRun 原子创建；成功完成时，Run 终态、sandbox duration、最终 assistant Message 和 Project touch 也在一个 D1 batch 中提交。
-- 同一 Project 已有非终态 Run或活动 Terminal/正在启动的 Preview 时返回 `409 project_busy`，不创建第二条 Run。
-- `RUNS_ENABLED=false` 时返回 `503 runs_disabled`，且不写入 Message、Lease 或 AgentRun。
+- 同一 Project 已有非终态 Run或活动 Terminal/正在启动的 Preview 时返回
+  `409 project.busy`，不创建第二条 Run。
+- `RUNS_ENABLED=false` 时返回 `503 run.creation_disabled`，且不写入 Message、Lease 或
+  AgentRun。
 
 列表只返回当前 Project 最新 50 条 AgentRun。
+
+终态失败只返回稳定 `failureCode`，浏览器负责本地化文案。`succeeded` 和 `cancelled`
+必须为 `null`；`timed_out`、`interrupted` 使用同名固定 code；`failed` 必须使用其余
+失败 code 之一。Provider status、exit code、异常 message 和 stack 不属于该 DTO。
 
 ### 5.1 SSE 协议
 

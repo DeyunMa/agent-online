@@ -31,10 +31,13 @@ describe("D1 repositories in the Workers runtime", () => {
       "0004_terminal_sessions.sql",
       "0005_preview_sessions.sql",
       "0006_integrity_guards.sql",
+      "0007_agent_run_failure_codes.sql",
     ]);
     expect(triggers.results.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         "agent_runs_validate_insert_ownership",
+        "agent_runs_validate_failure_code_insert",
+        "agent_runs_validate_failure_code_update",
         "agent_runs_validate_status_transition",
         "messages_validate_agent_link",
         "preview_sessions_validate_lease",
@@ -174,6 +177,44 @@ describe("D1 repositories in the Workers runtime", () => {
     await expect(
       env.DB.prepare("UPDATE agent_runs SET status = 'succeeded' WHERE id = 'run_queued'").run(),
     ).rejects.toThrow(/invalid_agent_run_transition/);
+  });
+
+  it("requires stable failure codes for terminal Run failures", async () => {
+    const repository = new D1AgentRunRepository(env.DB);
+    await createRunningRun(repository);
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE agent_runs SET failure_code = 'run.internal_failed' WHERE id = 'run_1'",
+      ).run(),
+    ).rejects.toThrow(/invalid_agent_run_failure_code/);
+
+    await expect(
+      env.DB.prepare(
+        "UPDATE agent_runs SET status = 'failed', failure_code = NULL WHERE id = 'run_1'",
+      ).run(),
+    ).rejects.toThrow(/invalid_agent_run_failure_code/);
+
+    await expect(
+      env.DB.prepare(
+        `UPDATE agent_runs
+        SET status = 'timed_out', failure_code = 'run.internal_failed'
+        WHERE id = 'run_1'`,
+      ).run(),
+    ).rejects.toThrow(/invalid_agent_run_failure_code/);
+
+    const failed = await repository.transition({
+      failureCode: "run.model_failed",
+      finishedAt,
+      from: "running",
+      runId: "run_1",
+      to: "failed",
+    });
+
+    expect(failed).toMatchObject({
+      failureCode: "run.model_failed",
+      status: "failed",
+    });
   });
 });
 

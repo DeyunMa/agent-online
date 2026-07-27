@@ -108,6 +108,7 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 | `src/server/` | 按 Project、Files、AgentRun、Terminal、Preview、Changes、Usage 拆分的 Hono 路由，及鉴权、公开 DTO、配置、D1 adapter、ModelGateway、Workflow 入口 | 路由只做鉴权、校验、调用与响应映射，不拼接任意 Agent/沙箱命令。 |
 | `src/application/` | Project/Run/Files/Changes/Terminal/Preview/Usage 用例编排 | 不依赖 Hono 或浏览器状态。 |
 | `src/domain/` | AgentRun、SandboxLease 等 Provider 无关规则 | 不依赖框架、D1、E2B 或具体 Agent。 |
+| `src/observability/` | Provider 无关的诊断码、受控事件字段和 `DiagnosticReporter` 接口 | 不依赖 Hono、Cloudflare console、D1 或外部观测 SDK。 |
 | `src/runtime/` | Sandbox 生命周期、进程、文件、PTY、Preview、Changes 能力接口和 E2B/fake adapter | 不理解 Pi/Goose 协议或产品鉴权。 |
 | `src/agent/` | AgentRuntime 合同，以及 Pi/Goose CLI 协议归一化 | 不直接持有 Gemini Key，不管理 SandboxLease。 |
 | `src/shared/` | 最低层的公开协议字面量，以及浏览器和 Worker 共享的 DTO | 不导入内部 application/server 实现，不包含 Provider 私有字段。 |
@@ -143,6 +144,11 @@ Project 列表和创建页面由各自组件承担。
 
 Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage，最终回复由 Message API 读取。
 
+创建请求使用本次 invocation 的 `requestId`，随后所有 Workflow、ModelGateway、取消和
+idle cleanup 事件都使用已有 `runId` 作为业务关联根。结构化日志只包含固定事件、
+诊断码、阶段、Runtime/Model ID、终态和聚合 usage，不包含 prompt、回复、文件路径、
+Provider reference、Key、capability、异常 message 或 stack。
+
 ### 5.2 取消和恢复
 
 - 取消优先终止当前 Agent 进程，并保留同一 Project 的沙箱文件。
@@ -172,6 +178,21 @@ Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage�
 - Worker 仅代理 `GET`/`HEAD`，过滤请求/响应头，注入 CSP 并改写 HTML 根路径。
 - PreviewSession 只记录当前进程所有权；不保存页面内容、日志、截图或访问历史。
 
+### 5.6 错误与观测
+
+- application 预期拒绝继续使用 discriminated union，不通过全局异常类控制流程。
+- 普通产品 API 由唯一 renderer 将内部 outcome 显式映射为稳定 public error code、
+  HTTP status 和 `retryable`。
+- AgentRun 只持久化稳定 `failure_code`；D1 trigger 强制其与 Run status 的合法组合。
+- runtime/agent/model/persistence catch 在各自接缝归一化成固定 diagnostic code，原始异常
+  只作为瞬时原因，不进入浏览器、D1 或普通结构化事件。
+- `src/server/observability/` 当前 adapter 只输出 Cloudflare Workers 可索引的结构化
+  console 记录，不依赖 Sentry 或其他外部服务。
+- Workflow 重试和取消竞争可能产生重复事件；日志采用至少一次语义，业务终态与 usage
+  始终以 D1 为准，不能把日志条数当计费或审计数据。
+- Cloudflare invocation trace 只能作为单次执行的辅助视图；跨 invocation 关联以
+  `runId` 日志为准，不伪造一个持续数分钟的父子 span tree。
+
 ## 6. 数据与信任边界
 
 ### 浏览器可以获得
@@ -192,7 +213,7 @@ Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage�
 - Better Auth 用户、账号、会话和验证数据。
 - Project 元数据。
 - 用户可见 Message。
-- AgentRun 生命周期与聚合 usage。
+- AgentRun 生命周期、稳定 failure code 与聚合 usage。
 - SandboxLease 和当前 Terminal/Preview 的临时协调行。
 
 ### D1/R2 不保存
@@ -228,6 +249,9 @@ Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage�
 - Cloudflare Workers 运行时中的真实 D1 migrations、trigger 和 batch 测试；
 - production build；
 - Chromium 中注册、创建 Project、fake Run 取消和刷新恢复 smoke。
+
+门禁同时覆盖 public error catalog 完整性、错误响应 request ID、一致的 Run failure
+状态组合、结构化日志 schema 和敏感字段缺失。
 
 真实 E2B/Gemini 测试仍是显式 opt-in，不属于每次提交门禁，避免产生外部沙箱和模型成本。
 

@@ -76,13 +76,13 @@ describe("Changes API", () => {
   });
 
   it.each([
-    ["project_busy", 409],
-    ["sandbox_unavailable", 409],
-    ["path_not_found", 404],
-    ["unsupported_path", 400],
-    ["provider_error", 503],
-    ["runtime_mismatch", 500],
-  ] as const)("maps %s without exposing failure details", async (kind, status) => {
+    ["project_busy", 409, "project.busy", true],
+    ["sandbox_unavailable", 409, "sandbox.not_active", false],
+    ["path_not_found", 404, "project_path.not_found", false],
+    ["unsupported_path", 400, "project_path.unsupported", false],
+    ["provider_error", 503, "sandbox.provider_unavailable", true],
+    ["runtime_mismatch", 500, "internal.unexpected", true],
+  ] as const)("maps %s without exposing failure details", async (kind, status, code, retryable) => {
     const fixture = createFixture({ failure: kind });
 
     const response = await fixture.api.request(
@@ -92,9 +92,9 @@ describe("Changes API", () => {
 
     expect(response.status).toBe(status);
     expect(body).toMatchObject({
-      error: kind === "provider_error" || kind === "runtime_mismatch" ? "internal_error" : kind,
+      error: { code, retryable },
     });
-    expect(JSON.stringify(body)).not.toContain("provider");
+    expect(JSON.stringify(body)).not.toContain("sandbox-private");
   });
 });
 

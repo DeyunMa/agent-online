@@ -5,6 +5,7 @@ import type {
   SandboxChangeKind,
   SandboxLeaseStatus,
 } from "./protocol";
+import type { AgentRunFailureCode, PublicErrorCode } from "./error-codes";
 
 export type HealthResponse = {
   name: "agent-online";
@@ -106,7 +107,7 @@ export type UserUsageResponse = {
 export type AgentRunResponse = {
   agentRuntimeId: AgentRuntimeId;
   createdAt: string;
-  failureReason: string | null;
+  failureCode: AgentRunFailureCode | null;
   finishedAt: string | null;
   id: string;
   inputMessageId: string | null;
@@ -156,20 +157,9 @@ export type AgentRunStreamEvent =
   | { sequence: number; type: "run.completed"; usage: AgentRunUsageResponse };
 
 export type ApiErrorResponse = {
-  error:
-    | "agent_runtime_unavailable"
-    | "forbidden"
-    | "file_too_large"
-    | "internal_error"
-    | "not_found"
-    | "path_not_found"
-    | "preview_unavailable"
-    | "project_busy"
-    | "runs_disabled"
-    | "sandbox_unavailable"
-    | "unauthorized"
-    | "unsupported_file"
-    | "unsupported_path"
-    | "validation_error";
+  error: {
+    code: PublicErrorCode;
+    retryable: boolean;
+  };
   requestId: string;
 };

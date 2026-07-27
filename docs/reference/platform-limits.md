@@ -21,9 +21,9 @@
 | Project 所有权 | 一个 Project 只属于一个 User | D1 FK + 所有权查询 | 非所有者统一得到 `404`。 |
 | SandboxLease | 每个 Project 最多一行逻辑 Lease | `UNIQUE(project_id)` | 复用已有 Lease，不创建第二条。 |
 | Provider sandbox | 每个 Project 同时最多一个活动 Provider sandbox | Lease `provider_ref` + 条件更新 | 连接现有沙箱或等待/失败；不创建分支沙箱历史。 |
-| AgentRun | 每个 Project 同时最多一个非终态 Run | D1 部分唯一索引 | `409 project_busy`。 |
+| AgentRun | 每个 Project 同时最多一个非终态 Run | D1 部分唯一索引 | 普通 API 返回 `409 project.busy`。 |
 | Terminal | 每个 Project 最多一个 TerminalSession | `UNIQUE(project_id)` | WebSocket 返回 `project_busy` 后关闭。 |
-| Preview | 每个 Project 最多一个 PreviewSession | `UNIQUE(project_id)` | `409 project_busy`。 |
+| Preview | 每个 Project 最多一个 PreviewSession | `UNIQUE(project_id)` | 普通 API 返回 `409 project.busy`。 |
 | assistant Message | 每个 AgentRun 最多一条最终回复 | D1 部分唯一索引 | 重复完成不会写第二条。 |
 | Run 跨表归属 | User、Project、Lease、Runtime、输入 Message 必须一致 | D1 trigger | 整个创建 batch 回滚。 |
 | Run 状态迁移 | 只能走领域状态机，终态不可变 | application + D1 trigger | 非法更新中止。 |
@@ -132,16 +132,16 @@ Files 限制的是浏览器对当前 `/workspace` 的只读观察面，不限制
 | 限制对象 | 当前值 | 达到限制后的行为 |
 | --- | --- | --- |
 | 根目录 | 固定 `/workspace` | 不能由浏览器传 cwd。 |
-| 路径形式 | 相对路径；最长 512；最多 32 层 | `400 unsupported_path`。 |
-| 单个路径段 | 1 至 255；拒绝 `.git`、`.`、`..` | `400 unsupported_path`。 |
-| 路径字符 | 拒绝绝对路径、尾 `/`、反斜杠和控制字符 | `400 unsupported_path`。 |
-| 符号链接 | 可以作为目录条目显示，但不能遍历或读取 | `unsupported_path` / `unsupported_file`。 |
+| 路径形式 | 相对路径；最长 512；最多 32 层 | `400 project_path.unsupported`。 |
+| 单个路径段 | 1 至 255；拒绝 `.git`、`.`、`..` | `400 project_path.unsupported`。 |
+| 路径字符 | 拒绝绝对路径、尾 `/`、反斜杠和控制字符 | `400 project_path.unsupported`。 |
+| 符号链接 | 可以作为目录条目显示，但不能遍历或读取 | `project_path.unsupported` / `file.content_unsupported`。 |
 | 单目录返回 | 最多 500 个安全条目 | `truncated=true`。 |
-| 单文件读取 | 最多 256 KiB | `413 file_too_large`。 |
-| 文件编码 | 必须是严格 UTF-8 | `415 unsupported_file`。 |
-| 二进制启发式 | NUL 直接拒绝；其他控制字符超过 `max(4, 1%)` 时拒绝 | `415 unsupported_file`。 |
-| Lease | 必须已有 Provider ref，状态为 `ready` 或 `idle`，filesystem scope 为 `lease` | `409 sandbox_unavailable`。 |
-| 并发 | 活动 Run 或 Terminal 时拒绝 | `409 project_busy`。 |
+| 单文件读取 | 最多 256 KiB | `413 file.too_large`。 |
+| 文件编码 | 必须是严格 UTF-8 | `415 file.content_unsupported`。 |
+| 二进制启发式 | NUL 直接拒绝；其他控制字符超过 `max(4, 1%)` 时拒绝 | `415 file.content_unsupported`。 |
+| Lease | 必须已有 Provider ref，状态为 `ready` 或 `idle`，filesystem scope 为 `lease` | `409 sandbox.not_active`。 |
+| 并发 | 活动 Run 或 Terminal 时拒绝 | `409 project.busy`。 |
 
 Files 不支持写入、上传、下载二进制、删除、rename、搜索、压缩、版本或快照。`fake` Runtime 的文件只属于单个内存实例，不能跨请求冒充 Project 文件，因此 Files capability 明确不可用。
 
@@ -155,8 +155,8 @@ Changes 限制的是当前 Git working tree/index 的只读、瞬时视图。
 | --- | --- | --- |
 | repository 根 | 固定 `/workspace` 和 `/workspace/.git` | 不能传 repository/cwd。 |
 | `.git` 类型 | 必须是真实目录；config 必须是真实文件 | 非 repository 或通用服务错误。 |
-| 额外 Git scope | 拒绝 `commondir`、`config.worktree` 和 `extensions.worktreeConfig` | 通用 `503 internal_error`。 |
-| 危险 Git config | 拒绝 include/includeIf、filter、diff external/command/textconv、fsmonitor、attributesFile、hooksPath、worktree | 通用 `503 internal_error`。 |
+| 额外 Git scope | 拒绝 `commondir`、`config.worktree` 和 `extensions.worktreeConfig` | `503 sandbox.provider_unavailable`。 |
+| 危险 Git config | 拒绝 include/includeIf、filter、diff external/command/textconv、fsmonitor、attributesFile、hooksPath、worktree | `503 sandbox.provider_unavailable`。 |
 | 进程环境 | `env -i`，固定 PATH/HOME/locale，关闭 system/global config、lazy fetch、prompt、pager 和 optional locks | 调用方不能注入 env。 |
 | Git 命令 | 平台固定 `/usr/bin/git` 参数 | 无任意 command/args 接口。 |
 | 命令时间 | 每次最多 15 秒 | Provider 错误。 |
@@ -166,7 +166,7 @@ Changes 限制的是当前 Git working tree/index 的只读、瞬时视图。
 | staged diff | 最多 128 KiB | section `truncated=true`。 |
 | unstaged diff | 最多 128 KiB | section `truncated=true`。 |
 | 路径 | 最长 512、最多 32 层、每段最多 255；拒绝 `.git`、反斜杠、控制字符和穿越 | 隐藏并置 `unsupportedEntries=true`，或拒绝详情。 |
-| 并发 | 活动 Run 或 Terminal 时拒绝 | `409 project_busy`。 |
+| 并发 | 活动 Run 或 Terminal 时拒绝 | `409 project.busy`。 |
 | 缓存 | `private, no-store` | 浏览器不能把旧结果当当前状态。 |
 
 Changes 不支持 commit、checkout、branch、reset、revert、stage、unstage、apply patch、历史 diff 或 Run 归因。`repository=false` 只表示当前工作区不是 Git repository。
@@ -202,7 +202,7 @@ Terminal 是受控但真实的 shell。登录用户可以通过它修改 `/works
 | 工作目录 | 固定 `/workspace` | 不能传 cwd。 |
 | preset | 固定 `vite-v1` | 不能传任意命令或脚本。 |
 | 端口 | 固定 `3000`，D1 CHECK | 其他端口拒绝。 |
-| 启动等待 | 最多 20 秒；每 500 ms 探测，单次探测 2 秒 | `503 preview_unavailable`。 |
+| 启动等待 | 最多 20 秒；每 500 ms 探测，单次探测 2 秒 | `503 preview.unavailable`。 |
 | 会话时长 | 最长 30 分钟 | Workflow 终止进程并删临时行。 |
 | 进程 timeout | 会话时长 + 15 秒 | Provider 最终终止。 |
 | capability 生命周期 | 最长 30 分钟 | 过期后内容路由返回 `404`。 |

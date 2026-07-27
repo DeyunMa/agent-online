@@ -7,10 +7,12 @@ import type {
 import type { AgentRuntimeId } from "../../agent/contract";
 import {
   canTransitionAgentRun,
+  isValidAgentRunFailure,
   isTerminalAgentRun,
   type AgentRunStatus,
 } from "../../domain/agent-run";
 import type { RuntimeKind } from "../../runtime/contract";
+import type { AgentRunFailureCode } from "../../shared/error-codes";
 import {
   type AgentRunRow,
   type MessageRow,
@@ -69,7 +71,7 @@ export class D1AgentRunRepository implements AgentRunRepository {
               model_request_count,
               provider_process_ref,
               sandbox_duration_ms,
-              failure_reason,
+              failure_code,
               created_at,
               started_at,
               finished_at
@@ -289,6 +291,7 @@ export class D1AgentRunRepository implements AgentRunRepository {
           `UPDATE agent_runs
           SET status = 'succeeded',
               sandbox_duration_ms = MAX(sandbox_duration_ms, ?),
+              failure_code = NULL,
               failure_reason = NULL,
               provider_process_ref = NULL,
               finished_at = ?
@@ -373,7 +376,7 @@ export class D1AgentRunRepository implements AgentRunRepository {
   }
 
   async transition(input: {
-    failureReason?: string | null;
+    failureCode?: AgentRunFailureCode | null;
     finishedAt?: string | null;
     from: AgentRunStatus;
     runId: string;
@@ -384,13 +387,13 @@ export class D1AgentRunRepository implements AgentRunRepository {
       throw new Error(`Invalid AgentRun transition from ${input.from} to ${input.to}`);
     }
 
-    const assignments = ["status = ?"];
-    const values: unknown[] = [input.to];
-
-    if (input.failureReason !== undefined) {
-      assignments.push("failure_reason = ?");
-      values.push(input.failureReason);
+    const failureCode = input.failureCode ?? defaultFailureCode(input.to);
+    if (!isValidAgentRunFailure(input.to, failureCode)) {
+      throw new Error(`Invalid AgentRun failure code for status ${input.to}`);
     }
+
+    const assignments = ["status = ?", "failure_code = ?", "failure_reason = NULL"];
+    const values: unknown[] = [input.to, failureCode];
 
     if (input.startedAt !== undefined) {
       assignments.push("started_at = ?");
@@ -423,6 +426,16 @@ export class D1AgentRunRepository implements AgentRunRepository {
 
     return toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 1, "transition AgentRun"));
   }
+}
+
+function defaultFailureCode(status: AgentRunStatus): AgentRunFailureCode | null {
+  if (status === "timed_out") {
+    return "run.timed_out";
+  }
+  if (status === "interrupted") {
+    return "run.interrupted";
+  }
+  return null;
 }
 
 function errorText(error: unknown): string {

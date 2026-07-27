@@ -14,6 +14,7 @@ import {
   notFound,
   parseRequest,
   projectBusy,
+  requestDiagnosticContext,
   requireAuthenticatedUser,
   runsDisabled,
   toAgentRunResponse,
@@ -41,7 +42,7 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return validationError(c);
     }
 
-    const services = dependencies.createServices(c.env);
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
     const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
@@ -131,6 +132,16 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return notFound(c);
     }
 
+    access.services.diagnostics.report({
+      agentRuntimeId: run.agentRuntimeId,
+      event: "agent_run.cancel_requested",
+      modelId: run.modelId,
+      outcome: "started",
+      runId: run.id,
+      runStatus: run.status,
+      sandboxRuntimeId: run.sandboxRuntimeId,
+      stage: "cancel",
+    });
     const cancelled = await access.services.runExecutions.cancel(run, dependencies.now());
     return cancelled ? c.json(toAgentRunResponse(cancelled)) : internalError(c);
   });
@@ -163,7 +174,7 @@ async function getOwnedProject(c: AppContext, dependencies: ProjectApiDependenci
     return null;
   }
 
-  const services = dependencies.createServices(c.env);
+  const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
   const projectId = c.req.param("projectId");
   if (!projectId) {
     return false;
