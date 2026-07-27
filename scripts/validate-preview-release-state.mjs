@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const mode = process.argv[2];
@@ -15,21 +16,10 @@ if (mode === "--remote") {
 }
 
 const sqlPath = fileURLToPath(new URL("./sql/preview-release-preflight.sql", import.meta.url));
+const sql = readFileSync(sqlPath, "utf8");
 const result = spawnSync(
   "pnpm",
-  [
-    "exec",
-    "wrangler",
-    "d1",
-    "execute",
-    "DB",
-    mode,
-    "--env",
-    "preview",
-    "--file",
-    sqlPath,
-    "--json",
-  ],
+  ["exec", "wrangler", "d1", "execute", "DB", mode, "--env", "preview", "--command", sql, "--json"],
   {
     encoding: "utf8",
     env: process.env,
@@ -53,9 +43,21 @@ if (result.status !== 0) {
 }
 
 let payload;
-try {
-  payload = JSON.parse(result.stdout);
-} catch {
+const stdoutLines = result.stdout.split(/\r?\n/);
+for (const [index, line] of stdoutLines.entries()) {
+  if (!line.trimStart().startsWith("[") && !line.trimStart().startsWith("{")) {
+    continue;
+  }
+
+  try {
+    payload = JSON.parse(stdoutLines.slice(index).join("\n"));
+    break;
+  } catch {
+    // Wrangler may print progress lines before its final JSON payload.
+  }
+}
+
+if (payload === undefined) {
   console.error("Wrangler returned an unreadable D1 preflight response.");
   process.exit(1);
 }

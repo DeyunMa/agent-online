@@ -59,3 +59,17 @@ Project 删除功能。
   或 issue 中复制响应正文。
 - 失败产物位于 `output/playwright/preview-results`，该目录被 Git 忽略。
 - 完成后在 Cloudflare Workflow、D1 和 E2B 控制台抽查资源已收敛，再记录部署版本和结果。
+
+## 最近执行
+
+2026-07-27 针对 Preview 版本 `c722c868-a0f0-4bfd-b2f4-97654d026bce` 完整通过：
+
+- Chromium：1 个 Hosted Preview 用例通过；
+- 两个真实 Pi Run 分别验证成功执行与取消；
+- 最终 Message、聚合 usage、Files 内容和刷新后消息一致性通过；
+- JSON API 响应在交付给页面前完成私有字段审计；
+- 测试主动停止沙箱，随后九项远程预检全部为零；
+- D1 中全部 Lease 均为 `stopped`，保存 Provider 引用的 Lease 为 0。
+
+发布过程和本地门禁结果见
+[2026-07-27 Preview 发布与 Hosted E2E](../status/2026-07-27-preview-release.md)。

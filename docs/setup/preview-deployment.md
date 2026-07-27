@@ -1,6 +1,8 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-26 已完成 D2/D3 与 Goose 私有 spike。2026-07-27 本地代码新增 `0006_integrity_guards.sql` 和统一质量门禁；远程 Preview 尚未应用本轮迁移或代码，下一次部署仍需单独授权。
+> 状态：2026-07-27 已按本文顺序完成架构加固代码、`0006_integrity_guards.sql` 和统一
+> 质量门禁的私有 Preview 发布，并通过 Hosted Preview E2E。本文继续作为后续发布与
+> 重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
 ## 1. Preview 边界
@@ -88,6 +90,9 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 `0006_integrity_guards.sql` 的 assistant Message trigger 要求关联 Run 已经是
 `succeeded`。旧 Worker 的完成顺序不满足这个约束，因此不能把 `0006` 先应用到仍
 可能由旧 Workflow 写入的数据库。必须使用以下顺序：
+
+本流程已于 2026-07-27 实际执行并通过；当前 Preview 已包含 `0006`。以下步骤保留为
+本次审计证据，也作为未来出现同类执行顺序或 trigger 变更时的发布模板。
 
 1. 在 `wrangler.jsonc` 中把 Preview 的 `RUNS_ENABLED` 改为 `"false"`，先部署当前
    新代码。当前代码兼容 `0005` schema，并会在任何 Message、Lease 或 Run 写入前拒绝

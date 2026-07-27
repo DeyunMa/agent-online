@@ -1,4 +1,4 @@
-import { expect, test, type Response as PlaywrightResponse } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 const email = process.env.PREVIEW_E2E_EMAIL as string;
 const password = process.env.PREVIEW_E2E_PASSWORD as string;
@@ -24,6 +24,8 @@ test.afterEach(async ({ page }) => {
     }
   } catch {
     // The provider timeout remains the cleanup bound when the product path itself is unavailable.
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   }
 });
 
@@ -32,18 +34,9 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   const projectName = `release-smoke-${suffix}`;
   const fileName = `release-smoke-${suffix}.txt`;
   const marker = `agent-online-release-${suffix}`;
-  const apiResponseAudits: Promise<void>[] = [];
   const apiResponseAuditErrors: unknown[] = [];
 
-  page.on("response", (response) => {
-    if (isJsonApiResponse(response)) {
-      apiResponseAudits.push(
-        assertNoPrivateProviderState(response).catch((error) => {
-          apiResponseAuditErrors.push(error);
-        }),
-      );
-    }
-  });
+  await installPrivateStateAudit(page, apiResponseAuditErrors);
 
   await page.goto("/");
   await page.getByLabel("Email").fill(email);
@@ -79,9 +72,10 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   await expect(totalTokens.locator("dd")).toHaveText(/^(?!0$|—$).+/);
   await expect(modelRequests.locator("dd")).toHaveText(/^[1-9]\d*$/);
 
+  const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
   await page.getByRole("tab", { name: "Files" }).click();
-  await page.getByRole("button", { name: fileName }).click();
-  await expect(page.locator(".project-file-content")).toHaveText(marker);
+  await projectInspector.locator(".project-file-row").filter({ hasText: fileName }).click();
+  await expect(projectInspector.locator(".project-file-content")).toHaveText(marker);
 
   const assistantMessagesBeforeCancel = await page.locator(".timeline-message-assistant").count();
   await page
@@ -112,23 +106,32 @@ test("runs the hosted Pi product path without exposing provider state", async ({
     },
   );
 
-  await Promise.all(apiResponseAudits);
+  await page.unrouteAll({ behavior: "wait" });
   if (apiResponseAuditErrors.length > 0) {
     throw apiResponseAuditErrors[0];
   }
 });
 
-function isJsonApiResponse(response: PlaywrightResponse) {
-  const url = new URL(response.url());
-  return (
-    url.pathname.startsWith("/api/") &&
-    response.headers()["content-type"]?.includes("application/json") === true
-  );
-}
+async function installPrivateStateAudit(page: Page, errors: unknown[]) {
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith("/events")) {
+      await route.continue();
+      return;
+    }
 
-async function assertNoPrivateProviderState(response: PlaywrightResponse) {
-  const body = await response.text();
-  expect(body, `${response.request().method()} ${response.url()}`).not.toMatch(
-    /provider(?:_|)(?:ref|processRef|sandboxRef)|trafficAccessToken|GEMINI_API_KEY|E2B_API_KEY|AIza[A-Za-z0-9_-]{20,}/i,
-  );
+    const response = await route.fetch();
+    const body = await response.body();
+    if (response.headers()["content-type"]?.includes("application/json")) {
+      try {
+        expect(body.toString("utf8"), `${request.method()} ${url.pathname}`).not.toMatch(
+          /provider(?:_|)(?:ref|processRef|sandboxRef)|trafficAccessToken|GEMINI_API_KEY|E2B_API_KEY|AIza[A-Za-z0-9_-]{20,}/i,
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    await route.fulfill({ body, response });
+  });
 }

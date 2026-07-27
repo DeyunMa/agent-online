@@ -27,3 +27,4 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [本地开发](./setup/local-development.md)
 - [Hosted Preview 端到端验收](./testing/hosted-preview-e2e.md)
 - [2026-07-27 架构与工程门禁加固](./status/2026-07-27-architecture-hardening.md)
+- [2026-07-27 Preview 发布与 Hosted E2E](./status/2026-07-27-preview-release.md)

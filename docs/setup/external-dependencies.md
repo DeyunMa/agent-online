@@ -24,7 +24,7 @@
 | 待办 | 用户需要提供或确认 | 项目侧动作 |
 | --- | --- | --- |
 | Cloudflare 身份 | 目标 Account 已确认，Wrangler OAuth 已连接。 | 已完成；本机其他 Account 环境变量需按资源台账显式排除。 |
-| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用至 `0005`；本轮新增的 `0006_integrity_guards.sql` 必须在下一次获批部署前单独应用。 |
+| 远程 D1 | `agent-online-preview-db`。 | 已创建并应用 `0001` 至 `0006`；九项发布预检和 Hosted Preview E2E 已通过。 |
 | Worker 地址 | `workers.dev`。 | 已设置同源 `BETTER_AUTH_URL`，未配置自定义域。 |
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
@@ -33,9 +33,10 @@
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
-顶层 production 资源仍未配置，`pnpm deploy` 会主动失败。下一次 Preview 发布必须先
-部署关闭 Run 的新代码并排空旧 Workflow，再运行九项只读 D1 预检和 `0006` 迁移；
-发布后 Hosted Preview E2E 需要受邀测试账号，但不新增第三方服务。
+顶层 production 资源仍未配置，`pnpm deploy` 会主动失败。本次 `0006` 发布已完成
+关闭 Run、排空、九项只读 D1 预检、迁移、锁定 smoke、重新打开 Run 和 Hosted
+Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用同一锁定流程；
+发布后 E2E 需要受邀测试账号，但不新增第三方服务。
 
 ## 3. 当前成本口径
 

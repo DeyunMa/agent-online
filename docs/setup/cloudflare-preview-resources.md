@@ -1,6 +1,8 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录 2026-07-26 已部署的私有 Cloudflare 环境。该环境的 D1 当前只应用至 `0005_preview_sessions.sql`；2026-07-27 本地架构加固和 `0006_integrity_guards.sql` 尚未部署。
+> 状态：本文记录截至 2026-07-27 的私有 Cloudflare 环境。架构加固代码和
+> `0006_integrity_guards.sql` 已按锁定、预检、迁移、解锁顺序部署，并通过 Hosted
+> Preview E2E。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -28,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `e1459f45-f065-495f-bd65-33b4027fc567` |
+| 当前部署版本 | `c722c868-a0f0-4bfd-b2f4-97654d026bce` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -54,14 +56,11 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0003_provider_process_ref.sql`
 - `0004_terminal_sessions.sql`
 - `0005_preview_sessions.sql`
-
-本地待下一次获批部署应用：
-
 - `0006_integrity_guards.sql`
 
-应用 `0006` 时必须先部署 `RUNS_ENABLED=false` 的当前新代码，等待旧 Run/Workflow 和
-Terminal/Preview 活动全部收敛，通过只读完整性预检后再迁移；不能让旧 Worker 在新
-trigger 下继续完成 Run。具体顺序见[私有 Preview 部署](./preview-deployment.md)。
+`0006` 已在 `RUNS_ENABLED=false` 的锁定版本下应用。迁移前九项只读完整性预检全部为
+零，迁移后先完成锁定 smoke，再恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
+[私有 Preview 部署](./preview-deployment.md)执行。
 
 D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage，以及当前 Terminal/Preview 的临时协调行。Terminal/Preview 停止后对应行删除；Changes 不新增表，不保存 Git status/diff/history。没有创建 R2、KV、Durable Object 或文件快照。
 
@@ -93,7 +92,7 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-07-26，本表记录的是当前已部署 Preview。第二版组合模板显式安装并探测
+截至 2026-07-27，本表记录的是当前已部署 Preview。第二版组合模板显式安装并探测
 Node、Pi、Goose、Git、Bash 与 coreutils；`GOOSE_RUNTIME_MODE=spike` 已上线，
 该模式允许受邀测试者显式调用 Goose，
 但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
@@ -162,6 +161,13 @@ Preview 已验证：
   token / 模型请求；最终 Lease 为 `stopped`、Provider 引用清空，
   TerminalSession/PreviewSession 均为 0。
 - 最终公开能力仍只有 Pi，未登录 Project API 为 `401`；D1 抽查未发现 Key/capability 名称，终态 Run/停止 Lease 的私有引用均已清空。
+- 架构加固发布先以版本 `7c3bf620-9ec1-44d1-9d4d-78e51866c815` 锁定新 Run，
+  迁移 `0006` 后恢复；最终可追溯版本为
+  `c722c868-a0f0-4bfd-b2f4-97654d026bce`。
+- Hosted Preview 自动 E2E 从真实登录开始，完成 Pi 写文件、最终 Message、usage、
+  Files 读取、第二 Run 取消、刷新后一致性、沙箱停止和全部 JSON API 响应脱敏检查。
+  完成后九项远程预检全部为零；11 条 Lease 全部为 `stopped`，保存 Provider 引用的
+  Lease 为 0。
 
 尚未验证：
 
