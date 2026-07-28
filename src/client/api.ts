@@ -16,6 +16,7 @@ import type {
   UserUsageResponse,
 } from "../shared/api";
 import { isPublicErrorCode, type PublicErrorCode } from "../shared/error-codes";
+import { agentRunStatuses } from "../shared/protocol";
 
 export class BrowserApiError extends Error {
   readonly code: PublicErrorCode | "network_error";
@@ -153,6 +154,8 @@ function messageForApiError(error: PublicErrorCode) {
       return "该文件路径不允许在线访问。";
     case "request.invalid":
       return "输入内容不符合要求，请检查后重试。";
+    case "request.too_large":
+      return "请求内容过大，请缩短输入后重试。";
     case "service.unavailable":
       return "依赖服务暂时不可用，请稍后重试。";
     case "internal.unexpected":
@@ -311,10 +314,6 @@ export function subscribeToAgentRun(projectId: string, runId: string, handlers: 
 
   source.onmessage = handleMessage;
 
-  for (const eventType of ["run.status", "agent.output", "agent.tool.started", "run.completed"]) {
-    source.addEventListener(eventType, handleMessage);
-  }
-
   source.onerror = () => {
     if (receivedCompletion || source.readyState === EventSource.CLOSED) {
       return;
@@ -337,9 +336,41 @@ function parseRunStreamEvent(value: unknown): AgentRunStreamEvent | null {
   }
 
   try {
-    const event = JSON.parse(value) as AgentRunStreamEvent;
-    return "type" in event ? event : null;
+    const event: unknown = JSON.parse(value);
+    if (!isRecord(event) || !Number.isSafeInteger(event.sequence)) {
+      return null;
+    }
+    if (
+      event.type === "run.status" &&
+      typeof event.status === "string" &&
+      agentRunStatuses.some((status) => status === event.status)
+    ) {
+      return event as AgentRunStreamEvent;
+    }
+    if (event.type === "run.completed" && isAgentRunUsage(event.usage)) {
+      return event as AgentRunStreamEvent;
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+function isAgentRunUsage(value: unknown) {
+  return (
+    isRecord(value) &&
+    isNonNegativeInteger(value.inputTokens) &&
+    isNonNegativeInteger(value.outputTokens) &&
+    isNonNegativeInteger(value.totalTokens) &&
+    isNonNegativeInteger(value.modelRequestCount) &&
+    isNonNegativeInteger(value.sandboxDurationMs)
+  );
+}
+
+function isNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

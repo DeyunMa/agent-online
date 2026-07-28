@@ -1,8 +1,8 @@
 # 执行关联、错误语义与架构优化路线
 
-> 文档状态：P0 已由 ADR-0008 接受并实现；P1/P2 仍是候选路线
+> 文档状态：P0 已由 ADR-0008 接受并实现；2026-07-28 已完成下列部分 P1，其他 P1/P2 仍是候选路线
 >
-> 校准日期：2026-07-27
+> 校准日期：2026-07-28
 >
 > 适用范围：当前单 Worker、D1、Cloudflare Workflows、E2B、Pi/Goose 架构
 >
@@ -440,6 +440,11 @@ src/server/observability/cloudflare-reporter.ts
 - Deferred：当前不值得增加复杂度。
 
 ### 5.1 候选矩阵
+
+2026-07-28 已实现：ModelGateway deadline、普通 mutation 同源保护与 body limit、主应用
+安全响应头、E2B adapter 内部按 capability 拆分、ModelGateway 协议模块内聚。矩阵保留
+原始审计证据用于追溯；Readiness、timeout/retry ownership 表、不变量告警和 source map
+仍是候选，不应从表中推断为已实现。
 
 | 优先级 | 候选 | 当前证据 | 推荐原因 | 预计成本 |
 | --- | --- | --- | --- | --- |

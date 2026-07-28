@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现基准
 >
-> 校准日期：2026-07-27
+> 校准日期：2026-07-28
 >
 > 适用范围：`main` 分支当前代码、Cloudflare Preview 部署和 E2B 组合模板
 
@@ -124,7 +124,11 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 导出入口，Project/Message、SandboxLease、AgentRun、Terminal、Preview 和 Usage
 adapter 分别位于独立模块，公共 snake_case 映射集中在 `d1-records.ts`；
 `run-execution-dispatcher.ts` 单独拥有 Workflow 创建、取消和 expiry/idle 调度，
-`services.ts` 只装配这些端口。客户端 `router.tsx` 只声明路由和 App shell，认证、
+`e2b-runtime-factory.ts` 只构造当前 E2B 配置与 adapter，避免 Files/Terminal/Preview
+请求间接初始化完整 RunExecution；`services.ts` 只装配这些端口。E2B adapter 的会话、
+Git Changes、Preview 和 SDK 类型分别位于内部模块，公开入口仍只有
+`E2BSandboxRuntime`。ModelGateway 的 HTTP 编排、协议转换和有界流读取也分离，
+上游模型 POST 使用 120 秒 deadline 且不自动重试。客户端 `router.tsx` 只声明路由和 App shell，认证、
 Project 列表和创建页面由各自组件承担。
 
 ## 5. 主要执行流
@@ -132,7 +136,7 @@ Project 列表和创建页面由各自组件承担。
 ### 5.1 创建 AgentRun
 
 1. 浏览器向 `POST /api/projects/:projectId/agent-runs` 提交用户消息。
-2. Hono 验证登录、Project 所有权、部署开关和 AgentRuntime policy。
+2. Hono 先执行普通产品 mutation 的同源和 256 KiB 请求体边界，再验证登录、Project 所有权、部署开关和 AgentRuntime policy。
 3. application 在 D1 中取得或创建 SandboxLease，并原子写入用户 Message 和 `queued` AgentRun。
 4. Cloudflare Workflow 成为真实执行所有者。
 5. Workflow 从 D1 回读输入，签发只绑定当前 Run/Project/Model/期限的 ModelGateway capability。
@@ -190,6 +194,8 @@ Provider reference、Key、capability、异常 message 或 stack。
   浏览器、D1 或普通结构化事件。
 - `src/server/observability/` 当前 adapter 只输出 Cloudflare Workers 可索引的结构化
   console 记录，不依赖 Sentry 或其他外部服务。
+- Hono API 使用统一安全响应头；静态 Assets 的 CSP、frame、referrer 和 MIME
+  防护由 `public/_headers` 声明，production build 会验证该文件进入 `dist`。
 - Workflow 重试和取消竞争可能产生重复事件；日志采用至少一次语义，业务终态与 usage
   始终以 D1 为准，不能把日志条数当计费或审计数据。
 - Cloudflare invocation trace 只能作为单次执行的辅助视图；跨 invocation 关联以
@@ -246,10 +252,10 @@ Provider reference、Key、capability、异常 message 或 stack。
 `pnpm check` 是本地和 CI 的统一验收入口，覆盖：
 
 - AST import boundary 和源码/构建产物凭据扫描；
-- Biome lint、格式检查和 TypeScript；
+- Biome lint、格式检查和严格 TypeScript（可选属性、数组索引、override、未使用代码等）；
 - Node 单元/API 测试；
 - Cloudflare Workers 运行时中的真实 D1 migrations、trigger 和 batch 测试；
-- production build；
+- production build、构建产物凭据扫描和静态 `_headers` 校验；
 - Chromium 中注册、创建 Project、fake Run 取消和刷新恢复 smoke。
 
 门禁同时覆盖 public error catalog 完整性、错误响应 request ID、一致的 Run failure

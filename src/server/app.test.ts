@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { app } from "./app";
 import type { AppBindings } from "./env";
+import { maximumProductRequestBytes } from "./http/product-request-guard";
 
 describe("Worker API", () => {
   it("returns a health response", async () => {
@@ -49,6 +50,47 @@ describe("Worker API", () => {
     });
     await expect(publicResponse.json()).resolves.toMatchObject({
       agentRuntimeIds: ["pi", "goose"],
+    });
+  });
+
+  it("adds baseline security headers to API responses", async () => {
+    const response = await app.request("https://agent-online.test/api/health");
+
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+  });
+
+  it("rejects cross-origin product mutations before authentication", async () => {
+    const response = await app.request("https://agent-online.test/api/projects", {
+      body: JSON.stringify({ title: "Cross-origin project" }),
+      headers: {
+        "content-type": "application/json",
+        origin: "https://attacker.example",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "request.forbidden", retryable: false },
+    });
+  });
+
+  it("rejects oversized product requests before authentication", async () => {
+    const response = await app.request("https://agent-online.test/api/projects", {
+      body: "x".repeat(maximumProductRequestBytes + 1),
+      headers: {
+        "content-type": "application/json",
+        origin: "https://agent-online.test",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "request.too_large", retryable: false },
     });
   });
 });

@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose 私有 spike、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-27 已补强协议分层和真实 D1/浏览器门禁。Goose 公开产品路径仍受门控。
+> 状态：E2B、Pi/Goose 私有 spike、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-28 已把 E2B 会话、Changes、Preview 和 SDK 类型拆成内部能力模块。Goose 公开产品路径仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -18,6 +18,12 @@
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
 Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和 Preview Workflow 真实 E2E，但在 ADR-0004 的剩余安全与浏览器验收通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
+
+当前 E2B 实现仍只公开一个 `E2BSandboxRuntime` adapter；内部按变更原因拆为
+`e2b-sessions.ts`、`e2b-changes.ts`、`e2b-preview.ts`、`e2b-types.ts` 和 shell helper。
+这只是内部内聚，不增加第二个 Provider 服务，也不让 application 依赖 E2B 细节。
+Worker 使用独立 `e2b-runtime-factory.ts` 构造 adapter，Files/Terminal/Preview 不再
+为了取得 runtime 而初始化完整 RunExecution。
 
 ## 2. 当前代码合同
 
@@ -232,6 +238,7 @@ idle cleanup。
 - 工作目录 `/workspace`、固定端口 `3000`、固定本地 Vite 二进制；
 - 不执行 Project script、不加载 Project Vite config、不通过 `npx` 下载；
 - E2B public traffic 关闭，Provider traffic token 只在 Worker adapter 内使用；
+- 单次 Preview 内容代理到 E2B 的 fetch 有 15 秒 deadline；
 - config 文件 RPC 瞬时失败时先重连重试，最后只允许平台固定内容和固定 `/tmp`
   路径的受控写入 fallback，不能传入用户命令或 Key。
 

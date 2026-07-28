@@ -382,6 +382,9 @@ class SequenceClock implements Clock {
   now() {
     const timestamp = this.timestamps[Math.min(this.index, this.timestamps.length - 1)];
     this.index += 1;
+    if (!timestamp) {
+      throw new Error("SequenceClock requires at least one timestamp");
+    }
     return new Date(timestamp);
   }
 }

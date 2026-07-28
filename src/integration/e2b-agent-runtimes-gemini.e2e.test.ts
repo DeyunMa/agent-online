@@ -450,7 +450,7 @@ async function toFetchRequest(request: IncomingMessage) {
   }
 
   return new Request(`http://127.0.0.1${request.url ?? "/"}`, {
-    body: body.length > 0 ? (body as unknown as BodyInit) : undefined,
+    ...(body.length > 0 ? { body: body as unknown as BodyInit } : {}),
     headers,
     method: request.method ?? "GET",
   });

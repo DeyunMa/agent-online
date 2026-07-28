@@ -152,13 +152,11 @@ export function ConversationTimeline({
   isPending,
   messages,
   onRetry,
-  streamOutput,
 }: {
   error: Error | null;
   isPending: boolean;
   messages: MessageResponse[] | undefined;
   onRetry: () => void;
-  streamOutput: string;
 }) {
   if (isPending) {
     return <LoadingState label="Loading conversation" />;
@@ -170,7 +168,7 @@ export function ConversationTimeline({
 
   const visibleMessages = messages ?? [];
 
-  if (visibleMessages.length === 0 && !streamOutput) {
+  if (visibleMessages.length === 0) {
     return (
       <div className="conversation-empty">
         <TerminalSquare aria-hidden="true" size={24} strokeWidth={1.5} />
@@ -195,20 +193,6 @@ export function ConversationTimeline({
           </article>
         </li>
       ))}
-      {streamOutput ? (
-        <li className="timeline-message timeline-message-assistant" aria-live="polite">
-          <span className="timeline-avatar" aria-hidden="true">
-            <TerminalSquare size={17} />
-          </span>
-          <article>
-            <header>
-              <strong>Agent</strong>
-              <span className="timeline-streaming">Running</span>
-            </header>
-            <p>{streamOutput}</p>
-          </article>
-        </li>
-      ) : null}
     </ol>
   );
 }

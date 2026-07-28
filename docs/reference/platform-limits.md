@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现限制基准
 >
-> 校准日期：2026-07-27
+> 校准日期：2026-07-28
 >
 > 目标：说明每一类限制约束什么对象、当前值、由哪一层执行，以及达到限制后的行为
 
@@ -55,6 +55,7 @@ Run 与 Terminal 的互斥同时存在于应用层和 D1。Files/Changes 的活�
 | 注册/登录访问模式 | `open` 或 `allowlist` | `ACCESS_MODE` |
 | allowlist | 逗号分隔、trim、转小写；至少一个邮箱 | `ACCESS_ALLOWED_EMAILS` |
 | 受信任来源 | `BETTER_AUTH_URL` 单一 origin | Better Auth `trustedOrigins` |
+| 普通产品 mutation | 必须有精确同源 `Origin`，或浏览器提供 `Sec-Fetch-Site: same-origin` | Hono 外层 guard；Better Auth 与 ModelGateway 使用各自协议 |
 | Run 总开关 | 默认开启；可完全禁止新 Run | `RUNS_ENABLED` |
 | 签名 secret | capability codec 要求至少 32 个字符 | `BETTER_AUTH_SECRET` |
 | 第三方登录 | 未启用 | 当前无 Google/GitHub OAuth 配置 |
@@ -69,6 +70,7 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | --- | --- | --- |
 | Project 标题 | trim 后 1 至 120 个 JavaScript string 单元 | Hono/Zod |
 | AgentRun 用户输入 | trim 后 1 至 64,000 个 JavaScript string 单元 | Hono/Zod |
+| 普通产品请求体 | 最多 256 KiB | Hono body limit；超限返回 `413 request.too_large` |
 | Project 列表 | 无分页、无应用级条数上限 | D1 查询 |
 | Message 列表 | 无分页，返回 Project 全部可见消息 | D1 查询 |
 | AgentRun 列表 | 只返回最新 50 条 | D1 `LIMIT 50` |
@@ -77,7 +79,10 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 
 当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 无分页适合个人阶段，但数据变大后会增加响应和 D1 扫描成本。
 
-普通产品 JSON API 还没有统一的全局请求体字节中间件，主要依靠字段上限和 Cloudflare 平台请求限制。内部 ModelGateway 已单独设置 4 MiB 实际读取上限；公开注册前仍需重新评估普通 API 的 body/rate limit。
+普通产品 mutation 在鉴权和业务 JSON 解析前统一执行同源检查与 256 KiB body limit。
+Better Auth 和内部 ModelGateway 不经过该 guard，分别使用自身来源/协议校验与
+ModelGateway 的 4 MiB 实际读取上限。公开注册前仍需增加独立的 rate limit/abuse
+策略；请求体上限不能替代滥用防护。
 
 ## 4. AgentRun、Workflow 和沙箱时间
 
@@ -111,6 +116,7 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | capability token 长度 | 最长 4,096 字符 | 超限视为无效。 |
 | future clock skew | 最多 30 秒 | capability 校验。 |
 | ModelGateway 请求体 | 最多 4 MiB | 先检查 `Content-Length`，并对实际 stream 字节数再次设限。 |
+| ModelGateway 上游请求 | 120 秒 | deadline 到期返回通用 `504 model_timeout`；非幂等 POST 不自动重试。 |
 | ModelGateway 成功响应 | 最多缓冲 8 MiB | 超限或非法 UTF-8 返回通用 `502`。 |
 | ModelGateway 错误诊断 | 最多读取 64 KiB | 只记录固定诊断码、分类和上游 HTTP 状态；不记录正文或协议摘要。 |
 
@@ -204,6 +210,7 @@ Terminal 是受控但真实的 shell。登录用户可以通过它修改 `/works
 | preset | 固定 `vite-v1` | 不能传任意命令或脚本。 |
 | 端口 | 固定 `3000`，D1 CHECK | 其他端口拒绝。 |
 | 启动等待 | 最多 20 秒；每 500 ms 探测，单次探测 2 秒 | `503 preview.unavailable`。 |
+| 内容代理上游请求 | 每次最多 15 秒 | Provider fetch 超时并映射为 Preview 通用错误。 |
 | 会话时长 | 最长 30 分钟 | Workflow 终止进程并删临时行。 |
 | 进程 timeout | 会话时长 + 15 秒 | Provider 最终终止。 |
 | capability 生命周期 | 最长 30 分钟 | 过期后内容路由返回 `404`。 |
@@ -230,6 +237,7 @@ Preview 不提供任意端口代理、后端服务、WebSocket/HMR、环境变�
 | 网络 | 生产 ModelGateway 必须 HTTPS；只允许 localhost/127.0.0.1 使用 HTTP。 |
 | Gemini Key | 只在 Worker 到 Gemini 的请求中使用。 |
 | Provider 错误 | 对外统一为通用 gateway error，日志只记录分类和状态。 |
+| 上游 deadline | 单次 120 秒；不自动重试模型 POST。 |
 | usage | 上游必须提供；先写 D1，再把结果返回 Agent。 |
 | 缓存 | 所有 gateway 响应 `no-store`。 |
 

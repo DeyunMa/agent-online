@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-27 已补强 D1 原子完成、ModelGateway 资源上限、服务端路由分层和统一质量门禁。Goose UI 仍关闭。
+> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-28 已补强 HTTP 边界、上游 deadline、运行时模块内聚和严格类型门禁。Goose UI 仍关闭。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -53,7 +53,7 @@ React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供�
 
 ### Worker 控制平面
 
-Hono 负责鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、Preview 签名与内容网关、Changes 输入与响应边界、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
+Hono 负责普通产品 mutation 的同源与请求体边界、鉴权、Project 授权、创建和取消 AgentRun、D1 持久化、Run/Terminal 互斥、沙箱启停编排、PTY WebSocket 中继、Preview 签名与内容网关、Changes 输入与响应边界、事件脱敏、ModelGateway 和基础用量汇总。Worker 只协调活动，不执行 Agent、用户 shell、构建或依赖安装。
 
 Worker 能拿到对话和用量，是因为它明确拥有请求和事件协议：用户输入先写入 D1，再交给沙箱中的 Agent；Agent 的公开事件和最终回复回到 Worker；模型请求必须经过 Worker 的 ModelGateway。平台不会依赖“抓取沙箱”或读取私有推理。
 

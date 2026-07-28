@@ -31,12 +31,14 @@ export const piRuntime: AgentRuntime = {
       args: createPiArguments(input),
       command: "pi",
       cwd: input.workingDirectory,
-      env: input.modelAccess
+      ...(input.modelAccess
         ? {
-            AGENT_ONLINE_GATEWAY_TOKEN: input.modelAccess.bearerToken,
-            PI_CODING_AGENT_DIR: piConfigDirectory,
+            env: {
+              AGENT_ONLINE_GATEWAY_TOKEN: input.modelAccess.bearerToken,
+              PI_CODING_AGENT_DIR: piConfigDirectory,
+            },
           }
-        : undefined,
+        : {}),
     });
 
     await session.write(

@@ -32,3 +32,4 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [2026-07-27 错误语义与结构化日志](./status/2026-07-27-errors-and-observability.md)
 - [2026-07-27 架构与工程门禁加固](./status/2026-07-27-architecture-hardening.md)
 - [2026-07-27 Preview 发布与 Hosted E2E](./status/2026-07-27-preview-release.md)
+- [2026-07-28 交付加固](./status/2026-07-28-delivery-hardening.md)

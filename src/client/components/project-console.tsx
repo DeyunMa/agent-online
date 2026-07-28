@@ -36,7 +36,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [streamOutput, setStreamOutput] = useState("");
   const [streamError, setStreamError] = useState<BrowserApiError | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
@@ -81,7 +80,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     mutationFn: (content: string) => browserApi.createAgentRun(projectId, { content }),
     onSuccess: async (run) => {
       setActiveRunId(run.id);
-      setStreamOutput("");
       setStreamError(null);
       setView("conversation");
       queryClient.setQueryData(agentRunQueryKey(projectId, run.id), run);
@@ -132,7 +130,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets console-local state.
   useEffect(() => {
     setActiveRunId(null);
-    setStreamOutput("");
     setStreamError(null);
     setPreviewActive(false);
     setPreviewStarting(false);
@@ -219,11 +216,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     return subscribeToAgentRun(projectId, currentRunId, {
       onError: setStreamError,
       onEvent: (event) => {
-        if (event.type === "agent.output") {
-          setStreamOutput((output) => `${output}${event.chunk}`);
-          return;
-        }
-
         if (event.type === "run.status") {
           queryClient.setQueryData<AgentRunResponse>(
             agentRunQueryKey(projectId, currentRunId),
@@ -241,7 +233,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             agentRunQueryKey(projectId, currentRunId),
             (run) => (run ? { ...run, usage: event.usage } : run),
           );
-          setStreamOutput("");
           setStreamError(null);
           void queryClient.invalidateQueries({
             queryKey: agentRunQueryKey(projectId, currentRunId),
@@ -340,7 +331,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                   isPending={messages.isPending}
                   messages={messages.data}
                   onRetry={() => void messages.refetch()}
-                  streamOutput={streamOutput}
                 />
                 <RunHistory
                   error={recentRuns.error}
@@ -349,7 +339,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                   onRetry={() => void recentRuns.refetch()}
                   onSelect={(runId) => {
                     setActiveRunId(runId);
-                    setStreamOutput("");
                     setStreamError(null);
                   }}
                   runs={recentRuns.data}

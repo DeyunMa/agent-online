@@ -29,7 +29,7 @@ export function createInlineFakeDispatcher(
     agentRunRepository: agentRuns,
     clock: { now: () => new Date() },
     createId: () => crypto.randomUUID(),
-    diagnostics,
+    ...(diagnostics ? { diagnostics } : {}),
     getAgentRuntime,
     getSandboxRuntime(id) {
       if (runtime.kind !== id) {
@@ -48,7 +48,7 @@ export function createInlineFakeDispatcher(
 
       const targetStatus = run.status === "queued" ? "cancelled" : "cancelling";
       const updatedRun = await agentRuns.transition({
-        finishedAt: targetStatus === "cancelled" ? now.toISOString() : undefined,
+        ...(targetStatus === "cancelled" ? { finishedAt: now.toISOString() } : {}),
         from: run.status,
         runId: run.id,
         to: targetStatus,

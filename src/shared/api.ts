@@ -152,8 +152,6 @@ export type ProjectFileResponse = {
 
 export type AgentRunStreamEvent =
   | { sequence: number; status: AgentRunStatus; type: "run.status" }
-  | { chunk: string; sequence: number; type: "agent.output" }
-  | { sequence: number; tool: string; type: "agent.tool.started" }
   | { sequence: number; type: "run.completed"; usage: AgentRunUsageResponse };
 
 export type ApiErrorResponse = {

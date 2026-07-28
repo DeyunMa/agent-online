@@ -21,6 +21,7 @@ export const publicErrorDefinitions = {
   "project_path.unsupported": { retryable: false, status: 400 },
   "request.forbidden": { retryable: false, status: 403 },
   "request.invalid": { retryable: false, status: 400 },
+  "request.too_large": { retryable: false, status: 413 },
   "resource.not_found": { retryable: false, status: 404 },
   "run.creation_disabled": { retryable: false, status: 503 },
   "sandbox.not_active": { retryable: false, status: 409 },

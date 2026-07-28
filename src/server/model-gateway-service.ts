@@ -19,7 +19,7 @@ export type RunAuthorizedModelGatewayOptions = {
 
 export function createRunAuthorizedModelGateway(options: RunAuthorizedModelGatewayOptions) {
   const capabilityCodec = createRunCapabilityCodec({
-    now: options.now,
+    ...(options.now ? { now: options.now } : {}),
     secret: options.capabilitySecret,
   });
 
@@ -53,8 +53,8 @@ export function createRunAuthorizedModelGateway(options: RunAuthorizedModelGatew
       };
     },
     endpointPath: modelGatewayEndpointPath,
-    diagnostics: options.diagnostics,
-    fetchImplementation: options.fetchImplementation,
+    ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),
+    ...(options.fetchImplementation ? { fetchImplementation: options.fetchImplementation } : {}),
     geminiApiKey: options.geminiApiKey,
     onUsage: async (usage, capability) => {
       const updatedRun = await options.agentRuns.addUsageDelta(

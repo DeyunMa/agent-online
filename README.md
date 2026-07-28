@@ -1,6 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes 和 D4 Goose 私有 spike 均已完成既定验收。2026-07-27 完成正确性与工程门禁加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes 和 D4 Goose 私有 spike 均已完成既定验收。2026-07-28 完成交付加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -22,8 +22,9 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
 - 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。无外部依赖的结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup，且不记录用户内容或 Provider 私有值。
+- 普通产品 mutation 在进入鉴权和 JSON 解析前统一要求同源，并限制请求体为 256 KiB；API 与静态资源分别设置安全响应头，构建门禁会校验 `_headers` 未丢失。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
-- Pi 通过短时 Run capability 调用 Worker ModelGateway。Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
+- Pi 通过短时 Run capability 调用 Worker ModelGateway。单次上游模型请求有 120 秒 deadline 且不自动重放非幂等 POST；Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消优先只终止当前 Agent 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
@@ -32,7 +33,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Project Inspector 已启用受控 Terminal：登录用户通过同源 Worker WebSocket 使用当前 E2B `/workspace` PTY；D1 只保存当前硬互斥和私有 sandbox/PTY reference，不保存滚屏。Terminal 与 AgentRun 互斥，30 分钟 expiry 与关闭后的 10 分钟 idle 回收都由 Workflow 持久调度。
 - Project Inspector 已启用受控 Preview：只在现有 E2B Lease 中运行平台固定的 Vite 进程和端口，通过同源、短时签名的 GET/HEAD 网关加载 HTML/JS/CSS。浏览器不能提交命令、端口、环境变量或 Provider URL；Preview 最长 30 分钟，停止即删除临时 D1 行，不保存页面、日志、截图或访问历史。
 - Project Inspector 已启用只读 Changes：仅在现有 E2B Lease 中读取 `/workspace` 当前 Git working tree/index，使用固定 Git 命令、清空进程环境、拒绝危险或额外的 repository config scope，并分别展示 staged/unstaged 的有界 diff。不能安全公开的路径会明确标记为隐藏，不会误报 working tree clean。它不保存历史，也不能把变更归因到某一次 Run。
-- `pnpm check` 统一执行依赖方向、源码凭据扫描、Biome lint/format、类型检查、Node 单元测试、Cloudflare Workers 真实 D1 迁移/触发器测试、production build/产物凭据扫描和 Playwright 浏览器 smoke。GitHub Actions 在 `main` 和 Pull Request 上执行同一门禁；真实 E2B/Gemini E2E 保持显式 opt-in，避免每次提交产生沙箱成本。
+- `pnpm check` 统一执行依赖方向、源码凭据扫描、Biome lint/format、严格 TypeScript、Node 单元测试、Cloudflare Workers 真实 D1 迁移/触发器测试、production build/产物凭据与静态安全头校验，以及 Playwright 浏览器 smoke。GitHub Actions 在 `main` 和 Pull Request 上执行同一门禁；真实 E2B/Gemini E2E 保持显式 opt-in，避免每次提交产生沙箱成本。
 - 顶层 production 资源尚未配置，通用 `pnpm deploy` 会被配置 guard 拒绝；当前远程
   目标只有带显式 Cloudflare Account guard 的私有 Preview。`0006` 与 `0007` 均已按
   锁定、九项只读 D1 完整性预检、迁移和解锁顺序发布；同一流程保留为后续 trigger
@@ -41,7 +42,11 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
-D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。本轮不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，对应的远程发布结果见 [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
+2026-07-28 的交付加固版本 `9e720ed3-b4a1-4d2a-b382-4dcf48489854` 已部署到私有
+Cloudflare Preview，并通过基线与全能力 Hosted E2E；测试完成后九项远程协调预检
+全部为零。当前试用入口仍为 allowlist 私有环境，不代表已经开放公共注册。
+
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，本轮交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，对应的最近远程发布结果仍见 [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 
@@ -99,6 +104,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md) | Run/D1 原子性、模块边界、资源上限、凭据扫描和统一自动化门禁。 |
 | [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md) | 锁定迁移、部署版本、完整产品 E2E 和最终远程清理证据。 |
 | [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、Preview 发布与验收结果。 |
+| [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md) | HTTP 边界、上游 deadline、运行时模块拆分、严格类型和最终本地门禁。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

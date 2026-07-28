@@ -7,7 +7,7 @@ import type { AgentRunWorkflowPayload, AppBindings } from "./env";
 import { createProjectPreviewService, createProjectTerminalService } from "./services";
 
 export class AgentRunWorkflow extends WorkflowEntrypoint<AppBindings, AgentRunWorkflowPayload> {
-  async run(event: Readonly<WorkflowEvent<AgentRunWorkflowPayload>>, step: WorkflowStep) {
+  override async run(event: Readonly<WorkflowEvent<AgentRunWorkflowPayload>>, step: WorkflowStep) {
     const payload = validatePayload(event.payload);
     const { config, service } = createE2BRunExecution(this.env, diagnosticContext(payload));
 

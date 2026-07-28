@@ -1,6 +1,6 @@
 # 本地开发基线
 
-> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-27 已加入真实 D1、Biome、凭据扫描和 Playwright 核心 smoke 门禁。Goose 仍受公开门控。
+> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-28 已加入 HTTP/上游 deadline、严格 TypeScript 和静态安全头门禁。Goose 仍受公开门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -13,6 +13,7 @@ Agent Online 只有一个可部署产品：React SPA 静态资源和 Hono API �
 src/client/     React、TanStack Router/Query、界面
 src/server/     Hono、Better Auth、HTTP 边界、配置与服务装配
   persistence/  按 Project/Lease/Run/Terminal/Preview/Usage 拆分的 D1 adapter
+src/observability/ Provider 无关的诊断合同
 src/domain/     Project、SandboxLease、AgentRun 的纯业务规则
 src/application/ Project 与 AgentRun 用例、ports、RunCoordinator
 src/runtime/    SandboxRuntime 合同与 fake/E2B/Container Adapter
@@ -47,9 +48,9 @@ worker/         Cloudflare Worker 入口
 4. 启动：`pnpm dev`，Vite/Workers 本地地址为 `http://localhost:5173`。
 5. 默认 `RUNTIME_PROVIDER` 为空时使用 fake；真实链路设置 `RUNTIME_PROVIDER=e2b`、`E2B_API_KEY`、`E2B_TEMPLATE_ID`，并为本地 E2B 提供可访问的 `MODEL_GATEWAY_BASE_URL`。
 6. 首次运行浏览器门禁前安装 Chromium：`pnpm exec playwright install chromium`。
-7. 验证：`pnpm check`。该命令依次执行 import boundary、源码凭据扫描、Biome lint/format、typecheck、Node 测试、真实 Workers/D1 迁移测试、production build/产物扫描，以及独立本地 D1 上的浏览器核心 smoke；GitHub Actions 使用同一门禁。真实 Preview 还要求当前 E2B `/workspace` 已有项目本地 `./node_modules/.bin/vite`；平台不会通过 `npx` 下载或执行 Project 自定义 script。
+7. 验证：`pnpm check`。该命令依次执行 import boundary、源码凭据扫描、Biome lint/format、严格 typecheck、Node 测试、真实 Workers/D1 迁移测试、production build/产物凭据与 `_headers` 校验，以及独立本地 D1 上的浏览器核心 smoke；GitHub Actions 使用同一门禁。真实 Preview 还要求当前 E2B `/workspace` 已有项目本地 `./node_modules/.bin/vite`；平台不会通过 `npx` 下载或执行 Project 自定义 script。
 
-`pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*`、`.env*` 或可识别的凭据内容。`validate:source-secrets` 同时扫描 Git tracked 和未忽略的工作树文件，但不打印匹配值。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。
+`pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*`、`.env*` 或可识别的凭据内容，同时要求 `public/_headers` 被复制到产物并包含 CSP、referrer、MIME 与 frame 防护。`validate:source-secrets` 同时扫描 Git tracked 和未忽略的工作树文件，但不打印匹配值。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。
 
 Playwright 使用 `tests/browser/wrangler.jsonc` 和 `.wrangler/browser-smoke`，启动前会重建这份独立本地 D1，并在进程内随机生成测试 Better Auth Secret。它不读取产品 D1、不调用 E2B/Gemini，也不修改远程资源。
 

@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-27 已补充 D1 跨表 trigger、原子成功完成和真实迁移测试。当前没有维护者角色或管理视图。
+> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-28 已补充 ModelGateway 120 秒上游 deadline。当前没有维护者角色或管理视图。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -87,6 +87,7 @@ END;
 
 - `GEMINI_API_KEY` 只存在 Worker Secret 或本地 `.dev.vars`，不写入 AgentRuntime 配置、浏览器响应、D1 或沙箱环境。
 - Worker 的 `ModelGateway` 代表当前用户调用 Gemini，并从实际 API 响应提取 token 与请求数，累加到对应 `agent_runs` 行。
+- 单次 Gemini POST 最长 120 秒，deadline 到期使用固定诊断码并返回通用错误；网关不自动重试非幂等模型请求。
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 

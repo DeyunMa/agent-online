@@ -12,7 +12,10 @@ describe("OpenAI-compatible ModelGateway", () => {
   it("keeps the Gemini key on the gateway and proxies Pi tools with actual streaming usage", async () => {
     const recordedUsage: ModelGatewayUsage[] = [];
     let fetchCallCount = 0;
-    const capturedRequests: Array<{ init?: RequestInit; input: RequestInfo | URL }> = [];
+    const capturedRequests: Array<{
+      init: RequestInit | undefined;
+      input: RequestInfo | URL;
+    }> = [];
     const fetchImplementation: typeof fetch = async (input, init) => {
       fetchCallCount += 1;
       capturedRequests.push({ init, input });
@@ -391,6 +394,112 @@ describe("OpenAI-compatible ModelGateway", () => {
     );
 
     expect(response.status).toBe(502);
+  });
+
+  it("bounds an upstream model request with an explicit deadline", async () => {
+    const report = vi.fn();
+    const gateway = createOpenAiCompatibleModelGateway({
+      async authorize() {
+        return {
+          maxOutputTokens: 128,
+          modelId,
+          projectId: "project-1",
+          runId: "run-1",
+        };
+      },
+      diagnostics: { report },
+      fetchImplementation: async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("Expected the gateway to provide an abort signal."));
+            return;
+          }
+          if (signal.aborted) {
+            reject(new Error("aborted"));
+            return;
+          }
+          signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        }),
+      geminiApiKey: "test-gemini-key",
+      upstreamTimeoutMs: 20,
+    });
+
+    const response = await gateway(
+      new Request("https://gateway.test/v1/chat/completions", {
+        body: JSON.stringify({
+          messages: [{ content: "Hello", role: "user" }],
+          model: modelId,
+          stream: true,
+        }),
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(504);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "model_timeout" },
+    });
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "MODEL_UPSTREAM_TIMEOUT",
+        event: "model_gateway.request_failed",
+        runId: "run-1",
+        stage: "upstream_fetch",
+      }),
+    );
+  });
+
+  it("keeps the deadline active while buffering an upstream response", async () => {
+    const report = vi.fn();
+    const gateway = createOpenAiCompatibleModelGateway({
+      async authorize() {
+        return {
+          maxOutputTokens: 128,
+          modelId,
+          projectId: "project-1",
+          runId: "run-1",
+        };
+      },
+      diagnostics: { report },
+      fetchImplementation: async (_input, init) => {
+        const signal = init?.signal;
+        if (!signal) {
+          throw new Error("Expected the gateway to provide an abort signal.");
+        }
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              signal.addEventListener("abort", () => controller.error(new Error("aborted")), {
+                once: true,
+              });
+            },
+          }),
+        );
+      },
+      geminiApiKey: "test-gemini-key",
+      upstreamTimeoutMs: 20,
+    });
+
+    const response = await gateway(
+      new Request("https://gateway.test/v1/chat/completions", {
+        body: JSON.stringify({
+          messages: [{ content: "Hello", role: "user" }],
+          model: modelId,
+          stream: true,
+        }),
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(504);
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorCode: "MODEL_UPSTREAM_TIMEOUT",
+        runId: "run-1",
+        stage: "upstream_response",
+      }),
+    );
   });
 
   it("bounds upstream error diagnostics without logging response content", async () => {

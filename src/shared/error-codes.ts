@@ -2,6 +2,7 @@ export const publicErrorCodes = [
   "auth.unauthorized",
   "request.forbidden",
   "request.invalid",
+  "request.too_large",
   "resource.not_found",
   "project.busy",
   "run.creation_disabled",

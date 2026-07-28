@@ -2,7 +2,7 @@
 
 > 文档状态：当前公开接口基准
 >
-> 校准日期：2026-07-27
+> 校准日期：2026-07-28
 >
 > 权威来源：`src/server/` 路由和 `src/shared/` 公开 DTO
 
@@ -17,6 +17,9 @@
 - Terminal WebSocket、Preview start/stop 额外要求 `Origin` 与请求 URL 同源。
 - Preview 内容使用短时签名 capability URL，不向上游暴露 Provider host/port/token。
 - ModelGateway 使用只绑定一个 Run、Project、Model 和期限的 Bearer capability，不接受浏览器会话替代。
+- 普通产品 mutation 必须携带精确同源 `Origin`，或由浏览器提供
+  `Sec-Fetch-Site: same-origin`；在鉴权和 JSON 解析前统一限制请求体为 256 KiB。
+  Better Auth 与 ModelGateway 使用各自协议，不经过该产品 guard。
 
 ### 1.2 请求追踪
 
@@ -47,6 +50,7 @@ type ApiErrorResponse = {
 | --- | --- | --- | --- |
 | `auth.unauthorized` | `401` | false | 没有有效登录会话。 |
 | `request.forbidden` | `403` | false | 同源或权限检查失败。 |
+| `request.too_large` | `413` | false | 普通产品请求体超过 256 KiB。 |
 | `request.invalid` | `400` | false | JSON 或字段不合法。 |
 | `resource.not_found` | `404` | false | 路由或所有权过滤后的资源不存在。 |
 | `project.busy` | `409` | true | 当前 Run、Terminal 或 Preview 启动占用 Project。 |
@@ -65,6 +69,13 @@ type ApiErrorResponse = {
 `retryable=true` 只允许 UI 提示用户人工重试，不能自动重放非幂等 POST。普通产品 API
 只能通过 `src/server/http/api-errors.ts` 输出该结构。Better Auth、Terminal WebSocket、
 Preview 内容代理和 ModelGateway 保留各自已有的协议 envelope。
+
+### 1.4 响应安全头
+
+- 所有 `/api/*` 响应由 Hono 添加 MIME、frame、referrer、opener 等基线安全头；
+  Preview 内容路由仍可按其 opaque iframe 边界覆盖更严格的 CSP/CORP。
+- React/静态 Assets 由 `public/_headers` 声明 CSP、`frame-ancestors`、referrer 和
+  MIME 防护；production build 会验证 `_headers` 已进入 `dist`。
 
 ## 2. 公开 DTO
 
@@ -231,8 +242,6 @@ type AgentRunStreamEvent =
 - 进入终态后发送一次 `run.completed` 并结束流。
 - 客户端断开时停止后续 D1 轮询；SSE 不是后台执行所有者。
 - 最终 assistant 回复不通过 SSE 发送，浏览器随后刷新 Message API。
-
-共享类型为未来的 `agent.output` 和 `agent.tool.started` 保留了结构，但当前服务器不发这两类事件；客户端不能依赖它们。
 
 SSE 不是可重放事件日志：没有持久 event ID，也不保存 raw Agent 输出。
 
@@ -408,6 +417,7 @@ type ProjectPreviewResponse = {
 - 只转发白名单请求头和响应头。
 - 不跟随上游重定向；只改写安全的相对 Location。
 - 对 HTML 注入同源 base path，移除 Vite HMR client，设置 CSP、`no-store`、`nosniff` 和 `no-referrer`。
+- Worker 到固定 Preview 上游的单次 fetch 最长 15 秒。
 - token 只绑定 `projectId + previewSessionId + expiresAt`。
 
 ## 11. 内部 ModelGateway
@@ -424,6 +434,8 @@ Content-Type: application/json
 - 请求模型必须与 AgentRun 的 `model_id` 一致。
 - 请求体最多 4 MiB；即使缺少或伪造 `Content-Length`，Worker 也按实际读取字节数中止。
 - Worker 强制输出 token 上限，把平台 Gemini Key 注入上游请求。
+- Worker 到 Gemini 的单次上游 POST 最长 120 秒；deadline 到期返回通用
+  `504 model_timeout`，且不会自动重放非幂等模型请求。
 - 成功上游响应最多缓冲 8 MiB，错误诊断最多读取 64 KiB；超限或非 UTF-8 响应统一拒绝。
 - 上游成功响应必须包含 usage；usage 写入 D1 失败时不把未计量结果返回 Agent。
 - 响应使用 `cache-control: no-store`。

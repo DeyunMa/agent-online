@@ -18,7 +18,7 @@ import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
-import { createE2BRunExecution } from "./e2b-run-execution";
+import { createE2BSandboxRuntime } from "./e2b-runtime-factory";
 import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import type { AppBindings } from "./env";
 import {
@@ -92,7 +92,7 @@ export function createServerServices(
       return requireRuntime(fakeRuntime, id);
     }
 
-    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
+    e2bRuntime ??= createE2BSandboxRuntime(env).runtime;
     return requireRuntime(e2bRuntime, id);
   };
   const getTerminalRuntime = (id: RuntimeKind) => {
@@ -100,7 +100,7 @@ export function createServerServices(
       return null;
     }
 
-    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
+    e2bRuntime ??= createE2BSandboxRuntime(env).runtime;
     return e2bRuntime;
   };
   const getChangesRuntime = (id: RuntimeKind) => {
@@ -108,7 +108,7 @@ export function createServerServices(
       return null;
     }
 
-    e2bRuntime ??= createE2BRunExecution(env, diagnosticContext).runtime;
+    e2bRuntime ??= createE2BSandboxRuntime(env).runtime;
     return e2bRuntime;
   };
   const runExecutions =
@@ -215,7 +215,7 @@ export function createProjectPreviewService(env: AppBindings) {
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
   const previewSessions = new D1PreviewSessionRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
-  const runtime = sandboxRuntimeId === "e2b" ? createE2BRunExecution(env).runtime : null;
+  const runtime = sandboxRuntimeId === "e2b" ? createE2BSandboxRuntime(env).runtime : null;
 
   return new ProjectPreviewService({
     agentRuns: new D1AgentRunRepository(env.DB),
@@ -241,7 +241,7 @@ export function createProjectTerminalService(env: AppBindings) {
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
   const terminalSessions = new D1TerminalSessionRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
-  const runtime = sandboxRuntimeId === "e2b" ? createE2BRunExecution(env).runtime : null;
+  const runtime = sandboxRuntimeId === "e2b" ? createE2BSandboxRuntime(env).runtime : null;
 
   return new ProjectTerminalService({
     agentRuns: new D1AgentRunRepository(env.DB),

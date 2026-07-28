@@ -204,6 +204,7 @@ describe("E2BSandboxRuntime", () => {
       expect(new Headers(proxyCall?.[1]?.headers).get("e2b-traffic-access-token")).toBe(
         "traffic-token",
       );
+      expect(proxyCall?.[1]?.signal).toBeInstanceOf(AbortSignal);
     } finally {
       vi.unstubAllGlobals();
     }

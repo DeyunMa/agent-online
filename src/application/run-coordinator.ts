@@ -138,7 +138,7 @@ class ManagedRun implements CoordinatedAgentRun {
         },
         {
           agentRunId: this.currentRun.id,
-          modelAccess: this.input.modelAccess,
+          ...(this.input.modelAccess ? { modelAccess: this.input.modelAccess } : {}),
           projectId: this.currentRun.projectId,
           prompt: this.input.prompt,
           sandboxLeaseId: this.currentLease.id,
@@ -526,7 +526,7 @@ class ManagedRun implements CoordinatedAgentRun {
       runId: this.currentRun.id,
       runStatus: this.currentRun.status,
       sandboxRuntimeId: this.currentRun.sandboxRuntimeId,
-      stage,
+      ...(stage ? { stage } : {}),
     });
   }
 }

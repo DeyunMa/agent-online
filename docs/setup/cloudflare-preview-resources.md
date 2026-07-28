@@ -1,8 +1,8 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-07-27 的私有 Cloudflare 环境。架构加固代码、
-> `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 均已按锁定、
-> 预检、迁移、锁定 smoke、解锁顺序部署，并通过 Hosted Preview E2E。
+> 状态：本文记录截至 2026-07-28 的私有 Cloudflare 环境。交付加固代码已部署并通过
+> 基线与全能力 Hosted E2E；`0006_integrity_guards.sql` 和
+> `0007_agent_run_failure_codes.sql` 继续保持已应用状态。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -30,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `e42fedb1-e386-4427-b283-2ffda2318a9a` |
+| 当前部署版本 | `9e720ed3-b4a1-4d2a-b382-4dcf48489854` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -94,7 +94,7 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-07-27，本表记录的是当前已部署 Preview。第二版组合模板显式安装并探测
+截至 2026-07-28，本表记录的是当前已部署 Preview。第二版组合模板显式安装并探测
 Node、Pi、Goose、Git、Bash 与 coreutils；`GOOSE_RUNTIME_MODE=spike` 已上线，
 该模式允许受邀测试者显式调用 Goose，
 但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
@@ -184,6 +184,9 @@ Preview 已验证：
 - 最终版本再次通过 Hosted Preview E2E；结束后九项预检为零，D1 中
   status/failure code 非法组合为零；12 条 Lease 全部为 `stopped` 且不保存 Provider
   引用，TerminalSession/PreviewSession 均为零，结构化 Cloudflare tail 探针通过。
+- 交付加固版本 `9e720ed3-b4a1-4d2a-b382-4dcf48489854` 通过新的基线与全能力 Hosted
+  E2E：真实 Pi/Gemini/E2B、Files、Changes、Terminal、Preview、取消、停止、安全头和
+  JSON 脱敏均通过；结束后九项远程预检再次全部为零。
 
 尚未验证：
 

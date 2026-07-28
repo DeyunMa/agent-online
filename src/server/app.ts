@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { secureHeaders } from "hono/secure-headers";
 
 import { defaultAgentRuntimeId } from "../agent/registry";
 import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
@@ -8,6 +9,7 @@ import { createChangesApi } from "./changes-api";
 import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { renderApiError } from "./http/api-errors";
+import { productRequestGuard } from "./http/product-request-guard";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
 import { createPreviewApi } from "./preview-api";
@@ -22,6 +24,13 @@ app.use("*", async (c, next) => {
   c.header("x-request-id", c.get("requestId"));
   await next();
 });
+app.use(
+  "/api/*",
+  secureHeaders({
+    crossOriginResourcePolicy: false,
+  }),
+);
+app.use("/api/*", productRequestGuard());
 
 app.get("/api/health", (c) =>
   c.json({

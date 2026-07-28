@@ -1,7 +1,5 @@
 import { RunExecutionService } from "../application/run-execution";
-import { defaultPreviewSessionDurationMs } from "../application/project-preview";
-import { defaultTerminalSessionDurationMs } from "../application/project-terminal";
-import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
+import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import type { RuntimeKind } from "../runtime/contract";
 import type { DiagnosticContext } from "../observability/contract";
 import type { AppBindings } from "./env";
@@ -11,8 +9,9 @@ import {
   D1MessageRepository,
   D1SandboxLeaseRepository,
 } from "./persistence/d1-repositories";
+import { createE2BSandboxRuntime } from "./e2b-runtime-factory";
 import { createRunCapabilityCodec } from "./run-capability";
-import { getE2BExecutionConfig, type E2BExecutionConfig } from "./runtime-config";
+import type { E2BExecutionConfig } from "./runtime-config";
 import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 
 export type E2BRunExecution = {
@@ -25,19 +24,8 @@ export function createE2BRunExecution(
   env: AppBindings,
   diagnosticContext: DiagnosticContext = {},
 ): E2BRunExecution {
-  const config = getE2BExecutionConfig(env);
+  const { config, runtime } = createE2BSandboxRuntime(env);
   const agentRuntimePolicy = getAgentRuntimePolicy(env, "e2b");
-  const longestActivityMs = Math.max(
-    config.runTimeoutMs,
-    defaultPreviewSessionDurationMs,
-    defaultTerminalSessionDurationMs,
-  );
-  const runtime = new E2BSandboxRuntime({
-    apiKey: config.apiKey,
-    processTimeoutMs: config.runTimeoutMs + 15_000,
-    sandboxTimeoutMs: longestActivityMs + config.idleTtlMs + 60_000,
-    templateId: config.templateId,
-  });
   const capabilityCodec = createRunCapabilityCodec({
     secret: requireSecret(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
   });

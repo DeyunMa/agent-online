@@ -814,15 +814,10 @@ textarea:disabled {
   font-size: 12px;
 }
 
-.timeline-message time,
-.timeline-streaming {
+.timeline-message time {
   flex: 0 0 auto;
   color: var(--text-faint);
   font-size: 11px;
-}
-
-.timeline-streaming {
-  color: var(--warning);
 }
 
 .timeline-message article p {

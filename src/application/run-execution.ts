@@ -125,7 +125,7 @@ export class RunExecutionService {
         agentRunRepository: this.dependencies.agentRuns,
         clock: this.dependencies.clock,
         createId: this.dependencies.createId,
-        diagnostics: this.dependencies.diagnostics,
+        ...(this.dependencies.diagnostics ? { diagnostics: this.dependencies.diagnostics } : {}),
         getAgentRuntime: this.dependencies.getAgentRuntime,
         getSandboxRuntime: this.dependencies.getSandboxRuntime,
         sandboxLeaseRepository: this.dependencies.sandboxLeases,
@@ -476,7 +476,7 @@ export class RunExecutionService {
     this.report({
       agentRuntimeId: run.agentRuntimeId,
       event: "agent_run.execution_finished",
-      failureCode: run.failureCode ?? undefined,
+      ...(run.failureCode ? { failureCode: run.failureCode } : {}),
       inputTokens: run.usage.inputTokens,
       modelId: run.modelId,
       modelRequestCount: run.usage.modelRequestCount,

@@ -905,7 +905,7 @@ class FakeRunCoordinator implements RunExecutionDispatcher {
 
     const targetStatus = run.status === "queued" ? "cancelled" : "cancelling";
     return this.agentRuns.transition({
-      finishedAt: targetStatus === "cancelled" ? now.toISOString() : undefined,
+      ...(targetStatus === "cancelled" ? { finishedAt: now.toISOString() } : {}),
       from: run.status,
       runId: run.id,
       to: targetStatus,
