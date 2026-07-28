@@ -17,6 +17,7 @@ import type {
 } from "../application/ports";
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
+import { ProjectManagementService } from "../application/project-management";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
 import { ProjectTerminalService } from "../application/project-terminal";
@@ -102,6 +103,26 @@ describe("Project API", () => {
     const inaccessible = await fixture.app.request(
       "http://agent-online.test/api/projects/project_other/messages",
     );
+    const invalidRename = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_other",
+      {
+        body: JSON.stringify({ title: "   " }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      },
+    );
+    const inaccessibleRename = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_other",
+      {
+        body: JSON.stringify({ title: "Not allowed" }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      },
+    );
+    const inaccessibleDelete = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_other",
+      { method: "DELETE" },
+    );
 
     expect(invalid.status).toBe(400);
     await expect(invalid.json()).resolves.toMatchObject({
@@ -111,6 +132,98 @@ describe("Project API", () => {
     await expect(inaccessible.json()).resolves.toMatchObject({
       error: { code: "resource.not_found", retryable: false },
     });
+    expect(invalidRename.status).toBe(400);
+    expect(inaccessibleRename.status).toBe(404);
+    expect(inaccessibleDelete.status).toBe(404);
+  });
+
+  it("renames an owned Project with the same title contract used at creation", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Original",
+      userId: testUser.id,
+    });
+
+    const response = await fixture.app.request("http://agent-online.test/api/projects/project_1", {
+      body: JSON.stringify({ title: "  Renamed Project  " }),
+      headers: { "content-type": "application/json" },
+      method: "PATCH",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      id: "project_1",
+      title: "Renamed Project",
+    });
+    await expect(fixture.projects.findOwnedById("project_1", testUser.id)).resolves.toMatchObject({
+      title: "Renamed Project",
+    });
+  });
+
+  it("hard-deletes an idle owned Project after stopping its sandbox", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Disposable",
+      userId: testUser.id,
+    });
+    const lease = await fixture.sandboxLeases.getOrCreate({
+      id: "lease_1",
+      now,
+      projectId: "project_1",
+      runtimeId: "fake",
+    });
+    const handle = await fixture.sandboxRuntime.ensureLease({
+      projectId: "project_1",
+      providerRef: "provider-private-sandbox",
+      sandboxLeaseId: lease.id,
+    });
+    await fixture.sandboxLeases.updateState({
+      leaseId: lease.id,
+      providerRef: handle.id,
+      status: "idle",
+      updatedAt: now,
+    });
+
+    const response = await fixture.app.request("http://agent-online.test/api/projects/project_1", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+    await expect(fixture.projects.findOwnedById("project_1", testUser.id)).resolves.toBeNull();
+    expect(fixture.sandboxRuntime.stopped).toEqual(["provider-private-sandbox"]);
+  });
+
+  it("rejects Project deletion while an AgentRun is active", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Busy",
+      userId: testUser.id,
+    });
+    await fixture.app.request("http://agent-online.test/api/projects/project_1/agent-runs", {
+      body: JSON.stringify({ content: "Build a demo" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+
+    const response = await fixture.app.request("http://agent-online.test/api/projects/project_1", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "project.busy", retryable: true },
+    });
+    await expect(fixture.projects.findOwnedById("project_1", testUser.id)).resolves.not.toBeNull();
   });
 
   it("stops an owned Project sandbox without exposing its provider reference", async () => {
@@ -500,6 +613,14 @@ function createFixture(
   const previewSessions = {
     findByProjectId: async () => null,
   };
+  const projectSandboxes = new ProjectSandboxService({
+    agentRuns,
+    getSandboxRuntime: () => sandboxRuntime,
+    now: () => new Date(now),
+    previewSessions,
+    sandboxLeases,
+    terminalSessions,
+  });
   const services: ServerServices = {
     agentRuns,
     createAgentRuns,
@@ -515,15 +636,13 @@ function createFixture(
       terminalSessions,
       workingDirectory: "/workspace",
     }),
-    projectPreviews: {} as ServerServices["projectPreviews"],
-    projectSandboxes: new ProjectSandboxService({
-      agentRuns,
-      getSandboxRuntime: () => sandboxRuntime,
+    projectManagement: new ProjectManagementService({
       now: () => new Date(now),
-      previewSessions,
-      sandboxLeases,
-      terminalSessions,
+      projects,
+      projectSandboxes,
     }),
+    projectPreviews: {} as ServerServices["projectPreviews"],
+    projectSandboxes,
     projectTerminals: new ProjectTerminalService({
       agentRuns,
       clock: { now: () => new Date(now) },
@@ -574,6 +693,15 @@ function createFixture(
 
 class PersistentFakeSandboxRuntime extends FakeSandboxRuntime {
   override readonly filesystemScope = "lease" as const;
+  readonly stopped: string[] = [];
+
+  override async stop(
+    handle: Parameters<FakeSandboxRuntime["stop"]>[0],
+    reason: Parameters<FakeSandboxRuntime["stop"]>[1],
+  ) {
+    this.stopped.push(handle.id);
+    await super.stop(handle, reason);
+  }
 }
 
 class InMemoryProjectRepository implements ProjectRepository {
@@ -592,6 +720,14 @@ class InMemoryProjectRepository implements ProjectRepository {
     return project;
   }
 
+  async deleteOwned(projectId: string, userId: string) {
+    const project = this.records.get(projectId);
+    if (project?.userId !== userId) {
+      return false;
+    }
+    return this.records.delete(projectId);
+  }
+
   async findOwnedById(projectId: string, userId: string) {
     const project = this.records.get(projectId);
     return project?.userId === userId ? project : null;
@@ -599,6 +735,20 @@ class InMemoryProjectRepository implements ProjectRepository {
 
   async listOwned(userId: string) {
     return [...this.records.values()].filter((project) => project.userId === userId);
+  }
+
+  async renameOwned(input: Parameters<ProjectRepository["renameOwned"]>[0]) {
+    const project = this.records.get(input.projectId);
+    if (project?.userId !== input.userId) {
+      return null;
+    }
+    const renamed = {
+      ...project,
+      title: input.title,
+      updatedAt: input.updatedAt,
+    };
+    this.records.set(renamed.id, renamed);
+    return renamed;
   }
 }
 

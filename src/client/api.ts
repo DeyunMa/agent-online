@@ -13,6 +13,7 @@ import type {
   ProjectFileResponse,
   ProjectPreviewResponse,
   ProjectResponse,
+  UpdateProjectRequest,
   UserUsageResponse,
 } from "../shared/api";
 import { isPublicErrorCode, type PublicErrorCode } from "../shared/error-codes";
@@ -209,6 +210,12 @@ export const browserApi = {
     });
   },
 
+  deleteProject(projectId: string) {
+    return requestJson<void>(`/api/projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+    });
+  },
+
   getAgentRun(projectId: string, runId: string) {
     return requestJson<AgentRunResponse>(runPath(projectId, runId));
   },
@@ -292,6 +299,13 @@ export const browserApi = {
       `/api/projects/${encodeURIComponent(projectId)}/sandbox/stop`,
       { method: "POST" },
     );
+  },
+
+  updateProject(projectId: string, input: UpdateProjectRequest) {
+    return requestJson<ProjectResponse>(`/api/projects/${encodeURIComponent(projectId)}`, {
+      body: JSON.stringify(input),
+      method: "PATCH",
+    });
   },
 };
 

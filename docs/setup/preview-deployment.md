@@ -1,6 +1,7 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-28 已部署交付加固版本并通过基线与全能力 Hosted Preview E2E；
+> 状态：2026-07-28 已部署 Project 生命周期版本并通过基线、Project 生命周期与全能力
+> Hosted Preview E2E；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
 > 本文继续作为后续发布与重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)

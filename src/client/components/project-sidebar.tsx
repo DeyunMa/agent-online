@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChartNoAxesColumn, ChevronRight, Folder, LoaderCircle, Plus, Search } from "lucide-react";
+import { ChartNoAxesColumn, Folder, LoaderCircle, Plus, Search } from "lucide-react";
 import { useState } from "react";
 
 import { browserApi } from "../api";
 import { projectQueryKey } from "../query-keys";
+import { ProjectActionsMenu } from "./project-actions-menu";
 
 export function ProjectSidebar() {
   const [filter, setFilter] = useState("");
@@ -61,18 +62,20 @@ export function ProjectSidebar() {
           <ul>
             {visibleProjects.map((project) => (
               <li key={project.id}>
-                <Link
-                  activeProps={{
-                    className: "project-sidebar-link project-sidebar-link-active",
-                  }}
-                  className="project-sidebar-link"
-                  params={{ projectId: project.id }}
-                  to="/projects/$projectId"
-                >
-                  <Folder aria-hidden="true" size={16} />
-                  <span title={project.title}>{project.title}</span>
-                  <ChevronRight aria-hidden="true" size={14} />
-                </Link>
+                <div className="project-sidebar-item">
+                  <Link
+                    activeProps={{
+                      className: "project-sidebar-link project-sidebar-link-active",
+                    }}
+                    className="project-sidebar-link"
+                    params={{ projectId: project.id }}
+                    to="/projects/$projectId"
+                  >
+                    <Folder aria-hidden="true" size={16} />
+                    <span title={project.title}>{project.title}</span>
+                  </Link>
+                  <ProjectActionsMenu placement="sidebar" project={project} />
+                </div>
               </li>
             ))}
           </ul>

@@ -124,7 +124,7 @@ sequenceDiagram
 | 路径 | 作用 |
 | --- | --- |
 | `/api/auth/*` | Better Auth。 |
-| `/api/projects` 与 `/api/projects/:id` | 创建、列出、读取用户自己的 Project。 |
+| `/api/projects` 与 `/api/projects/:id` | 创建、列出、读取、重命名或受控硬删除用户自己的 Project。 |
 | `/api/projects/:id/messages` | 读取 Project 的可见消息。 |
 | `/api/projects/:id/files` | 在没有活动 Run 时列出现有沙箱 `/workspace` 下的受控目录。 |
 | `/api/projects/:id/files/content` | 读取受限相对路径指向的 UTF-8 文本文件。 |

@@ -89,8 +89,15 @@ export interface ProjectRepository {
   create(
     input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string },
   ): Promise<ProjectRecord>;
+  deleteOwned(projectId: string, userId: string): Promise<boolean>;
   findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null>;
   listOwned(userId: string): Promise<ProjectRecord[]>;
+  renameOwned(input: {
+    projectId: string;
+    title: string;
+    updatedAt: string;
+    userId: string;
+  }): Promise<ProjectRecord | null>;
 }
 
 export interface MessageRepository {

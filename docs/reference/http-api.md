@@ -178,6 +178,8 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 | `GET` | `/api/projects` | 无 | `200 ProjectResponse[]` | `401` |
 | `POST` | `/api/projects` | `{ "title": string }` | `201 ProjectResponse` | `400`、`401` |
 | `GET` | `/api/projects/:projectId` | 无 | `200 ProjectResponse` | `401`、`404` |
+| `PATCH` | `/api/projects/:projectId` | `{ "title": string }` | `200 ProjectResponse` | `400`、`401`、`404` |
+| `DELETE` | `/api/projects/:projectId` | 无 | `204` | `401`、`404`、`409`、`503` |
 | `GET` | `/api/projects/:projectId/messages` | 无 | `200 MessageResponse[]` | `401`、`404` |
 | `POST` | `/api/projects/:projectId/sandbox/stop` | 无 | `200 ProjectResponse` | `401`、`404`、`409`、`503` |
 
@@ -186,8 +188,13 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 - 新 Project 的 `defaultAgentRuntimeId` 固定为 `pi`。
 - 列表按 `updated_at DESC, id DESC` 返回，当前没有分页。
 - Message 按 `sequence ASC` 返回，当前没有分页。
+- Rename 与 Create 共用 trim 后 1 至 120 字符的标题合同；标题变化会 touch
+  `updated_at`，相同标题不写 D1。
+- Delete 是不可恢复的硬删除。活动 Run、Terminal 或 Preview 返回
+  `409 project.busy`；空闲 Provider sandbox 先停止，再级联删除 Project、Message、
+  AgentRun、Usage 和 Lease。Provider 停止失败或 Lease 冲突时保留 Project。
 - 手动停止先以 D1 条件更新脱离 Provider 引用，再调用 Provider；活动 Run、Terminal 或 Preview 会阻止停止。
-- 当前没有 Project 更新、删除、分享或成员接口。
+- 当前没有 Project 分享或成员接口。
 
 ## 5. AgentRun
 

@@ -2,7 +2,7 @@
 
 > 文档状态：当前 schema 基准
 >
-> 校准日期：2026-07-27
+> 校准日期：2026-07-28
 >
 > 权威来源：`migrations/0001_app.sql` 至 `migrations/0007_agent_run_failure_codes.sql`
 
@@ -40,7 +40,7 @@ erDiagram
 | `session` | 认证 | 登录会话 | 由 Better Auth 创建、过期和删除。 |
 | `account` | 认证 | 邮箱密码/未来身份提供方账号 | 当前主要使用 credential password。 |
 | `verification` | 认证 | 临时验证 token | 由 Better Auth 管理。 |
-| `projects` | 产品 | 用户拥有的 Project 元数据 | 当前无公开删除 API。 |
+| `projects` | 产品 | 用户拥有的 Project 元数据 | 保留到所有者执行受控硬删除。 |
 | `sandbox_leases` | 产品控制面 | 每个 Project 的逻辑沙箱槽位和当前状态 | 与 Project 同生命周期；Provider 引用可清空。 |
 | `messages` | 产品 | 用户输入和最终可见 assistant 回复 | 作为 Project 对话记录保留。 |
 | `agent_runs` | 产品 | 每次 Agent 执行的状态、模型和聚合用量 | 作为运行与计量记录保留。 |
@@ -122,6 +122,7 @@ erDiagram
 索引：`projects_by_user_updated_at(user_id, updated_at DESC)`。
 
 当前没有 Workspace、Team、Tenant、Session 或 Project member 表。`title` 不要求唯一。
+Project 标题可更新；硬删除不新增字段或历史表。
 
 ### 4.2 `sandbox_leases`
 
@@ -279,11 +280,16 @@ sandbox_duration_ms
 - 没有价格快照、货币、税、折扣或 Provider 账单对账。
 - 没有额度、预授权、余额扣减或超额阻断。
 - Provider 返回且成功写入的 usage 才会计入 D1。
+- Project 硬删除会级联删除其 AgentRun，因此这些 Run 不再计入 Usage。
 
 ## 7. 删除与重建策略
 
-- 删除 User 或 Project 时，外键按上文规则级联；`agent_runs.sandbox_lease_id` 使用 `RESTRICT`，因此应通过产品用例按正确顺序处理，而不是随意直删 Lease。
-- 当前没有公开 Project 删除接口，也不会自动清理历史 Message/AgentRun。
+- 删除 User 或 Project 时，外键按上文规则级联；`agent_runs.sandbox_lease_id` 使用
+  `RESTRICT`，因此只能删除 Project 聚合，不能先随意直删 Lease。
+- 公开 Project 硬删除用例先验证所有权与活动资源，再停止空闲 Provider sandbox，最后
+  删除 Project。Message、AgentRun、Usage、Lease 和临时协调行随外键级联删除。
+- 没有软删除、回收站、删除历史或恢复副本。已休眠的 Run idle-cleanup Workflow
+  发现对应 Run 已删除时直接 no-op。
 - `terminal_sessions` 和 `preview_sessions` 是可重建的临时协调状态，不是审计历史。
 - 本项目处于个人开发阶段，本地 D1 历史不构成兼容负担。schema 需要调整时，可以重建本地数据库和迁移；远程资源或未知数据不能未经确认删除。
 

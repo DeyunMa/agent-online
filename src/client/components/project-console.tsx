@@ -29,6 +29,7 @@ import {
 } from "./run-console";
 import { ErrorState, LoadingState } from "./ui-states";
 import { AppHeaderSlot } from "./app-header-slot";
+import { ProjectActionsMenu } from "./project-actions-menu";
 
 export function ProjectConsole({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
@@ -267,6 +268,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             <strong>Agent run</strong>
           </nav>
           <div className="project-console-header-actions">
+            <ProjectActionsMenu placement="header" project={project.data} />
             <button
               aria-expanded={mobileInspectorOpen}
               aria-label="Open project inspector"

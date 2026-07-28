@@ -123,6 +123,10 @@ export type CreateProjectRequest = {
   title: string;
 };
 
+export type UpdateProjectRequest = {
+  title: string;
+};
+
 export type CreateAgentRunRequest = {
   agentRuntimeId?: AgentRuntimeId;
   content: string;

@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, Folder, Plus } from "lucide-react";
+import { Folder, Plus } from "lucide-react";
 
 import type { ProjectResponse } from "../../shared/api";
 import { browserApi } from "../api";
 import { formatDateTime, sandboxStatusLabel, sandboxStatusTone } from "../presentation";
 import { projectQueryKey } from "../query-keys";
 import { AppHeaderSlot } from "./app-header-slot";
+import { ProjectActionsMenu } from "./project-actions-menu";
 import { ErrorState, LoadingState } from "./ui-states";
 
 export function ProjectDashboard() {
@@ -52,33 +53,36 @@ function ProjectList({ projects }: { projects: ProjectResponse[] }) {
     <ul className="project-list">
       {projects.map((project) => (
         <li key={project.id}>
-          <Link
-            className="project-row"
-            params={{ projectId: project.id }}
-            to="/projects/$projectId"
-          >
-            <span className="project-row-icon">
-              <Folder aria-hidden="true" size={17} />
-            </span>
-            <span className="project-row-copy">
-              <strong>{project.title}</strong>
-              <span>
+          <div className="project-row-shell">
+            <Link
+              className="project-row"
+              params={{ projectId: project.id }}
+              to="/projects/$projectId"
+            >
+              <span className="project-row-icon">
+                <Folder aria-hidden="true" size={17} />
+              </span>
+              <span className="project-row-copy">
+                <strong>{project.title}</strong>
+                <span>
+                  {project.sandboxLease
+                    ? sandboxStatusLabel(project.sandboxLease.status)
+                    : "Sandbox not started"}
+                </span>
+              </span>
+              <span
+                className={`project-row-status ${sandboxStatusTone(project.sandboxLease?.status)}`}
+              >
+                <span aria-hidden="true" />
                 {project.sandboxLease
                   ? sandboxStatusLabel(project.sandboxLease.status)
-                  : "Sandbox not started"}
+                  : "No sandbox"}
               </span>
-            </span>
-            <span
-              className={`project-row-status ${sandboxStatusTone(project.sandboxLease?.status)}`}
-            >
+              <time dateTime={project.updatedAt}>{formatDateTime(project.updatedAt)}</time>
               <span aria-hidden="true" />
-              {project.sandboxLease
-                ? sandboxStatusLabel(project.sandboxLease.status)
-                : "No sandbox"}
-            </span>
-            <time dateTime={project.updatedAt}>{formatDateTime(project.updatedAt)}</time>
-            <ChevronRight aria-hidden="true" size={15} />
-          </Link>
+            </Link>
+            <ProjectActionsMenu placement="row" project={project} />
+          </div>
         </li>
       ))}
     </ul>

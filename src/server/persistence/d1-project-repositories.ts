@@ -43,6 +43,15 @@ export class D1ProjectRepository implements ProjectRepository {
     };
   }
 
+  async deleteOwned(projectId: string, userId: string): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
+      .bind(projectId, userId)
+      .run();
+
+    return result.meta.changes > 0;
+  }
+
   async findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null> {
     const row = await this.db
       .prepare(`SELECT ${projectColumns} FROM projects WHERE id = ? AND user_id = ? LIMIT 1`)
@@ -61,6 +70,27 @@ export class D1ProjectRepository implements ProjectRepository {
       .all<ProjectRow>();
 
     return result.results.map(toProjectRecord);
+  }
+
+  async renameOwned(input: {
+    projectId: string;
+    title: string;
+    updatedAt: string;
+    userId: string;
+  }): Promise<ProjectRecord | null> {
+    const result = await this.db
+      .prepare(
+        `UPDATE projects
+        SET title = ?, updated_at = ?
+        WHERE id = ? AND user_id = ?`,
+      )
+      .bind(input.title, input.updatedAt, input.projectId, input.userId)
+      .run();
+    if (result.meta.changes === 0) {
+      return null;
+    }
+
+    return this.findOwnedById(input.projectId, input.userId);
   }
 }
 

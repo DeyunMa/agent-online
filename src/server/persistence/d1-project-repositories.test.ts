@@ -30,6 +30,43 @@ describe("D1 Project and Message repositories", () => {
     });
   });
 
+  it("renames and deletes only through the owned Project key", async () => {
+    const db = new TestD1Database();
+    db.firstRows.push({
+      created_at: "2026-07-25T00:00:00.000Z",
+      default_agent_runtime_id: "pi",
+      id: "project-1",
+      title: "Renamed",
+      updated_at: "2026-07-25T01:00:00.000Z",
+      user_id: "user-1",
+    });
+    const repository = new D1ProjectRepository(db.asBinding());
+
+    const renamed = await repository.renameOwned({
+      projectId: "project-1",
+      title: "Renamed",
+      updatedAt: "2026-07-25T01:00:00.000Z",
+      userId: "user-1",
+    });
+    const deleted = await repository.deleteOwned("project-1", "user-1");
+
+    expect(renamed).toMatchObject({
+      id: "project-1",
+      title: "Renamed",
+      updatedAt: "2026-07-25T01:00:00.000Z",
+    });
+    expect(deleted).toBe(true);
+    expect(db.prepared[0]?.query).toContain("WHERE id = ? AND user_id = ?");
+    expect(db.prepared[0]?.bindings).toEqual([
+      "Renamed",
+      "2026-07-25T01:00:00.000Z",
+      "project-1",
+      "user-1",
+    ]);
+    expect(db.prepared[2]?.query).toContain("DELETE FROM projects WHERE id = ? AND user_id = ?");
+    expect(db.prepared[2]?.bindings).toEqual(["project-1", "user-1"]);
+  });
+
   it("lists visible messages by Project in sequence order", async () => {
     const db = new TestD1Database();
     db.allRows.push([

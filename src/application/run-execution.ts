@@ -213,7 +213,15 @@ export class RunExecutionService {
   }
 
   async stopSandboxIfIdle(input: AgentRunExecutionInput): Promise<IdleSandboxStopResult> {
-    const run = await this.requireRun(input);
+    if (!input.projectId || !input.runId) {
+      throw new Error("AgentRun execution identifiers are required");
+    }
+    const run = await this.dependencies.agentRuns.findById(input.runId);
+    if (!run || run.projectId !== input.projectId) {
+      // A hard-deleted Project removes its Run while the durable idle-cleanup
+      // Workflow may still be sleeping. Missing state is already fully clean.
+      return { detached: false, stopped: false };
+    }
     if (!isTerminalAgentRun(run.status)) {
       return { detached: false, stopped: false };
     }

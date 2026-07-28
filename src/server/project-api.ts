@@ -25,6 +25,7 @@ import {
 const createProjectSchema = z.object({
   title: z.string().trim().min(1).max(120),
 });
+const updateProjectSchema = createProjectSchema;
 
 export type { ProjectApiDependencies } from "./project-api-dependencies";
 
@@ -89,6 +90,63 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     return c.json(
       toProjectResponse(project, await services.sandboxLeases.findByProjectId(project.id)),
     );
+  });
+
+  api.patch("/projects/:projectId", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const input = await parseRequest(c, updateProjectSchema);
+    if (!input) {
+      return validationError(c);
+    }
+
+    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
+    const renamed = await services.projectManagement.rename({
+      projectId: c.req.param("projectId"),
+      title: input.title,
+      userId: user.id,
+    });
+    if (renamed.kind === "not_found") {
+      return notFound(c);
+    }
+
+    return c.json(
+      toProjectResponse(
+        renamed.project,
+        await services.sandboxLeases.findByProjectId(renamed.project.id),
+      ),
+    );
+  });
+
+  api.delete("/projects/:projectId", async (c) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+
+    const deleted = await dependencies
+      .createServices(c.env, requestDiagnosticContext(c))
+      .projectManagement.delete({
+        projectId: c.req.param("projectId"),
+        userId: user.id,
+      });
+    if (deleted.kind === "not_found") {
+      return notFound(c);
+    }
+    if (deleted.kind === "project_busy") {
+      return projectBusy(c);
+    }
+    if (deleted.kind === "provider_error") {
+      return sandboxProviderUnavailable(c);
+    }
+    if (deleted.kind === "conflict") {
+      return serviceUnavailable(c);
+    }
+
+    return c.body(null, 204);
   });
 
   api.post("/projects/:projectId/sandbox/stop", async (c) => {

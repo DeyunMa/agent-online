@@ -1,7 +1,7 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-07-28 的私有 Cloudflare 环境。交付加固代码已部署并通过
-> 基线与全能力 Hosted E2E；`0006_integrity_guards.sql` 和
+> 状态：本文记录截至 2026-07-28 的私有 Cloudflare 环境。Project 生命周期代码已部署
+> 并通过基线、Project 生命周期与全能力 Hosted E2E；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql` 继续保持已应用状态。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
@@ -30,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `9e720ed3-b4a1-4d2a-b382-4dcf48489854` |
+| 当前部署版本 | `0c374d75-5f52-484a-9f7e-b0d0bfabd24e` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -187,6 +187,10 @@ Preview 已验证：
 - 交付加固版本 `9e720ed3-b4a1-4d2a-b382-4dcf48489854` 通过新的基线与全能力 Hosted
   E2E：真实 Pi/Gemini/E2B、Files、Changes、Terminal、Preview、取消、停止、安全头和
   JSON 脱敏均通过；结束后九项远程预检再次全部为零。
+- Project 生命周期版本 `0c374d75-5f52-484a-9f7e-b0d0bfabd24e` 增加 owner-scoped
+  重命名和安全硬删除。基线、Project 生命周期和全能力 Hosted E2E 均通过；生命周期
+  用例在最终版本再次通过，确认空闲 E2B sandbox 先停止、旧 Project API 返回 `404`，
+  结束后九项远程预检再次全部为零。
 
 尚未验证：
 

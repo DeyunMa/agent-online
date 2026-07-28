@@ -18,6 +18,8 @@ Agent Online 是一个个人开发、开源导向的 Hosted Coding Agent SaaS �
 
 - 单用户直接拥有 Project，没有 Team、Tenant、Organization 或 Membership。
 - 一个 Project 是一组用户可见消息、多个短生命周期 AgentRun 和一条逻辑 SandboxLease 的聚合。
+- Project 可重命名或由所有者硬删除。删除拒绝活动 Run、Terminal/Preview，先停止空闲
+  Provider sandbox，再级联删除 D1 子记录；没有回收站。
 - Project 文件只存在于当前沙箱文件系统；D1 不保存文件内容，R2 不参与当前版本。
 - Pi 是当前公开 Runtime；Goose 已完成受控 spike，但未向普通浏览器能力和 UI 公开。
 - 计量只做真实用量观察，不包含套餐、账单、支付或配额扣减。

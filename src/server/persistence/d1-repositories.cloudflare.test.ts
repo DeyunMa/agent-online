@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { D1AgentRunRepository } from "./d1-repositories";
+import { D1AgentRunRepository, D1ProjectRepository } from "./d1-repositories";
 
 const createdAt = "2026-07-27T00:00:00.000Z";
 const finishedAt = "2026-07-27T00:00:10.000Z";
@@ -45,6 +45,46 @@ describe("D1 repositories in the Workers runtime", () => {
       ]),
     );
     expect(foreignKeyFailures.results).toEqual([]);
+  });
+
+  it("renames an owned Project and hard-deletes all of its product rows", async () => {
+    const agentRuns = new D1AgentRunRepository(env.DB);
+    const projects = new D1ProjectRepository(env.DB);
+    await createRunningRun(agentRuns);
+    await agentRuns.transition({
+      failureCode: "run.interrupted",
+      finishedAt,
+      from: "running",
+      runId: "run_1",
+      to: "interrupted",
+    });
+
+    const renamed = await projects.renameOwned({
+      projectId: "project_1",
+      title: "Renamed Project",
+      updatedAt: finishedAt,
+      userId: "user_1",
+    });
+    const deleted = await projects.deleteOwned("project_1", "user_1");
+    const counts = await env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM projects) AS projects,
+        (SELECT COUNT(*) FROM sandbox_leases) AS leases,
+        (SELECT COUNT(*) FROM messages) AS messages,
+        (SELECT COUNT(*) FROM agent_runs) AS runs`,
+    ).first<{
+      leases: number;
+      messages: number;
+      projects: number;
+      runs: number;
+    }>();
+
+    expect(renamed).toMatchObject({ title: "Renamed Project", updatedAt: finishedAt });
+    expect(deleted).toBe(true);
+    expect(counts).toEqual({ leases: 0, messages: 0, projects: 0, runs: 0 });
+    await expect(env.DB.prepare("PRAGMA foreign_key_check").all()).resolves.toMatchObject({
+      results: [],
+    });
   });
 
   it("commits Run success, usage, assistant Message, and Project touch together", async () => {

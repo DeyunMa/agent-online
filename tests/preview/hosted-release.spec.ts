@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Response, test } from "@playwright/test";
 
 const email = process.env.PREVIEW_E2E_EMAIL as string;
 const password = process.env.PREVIEW_E2E_PASSWORD as string;
@@ -61,7 +61,7 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   const marker = `agent-online-release-${suffix}`;
   const apiResponseAuditErrors: unknown[] = [];
 
-  await installPrivateStateAudit(page, apiResponseAuditErrors);
+  const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
 
   await page.goto("/");
   await page.getByLabel("Email").fill(email);
@@ -131,7 +131,74 @@ test("runs the hosted Pi product path without exposing provider state", async ({
     },
   );
 
-  await page.unrouteAll({ behavior: "wait" });
+  await finishPrivateStateAudit();
+  if (apiResponseAuditErrors.length > 0) {
+    throw apiResponseAuditErrors[0];
+  }
+});
+
+test("renames and hard-deletes a Project with an idle hosted sandbox", async ({ page }) => {
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const projectName = `lifecycle-e2e-${suffix}`;
+  const renamedProject = `${projectName}-renamed`;
+  const marker = `lifecycle-marker-${suffix}`;
+  const apiResponseAuditErrors: unknown[] = [];
+
+  const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
+  await page.goto("/");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole("link", { name: "New project" }).first().click();
+  await page.getByLabel("Project name").fill(projectName);
+  await page.getByRole("button", { name: "Create project" }).click();
+  const projectId = new URL(page.url()).pathname.split("/").at(-1);
+  if (!projectId) {
+    throw new Error("Created Project URL did not contain a Project ID");
+  }
+
+  await page
+    .getByLabel("Agent task")
+    .fill(`Reply with the exact marker ${marker}. Do not create or modify any files.`);
+  await page.getByRole("button", { name: "Start run" }).click();
+  const currentRunStatus = page.getByRole("region", { name: "Current run status" });
+  await expect(currentRunStatus.getByText("执行完成", { exact: true })).toBeVisible({
+    timeout: 180_000,
+  });
+
+  const projectHeaderActions = page.locator(".project-console-header-actions");
+  await projectHeaderActions
+    .getByRole("button", { name: `Project actions for ${projectName}` })
+    .click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const renameDialog = page.getByRole("dialog", { name: "Rename project" });
+  await renameDialog.getByLabel("Project name").fill(renamedProject);
+  await renameDialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("link", { exact: true, name: renamedProject })).toBeVisible();
+
+  await projectHeaderActions
+    .getByRole("button", { name: `Project actions for ${renamedProject}` })
+    .click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  const deleteDialog = page.getByRole("dialog", { name: "Delete project" });
+  await expect(deleteDialog).toContainText("permanently removed");
+  await deleteDialog.getByRole("button", { name: "Delete project" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByRole("link", { exact: true, name: renamedProject })).toHaveCount(0);
+  const deletedProjectStatus = await page.evaluate(
+    async (id) => (await fetch(`/api/projects/${encodeURIComponent(id)}`)).status,
+    projectId,
+  );
+  expect(deletedProjectStatus).toBe(404);
+
+  await finishPrivateStateAudit();
   if (apiResponseAuditErrors.length > 0) {
     throw apiResponseAuditErrors[0];
   }
@@ -145,7 +212,7 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   const terminalFile = `terminal-${suffix}.txt`;
   const apiResponseAuditErrors: unknown[] = [];
 
-  await installPrivateStateAudit(page, apiResponseAuditErrors);
+  const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
 
   await page.goto("/");
   await page.getByLabel("Email").fill(email);
@@ -236,34 +303,49 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
     },
   );
 
-  await page.unrouteAll({ behavior: "wait" });
+  await finishPrivateStateAudit();
   if (apiResponseAuditErrors.length > 0) {
     throw apiResponseAuditErrors[0];
   }
 });
 
-async function installPrivateStateAudit(page: Page, errors: unknown[]) {
-  await page.route("**/api/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname.endsWith("/events")) {
-      await route.continue();
+function installPrivateStateAudit(page: Page, errors: unknown[]) {
+  const pendingAudits = new Set<Promise<void>>();
+  const auditResponse = (response: Response) => {
+    const url = new URL(response.url());
+    if (!url.pathname.startsWith("/api/") || url.pathname.endsWith("/events")) {
       return;
     }
 
-    const response = await route.fetch({
-      maxRetries: request.method() === "GET" || request.method() === "HEAD" ? 2 : 0,
-    });
-    const body = await response.body();
-    if (response.headers()["content-type"]?.includes("application/json")) {
+    const audit = auditPrivateJsonResponse(response, errors);
+    pendingAudits.add(audit);
+    void audit.finally(() => pendingAudits.delete(audit));
+  };
+
+  page.on("response", auditResponse);
+  return async () => {
+    page.off("response", auditResponse);
+    await Promise.all(pendingAudits);
+  };
+}
+
+async function auditPrivateJsonResponse(response: Response, errors: unknown[]) {
+  if (response.headers()["content-type"]?.includes("application/json")) {
+    try {
+      const body = await response.body();
+      const request = response.request();
       try {
-        expect(body.toString("utf8"), `${request.method()} ${url.pathname}`).not.toMatch(
+        expect(
+          body.toString("utf8"),
+          `${request.method()} ${new URL(response.url()).pathname}`,
+        ).not.toMatch(
           /provider(?:_|)(?:ref|processRef|sandboxRef)|trafficAccessToken|GEMINI_API_KEY|E2B_API_KEY|AIza[A-Za-z0-9_-]{20,}/i,
         );
       } catch (error) {
         errors.push(error);
       }
+    } catch {
+      // A navigation may cancel an in-flight response after headers arrive.
     }
-    await route.fulfill({ body, response });
-  });
+  }
 }

@@ -7,7 +7,7 @@
 
 ## 验收边界
 
-`pnpm test:e2e:preview` 使用真实 Chromium，从已部署 Worker 的浏览器界面验证两条路径。
+`pnpm test:e2e:preview` 使用真实 Chromium，从已部署 Worker 的浏览器界面验证三条路径。
 
 基线路径：
 
@@ -27,6 +27,13 @@
 3. 浏览器通过 WebSocket Terminal 写入文件，关闭后由 Files 回读；
 4. 固定 Vite Preview 加载真实 marker，并完成显式停止；
 5. 最后停止整个沙箱并再次完成 JSON API 私有状态审计。
+
+Project 生命周期路径：
+
+1. 创建唯一 Project 并完成真实 Pi Run，使 Project 持有空闲 E2B sandbox；
+2. 从 Project 操作菜单重命名并验证侧栏同步；
+3. 硬删除 Project，由产品路径停止空闲 sandbox；
+4. 验证页面返回 Projects、旧 Project API 为 `404`，且 JSON 响应未泄露 Provider 状态。
 
 这是完整产品路径，不替代 adapter 级 Pi/Goose 组合模板 E2E。后者验证 Runtime 协议和
 同沙箱切换，本文验证 React、Hono、Better Auth、D1、Workflow、ModelGateway 和 E2B
@@ -56,10 +63,10 @@ pnpm test:e2e:preview
 unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 ```
 
-完整执行会创建三个 AgentRun 和两个 E2B 沙箱。成功路径会主动关闭 Terminal/Preview
+完整执行会创建四个 AgentRun 和三个 E2B 沙箱。成功路径会主动关闭 Terminal/Preview
 并停止沙箱；测试中途失败时，`afterEach` 也会尽力按 Terminal、Preview、sandbox 顺序
-清理，E2B timeout 仍是最终回收边界。测试会保留 Project、Message、Run 和 usage
-作为发布证据，因为 V1 没有 Project 删除功能。
+清理，E2B timeout 仍是最终回收边界。Project 生命周期用例会删除自己的
+Project/Message/Run/Usage；其余发布证据仍保留在 D1。
 
 ## 发布判定
 
@@ -71,6 +78,19 @@ unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 - 完成后在 Cloudflare Workflow、D1 和 E2B 控制台抽查资源已收敛，再记录部署版本和结果。
 
 ## 最近执行
+
+2026-07-28 针对 Preview 版本 `0c374d75-5f52-484a-9f7e-b0d0bfabd24e` 通过：
+
+- 基线 Hosted E2E：真实 Pi Run、Files、usage、取消、刷新恢复、停止和响应脱敏通过；
+- Project 生命周期 E2E：真实 Run 后重命名 Project，停止空闲 E2B sandbox，硬删除并
+  确认旧 Project API 返回 `404`；
+- 全能力 Hosted E2E：Pi/Vite/Git、Changes、Terminal、Files、Preview 和停止在同一
+  沙箱中通过；
+- 首次完整执行的生命周期产品动作已成功，但测试审计器在删除后导航时发生
+  `Route is already handled`；审计器改为只监听 response 后，生命周期用例复跑通过；
+- 最终版本的菜单标准 click/键盘语义与非当前 Project 删除导航修正完成后，生命周期
+  用例再次通过；
+- 执行结束后九项远程预检全部为零。
 
 2026-07-28 针对 Preview 版本 `9e720ed3-b4a1-4d2a-b382-4dcf48489854` 通过：
 

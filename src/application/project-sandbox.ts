@@ -33,10 +33,6 @@ export class ProjectSandboxService {
   async stop(projectId: string): Promise<StopProjectSandboxResult> {
     const now = this.dependencies.now().toISOString();
     const lease = await this.dependencies.sandboxLeases.findByProjectId(projectId);
-    if (!lease?.providerRef || lease.status === "stopped") {
-      return { kind: "already_stopped", lease };
-    }
-
     const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(projectId);
     if (activeRun) {
       return { kind: "project_busy" };
@@ -46,6 +42,9 @@ export class ProjectSandboxService {
     }
     if (await this.dependencies.previewSessions.findByProjectId(projectId)) {
       return { kind: "project_busy" };
+    }
+    if (!lease?.providerRef || lease.status === "stopped") {
+      return { kind: "already_stopped", lease };
     }
 
     const providerRef = lease.providerRef;

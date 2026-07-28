@@ -69,12 +69,13 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | 限制对象 | 当前值 | 执行层 |
 | --- | --- | --- |
 | Project 标题 | trim 后 1 至 120 个 JavaScript string 单元 | Hono/Zod |
+| Project 删除 | 活动 Run、Terminal 或 Preview 时拒绝；成功后不可恢复 | Application 用例 + D1 FK |
 | AgentRun 用户输入 | trim 后 1 至 64,000 个 JavaScript string 单元 | Hono/Zod |
 | 普通产品请求体 | 最多 256 KiB | Hono body limit；超限返回 `413 request.too_large` |
 | Project 列表 | 无分页、无应用级条数上限 | D1 查询 |
 | Message 列表 | 无分页，返回 Project 全部可见消息 | D1 查询 |
 | AgentRun 列表 | 只返回最新 50 条 | D1 `LIMIT 50` |
-| Usage 范围 | 当前 User 全部历史，固定 `all_time` | D1 聚合 |
+| Usage 范围 | 当前 User 现存 AgentRun，固定 `all_time`；Project 删除后相应减少 | D1 聚合 |
 | 默认模型 ID | 最长 200，只允许 `[A-Za-z0-9._:/-]` | Worker 配置解析 |
 
 当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 无分页适合个人阶段，但数据变大后会增加响应和 D1 扫描成本。
@@ -100,6 +101,9 @@ ModelGateway 的 4 MiB 实际读取上限。公开注册前仍需增加独立的
 | Workflow 时间戳 | 20 至 40 字符且可解析 | 固定 | 拒绝非法 payload。 |
 
 沙箱停止不是永久 Project 删除。停止会清空 Provider 引用，Project 元数据、Message、Run 和 usage 仍在 D1，但 `/workspace` 文件允许丢失。
+
+Project 硬删除会先停止空闲沙箱，再删除 Project 聚合。Message、Run、Usage 和 Lease
+随 D1 外键删除，`/workspace` 文件永久丢失；当前没有回收站或恢复副本。
 
 ## 5. AgentRuntime 和模型限制
 
@@ -268,7 +272,7 @@ Preview 不提供任意端口代理、后端服务、WebSocket/HMR、环境变�
 - 持久 Agent Session、raw transcript、工具审计日志。
 - BYOK、第三方 OAuth、模型市场或公开 Goose 选择。
 - 套餐、支付、订阅、余额、发票、税、退款或账单对账。
-- Project 删除/更新 API、文件写入 API、任意命令 API、任意端口代理。
+- 文件写入 API、任意命令 API、任意端口代理。
 - SLA、跨区容灾、数据导出/删除工作流和合规承诺。
 
 代码迭代也不承诺兼容旧的本地数据库、R2 骨架或测试数据；可以清洗本地开发数据并重建 schema。该规则不允许未经确认删除远程 Cloudflare/E2B 资源或未知数据。

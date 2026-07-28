@@ -182,6 +182,19 @@ describe("RunExecutionService", () => {
     });
   });
 
+  it("treats a hard-deleted Project Run as an idle-cleanup no-op", async () => {
+    const fixture = createFixture();
+    fixture.agentRuns.remove("run_1");
+
+    await expect(
+      fixture.createService(blockingAgent()).stopSandboxIfIdle({
+        projectId: "project_1",
+        runId: "run_1",
+      }),
+    ).resolves.toEqual({ detached: false, stopped: false });
+    expect(fixture.runtime.stoppedSandboxes).toEqual([]);
+  });
+
   it("stops a Terminal-idle sandbox only while its Lease activity timestamp is unchanged", async () => {
     const current = createFixture({
       lease: createLease({
@@ -586,6 +599,10 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
         (left, right) =>
           right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
       )[0];
+  }
+
+  remove(runId: string) {
+    this.records.delete(runId);
   }
 
   async setProviderProcessRef(runId: string, providerProcessRef: string) {

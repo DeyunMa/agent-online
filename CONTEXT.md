@@ -13,7 +13,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | 术语 | 定义 | 关键边界 |
 | --- | --- | --- |
 | `User` | 经 Better Auth 认证的人。 | 第一版所有资源直接归属 `user_id`。 |
-| `Project` | 用户在 UI 中看见的代码项目和对话容器。 | D1 持久化元数据和消息；不保存代码副本。沙箱丢失后可保留 Project，但文件允许丢失。 |
+| `Project` | 用户在 UI 中看见的代码项目和对话容器。 | D1 持久化元数据和消息；可重命名，也可由所有者硬删除。删除不保留回收站，沙箱文件始终没有平台副本。 |
 | `Message` | 用户或助手在某个 Project 中可见的一条持久化消息。 | 只保存用户输入和最终可展示回复，不保存原始工具输出或推理。 |
 | `SandboxLease` | 应用为 Project 保留的唯一逻辑沙箱记录。 | 不是供应商真实 sandbox ID；同一时刻映射到 0 或 1 个真实沙箱，不保留实例历史。 |
 | `AgentRun` | 一个 AgentRuntime 对一次用户任务的短生命周期执行。 | 通常对应一个对话回合，拥有状态、稳定 failure code、取消、时间和聚合用量。 |
@@ -67,6 +67,10 @@ erDiagram
 18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
 19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、status/failure code 合法组合、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
 20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。
+21. Project 重命名只修改标题和 `updated_at`。硬删除必须拒绝活动 Run、Terminal 或
+    Preview，先通过 SandboxRuntime 停止空闲 Provider sandbox，再由 Project 外键级联
+    删除 Message、AgentRun、usage 和 Lease；不建软删除、回收站或删除历史。休眠中的
+    idle-cleanup Workflow 发现 Run 已删除时直接 no-op。
 
 ## 有意不建模的内容
 

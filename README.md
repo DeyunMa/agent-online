@@ -1,6 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes 和 D4 Goose 私有 spike 均已完成既定验收。2026-07-28 完成交付加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 私有 spike 均已完成既定验收。2026-07-28 完成交付加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -19,6 +19,8 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 ## 当前实现
 
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
+- Project 支持受所有权保护的重命名和硬删除。删除会拒绝活动 Run、Terminal 或 Preview，
+  先停止空闲沙箱，再级联删除 Message、AgentRun、usage 和 Lease；不提供回收站。
 - Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
 - 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。无外部依赖的结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup，且不记录用户内容或 Provider 私有值。
@@ -42,11 +44,12 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
-2026-07-28 的交付加固版本 `9e720ed3-b4a1-4d2a-b382-4dcf48489854` 已部署到私有
-Cloudflare Preview，并通过基线与全能力 Hosted E2E；测试完成后九项远程协调预检
-全部为零。当前试用入口仍为 allowlist 私有环境，不代表已经开放公共注册。
+2026-07-28 的 Project 生命周期版本 `0c374d75-5f52-484a-9f7e-b0d0bfabd24e`
+已部署到私有 Cloudflare Preview，并通过基线、Project 重命名/硬删除和全能力
+Hosted E2E；测试完成后九项远程协调预检全部为零。当前试用入口仍为 allowlist
+私有环境，不代表已经开放公共注册。
 
-D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，本轮交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，对应的最近远程发布结果仍见 [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，最近远程发布与 Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 
@@ -81,6 +84,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [ADR-0006](./docs/adr/0006-controlled-project-preview.md) | 固定 Vite Preview、同源签名内容网关、临时 D1 所有权和回收。 |
 | [ADR-0007](./docs/adr/0007-controlled-project-changes.md) | 固定 Git 命令、危险配置拒绝、有界 status/diff 和当前工作树语义。 |
 | [ADR-0008](./docs/adr/0008-errors-and-execution-correlation.md) | `requestId/runId` 关联、公共/持久化/诊断错误分层与结构化日志。 |
+| [ADR-0009](./docs/adr/0009-project-rename-and-hard-delete.md) | Project 重命名、活动资源拒绝、空闲沙箱停止与无回收站硬删除。 |
 | [系统总览](./docs/architecture/01-system-overview.md) | 单 Worker 请求流与浏览器、Worker、Agent、沙箱之间的数据路径。 |
 | [沙箱与 Agent 运行时](./docs/architecture/02-sandbox-runtime.md) | `SandboxLease` 生命周期、`SandboxRuntime` 与 `AgentRuntime` 的合同。 |
 | [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与可选观测。 |
@@ -105,6 +109,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-27 Preview 发布与 Hosted E2E](./docs/status/2026-07-27-preview-release.md) | 锁定迁移、部署版本、完整产品 E2E 和最终远程清理证据。 |
 | [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、Preview 发布与验收结果。 |
 | [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md) | HTTP 边界、上游 deadline、运行时模块拆分、严格类型和最终本地门禁。 |
+| [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md) | Project 重命名、空闲沙箱停止、硬删除、移动端菜单和最新 Preview E2E。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

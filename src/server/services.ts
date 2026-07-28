@@ -8,6 +8,7 @@ import type {
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectChangesService } from "../application/project-changes";
 import { ProjectFilesService } from "../application/project-files";
+import { ProjectManagementService } from "../application/project-management";
 import { ProjectPreviewService } from "../application/project-preview";
 import {
   ProjectSandboxService,
@@ -60,6 +61,7 @@ export type ServerServices = {
   messages: MessageRepository;
   projectChanges: ProjectChangesService;
   projectFiles: ProjectFilesService;
+  projectManagement: ProjectManagementService;
   projectPreviews: ProjectPreviewService;
   projectSandboxes: ProjectSandboxController;
   projectTerminals: ProjectTerminalService;
@@ -75,6 +77,7 @@ export function createServerServices(
   const diagnostics = createStructuredDiagnosticReporter(diagnosticContext);
   const agentRuns = new D1AgentRunRepository(env.DB);
   const messages = new D1MessageRepository(env.DB);
+  const projects = new D1ProjectRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);
   const previewSessions = new D1PreviewSessionRepository(env.DB);
   const terminalSessions = new D1TerminalSessionRepository(env.DB);
@@ -121,6 +124,14 @@ export function createServerServices(
           diagnostics,
         )
       : createWorkflowDispatcher(env, diagnosticContext);
+  const projectSandboxes = new ProjectSandboxService({
+    agentRuns,
+    getSandboxRuntime,
+    now: () => new Date(),
+    previewSessions,
+    sandboxLeases,
+    terminalSessions,
+  });
 
   return {
     agentRuns,
@@ -152,6 +163,11 @@ export function createServerServices(
       terminalSessions,
       workingDirectory: defaultWorkingDirectory,
     }),
+    projectManagement: new ProjectManagementService({
+      now: () => new Date(),
+      projects,
+      projectSandboxes,
+    }),
     projectPreviews: new ProjectPreviewService({
       agentRuns,
       clock: { now: () => new Date() },
@@ -179,14 +195,7 @@ export function createServerServices(
           : async () => undefined,
       terminalSessions,
     }),
-    projectSandboxes: new ProjectSandboxService({
-      agentRuns,
-      getSandboxRuntime,
-      now: () => new Date(),
-      previewSessions,
-      sandboxLeases,
-      terminalSessions,
-    }),
+    projectSandboxes,
     projectTerminals: new ProjectTerminalService({
       agentRuns,
       clock: { now: () => new Date() },
@@ -205,7 +214,7 @@ export function createServerServices(
       terminalSessions,
       workingDirectory: defaultWorkingDirectory,
     }),
-    projects: new D1ProjectRepository(env.DB),
+    projects,
     runExecutions,
     sandboxLeases,
   };
