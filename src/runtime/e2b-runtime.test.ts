@@ -2,6 +2,7 @@ import {
   FileType,
   SandboxNotFoundError,
   type CommandStartOpts,
+  type EntryInfo,
   type SandboxConnectOpts,
   type SandboxOpts,
 } from "e2b";
@@ -176,7 +177,7 @@ describe("E2BSandboxRuntime", () => {
 
       expect(started).toEqual({ providerProcessRef: "42" });
       expect(sandbox.command).toBe(
-        "'./node_modules/.bin/vite' '--host' '0.0.0.0' '--port' '3000' '--strictPort' '--config' '/tmp/agent-online-vite-preview.config.mjs' '--base' '/api/projects/project-1/preview/content/capability/'",
+        "'/opt/agent-online/preview/node_modules/.bin/vite' '--host' '0.0.0.0' '--port' '3000' '--strictPort' '--config' '/tmp/agent-online-vite-preview.config.mjs' '--base' '/api/projects/project-1/preview/content/capability/'",
       );
       expect(sandbox.commandOptions).toMatchObject({
         background: true,
@@ -205,6 +206,66 @@ describe("E2BSandboxRuntime", () => {
         "traffic-token",
       );
       expect(proxyCall?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("classifies Preview entry and dependency prerequisites without starting a process", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = await runtime.ensureLease({
+      projectId: "project-1",
+      providerRef: "sandbox-existing",
+      sandboxLeaseId: "lease-1",
+    });
+
+    await expect(runtime.inspectPreview(handle)).resolves.toEqual({
+      kind: "entry_missing",
+    });
+
+    sandbox.fileEntries = [fileEntry("index.html"), fileEntry("package.json", 58)];
+    sandbox.fileContents.set(
+      "/workspace/package.json",
+      new TextEncoder().encode('{"dependencies":{"react":"19.2.8"}}'),
+    );
+    await expect(runtime.inspectPreview(handle)).resolves.toEqual({
+      kind: "dependencies_missing",
+    });
+
+    sandbox.fileEntries.push(fileEntry("node_modules", 0, FileType.DIR));
+    await expect(runtime.inspectPreview(handle)).resolves.toEqual({
+      kind: "ready",
+    });
+    expect(sandbox.commandHistory).toHaveLength(0);
+  });
+
+  it("does not treat an upstream 404 as Preview readiness", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Not found", { status: 404 })),
+    );
+    try {
+      const sandbox = new FakeE2BSandbox("sandbox-existing");
+      const runtime = createRuntime(new FakeE2BClient(sandbox));
+      const handle = await runtime.ensureLease({
+        projectId: "project-1",
+        providerRef: "sandbox-existing",
+        sandboxLeaseId: "lease-1",
+      });
+
+      await expect(
+        runtime.startPreview(handle, {
+          contentBasePath: "/api/projects/project-1/preview/content/capability/",
+          port: 3000,
+          preset: "vite-v1",
+          processTimeoutMs: 30_000,
+          startupTimeoutMs: 1,
+        }),
+      ).rejects.toMatchObject({
+        name: "E2BPreviewStartError.wait_ready.SandboxPreviewUnavailableError",
+      });
+      expect(sandbox.killedProcessIds).toEqual([42]);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -611,21 +672,14 @@ class FakeE2BSandbox {
   }> = [];
   readonly timeoutValues: number[] = [];
   readonly fileWrites: Array<{ content: string; path: string }> = [];
+  fileEntries: EntryInfo[] = [fileEntry("example.txt")];
+  readonly fileContents = new Map<string, Uint8Array>([
+    ["/workspace/example.txt", new TextEncoder().encode("example")],
+  ]);
   readonly files = {
-    list: async (_path: string) => [
-      {
-        group: "e2b",
-        mode: 0o644,
-        name: "example.txt",
-        owner: "e2b",
-        path: "/workspace/example.txt",
-        permissions: "rw-r--r--",
-        size: 7,
-        type: FileType.FILE,
-      },
-    ],
-    read: async (_path: string, _options: { format: "bytes" }) =>
-      new TextEncoder().encode("example"),
+    list: async (_path: string) => this.fileEntries,
+    read: async (path: string, _options: { format: "bytes" }) =>
+      this.fileContents.get(path) ?? new TextEncoder().encode("example"),
     write: async (path: string, content: string) => {
       if (this.fileWriteErrorsRemaining > 0) {
         this.fileWriteErrorsRemaining -= 1;
@@ -686,6 +740,19 @@ class FakeE2BSandbox {
   async setTimeout(timeoutMs: number) {
     this.timeoutValues.push(timeoutMs);
   }
+}
+
+function fileEntry(name: string, size = 7, type = FileType.FILE): EntryInfo {
+  return {
+    group: "e2b",
+    mode: type === FileType.DIR ? 0o755 : 0o644,
+    name,
+    owner: "e2b",
+    path: `/workspace/${name}`,
+    permissions: type === FileType.DIR ? "rwxr-xr-x" : "rw-r--r--",
+    size,
+    type,
+  };
 }
 
 class FakeE2BCommandHandle {

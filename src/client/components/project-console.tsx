@@ -19,6 +19,7 @@ import {
   userUsageQueryKey,
 } from "../query-keys";
 import { ProjectInspector } from "./project-inspector";
+import { ProjectPanelResizer } from "./project-panel-resizer";
 import {
   AgentComposer,
   ConversationTimeline,
@@ -35,6 +36,7 @@ import { ProjectActionsMenu } from "./project-actions-menu";
 export function ProjectConsole({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const consoleRef = useRef<HTMLElement>(null);
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -300,8 +302,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           </div>
         </div>
       </AppHeaderSlot>
-      <section className="project-console">
-        <main className="project-console-main">
+      <section className="project-console" ref={consoleRef}>
+        <main className="project-console-main" id="project-console-main">
           <ProjectRunTabs onViewChange={setView} view={view} />
           {platformCapabilities.isError ? (
             <div className="run-availability">
@@ -379,6 +381,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           />
         </main>
 
+        <ProjectPanelResizer containerRef={consoleRef} />
         {mobileInspectorOpen ? (
           <button
             aria-label="Dismiss project inspector"

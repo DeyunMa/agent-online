@@ -11,7 +11,7 @@
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
 | Gemini API | `GEMINI_API_KEY` | 真实 Worker ModelGateway 和显式 E2E；fake 开发不读取。 | 本地真实链路已配置。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱；fake 开发不读取。 | 本地真实链路已配置。 |
-| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose、Git、Bash、coreutils 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter、Preview 和 Changes 产品链路 E2E。 |
+| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node/npm/pnpm、Pi、Goose、Python、Git/Bash、常用开发工具、只读平台 Vite 和可写 `/workspace` 的组合模板。 | v4 精确 build 已构建，并完成 adapter、平台 Preview 和 Agent Runtime 真实 E2E。 |
 | Sentry | `SENTRY_DSN`、`VITE_SENTRY_DSN` | 服务端与浏览器的脱敏 Error Monitoring；核心功能不依赖。 | 本地构建配置已准备，Preview 项目、Worker Secret 和源码映射已配置。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |

@@ -29,6 +29,7 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [Hosted Preview 端到端验收](./testing/hosted-preview-e2e.md)
 - [ADR-0008：错误语义与执行关联](./adr/0008-errors-and-execution-correlation.md)
 - [ADR-0009：Project 重命名与硬删除](./adr/0009-project-rename-and-hard-delete.md)
+- [ADR-0010：删除 Project 后保留 Run 用量事实](./adr/0010-deleted-project-usage-archive.md)
 - [执行关联、错误语义与架构优化路线（P0 已实现，后续候选）](./proposals/observability-errors-and-optimization-roadmap.md)
 - [2026-07-27 错误语义与结构化日志](./status/2026-07-27-errors-and-observability.md)
 - [2026-07-27 架构与工程门禁加固](./status/2026-07-27-architecture-hardening.md)
@@ -36,3 +37,4 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [2026-07-28 交付加固](./status/2026-07-28-delivery-hardening.md)
 - [2026-07-28 Project 生命周期](./status/2026-07-28-project-lifecycle.md)
 - [2026-07-30 Sentry 与交付优化](./status/2026-07-30-sentry-and-delivery-optimization.md)
+- [2026-07-30 Preview 平台底座与可调检查器](./status/2026-07-30-preview-platform-and-resizable-inspector.md)

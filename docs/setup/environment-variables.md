@@ -45,7 +45,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` | ModelGateway 的服务端默认模型。 |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久后由 Workflow 停止当前沙箱。 |
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
-| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference；当前 build 还显式安装并探测 Git、Bash 和 coreutils，供受控 Changes 使用。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
+| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference。当前 v4 还固定 npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/进程诊断/原生编译工具，以及只读 `/opt/agent-online/preview` 下的平台 Vite；能力清单写入只读 manifest。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
 | `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 当前为 `spike` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose，但不向 UI 公布；`public` 才公开选择。只有 E2B 支持 Goose。 |
 | `SENTRY_ENVIRONMENT` | 本地通常不设置；Preview 为 `preview` | 服务端错误事件的固定环境标签；没有 DSN 时不会初始化 SDK。 |

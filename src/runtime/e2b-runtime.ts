@@ -26,6 +26,7 @@ import {
   e2bPreviewConfig,
   e2bPreviewConfigPath,
   fetchE2BPreview,
+  inspectE2BPreview,
   requireE2BTrafficAccessToken,
   toE2BPreviewStartError,
   waitForE2BPreviewReady,
@@ -311,6 +312,10 @@ export class E2BSandboxRuntime
       }
       throw toE2BPreviewStartError(stage, error);
     }
+  }
+
+  async inspectPreview(handle: RuntimeHandle) {
+    return inspectE2BPreview(await this.attachSandbox(handle));
   }
 
   async isPreviewRunning(handle: RuntimeHandle, providerProcessRef: string, _port: number) {

@@ -32,6 +32,7 @@ describe("D1 repositories in the Workers runtime", () => {
       "0005_preview_sessions.sql",
       "0006_integrity_guards.sql",
       "0007_agent_run_failure_codes.sql",
+      "0008_archived_run_usage.sql",
     ]);
     expect(triggers.results.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
@@ -65,14 +66,20 @@ describe("D1 repositories in the Workers runtime", () => {
       updatedAt: finishedAt,
       userId: "user_1",
     });
-    const deleted = await projects.deleteOwned("project_1", "user_1");
+    const deleted = await projects.deleteOwned({
+      deletedAt: "2026-07-27T00:01:00.000Z",
+      projectId: "project_1",
+      userId: "user_1",
+    });
     const counts = await env.DB.prepare(
       `SELECT
+        (SELECT COUNT(*) FROM archived_run_usage) AS archived_usage,
         (SELECT COUNT(*) FROM projects) AS projects,
         (SELECT COUNT(*) FROM sandbox_leases) AS leases,
         (SELECT COUNT(*) FROM messages) AS messages,
         (SELECT COUNT(*) FROM agent_runs) AS runs`,
     ).first<{
+      archived_usage: number;
       leases: number;
       messages: number;
       projects: number;
@@ -81,7 +88,13 @@ describe("D1 repositories in the Workers runtime", () => {
 
     expect(renamed).toMatchObject({ title: "Renamed Project", updatedAt: finishedAt });
     expect(deleted).toBe(true);
-    expect(counts).toEqual({ leases: 0, messages: 0, projects: 0, runs: 0 });
+    expect(counts).toEqual({
+      archived_usage: 1,
+      leases: 0,
+      messages: 0,
+      projects: 0,
+      runs: 0,
+    });
     await expect(env.DB.prepare("PRAGMA foreign_key_check").all()).resolves.toMatchObject({
       results: [],
     });
@@ -291,6 +304,7 @@ async function resetProductData() {
   await env.DB.batch([
     env.DB.prepare("DELETE FROM preview_sessions"),
     env.DB.prepare("DELETE FROM terminal_sessions"),
+    env.DB.prepare("DELETE FROM archived_run_usage"),
     env.DB.prepare("DELETE FROM agent_runs"),
     env.DB.prepare("DELETE FROM messages"),
     env.DB.prepare("DELETE FROM sandbox_leases"),

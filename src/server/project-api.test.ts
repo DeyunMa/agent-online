@@ -729,12 +729,12 @@ class InMemoryProjectRepository implements ProjectRepository {
     return project;
   }
 
-  async deleteOwned(projectId: string, userId: string) {
-    const project = this.records.get(projectId);
-    if (project?.userId !== userId) {
+  async deleteOwned(input: Parameters<ProjectRepository["deleteOwned"]>[0]) {
+    const project = this.records.get(input.projectId);
+    if (project?.userId !== input.userId) {
       return false;
     }
-    return this.records.delete(projectId);
+    return this.records.delete(input.projectId);
   }
 
   async findOwnedById(projectId: string, userId: string) {

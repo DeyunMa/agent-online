@@ -1,7 +1,10 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-30 已部署 Sentry 与交付加固版本及第三版组合模板；
+> 状态：2026-07-30 已部署并验证 v4 组合模板、平台 Preview 底座与可调桌面检查器；
+> 当前 Worker 版本和 Hosted E2E 证据见资源台账；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
+> `0008_archived_run_usage.sql` 已在本地准备，尚未应用到远程 Preview；发布依赖该表的
+> 代码前必须先按维护窗口流程应用迁移。
 > 本文继续作为后续发布与重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 
@@ -189,9 +192,12 @@ status/failure code 非法组合计数为零，Hosted E2E 通过。
    Preview 则按第 5 节依次补未应用迁移，当前最新为
    `0007_agent_run_failure_codes.sql`。随后确认
    `/api/capabilities` 仅公开 `previewEnabled=true`，不公开内部端口或 Provider 字段。
-2. 在已有空闲 E2B Lease 且 `/workspace/node_modules/.bin/vite` 存在时启动 Preview；
-   无 Lease、活动 Run/Terminal、缺少 Vite 或 Provider 故障必须返回明确状态。
-3. 在 iframe 加载真实 HTML/JS/CSS，保持 Preview 运行后执行 Pi 修改同一 Project，
+2. 在已有空闲 E2B Lease 上启动 Preview。空 `/workspace` 必须返回
+   `preview.entry_missing`；Project 声明依赖但没有 `node_modules` 时必须返回
+   `preview.dependencies_missing`；平台只运行模板内固定 Vite，不下载依赖、不执行
+   Project script，也不读取 Project Vite 配置。
+3. 为 `/workspace` 创建根 `index.html` 后，在 iframe 加载真实 HTML/JS/CSS；HTTP `404`
+   不能被误判为 ready。保持 Preview 运行后执行 Pi 修改同一 Project，
    手动 Reload 必须看到新内容。
 4. Preview 运行期间连接 Terminal，验证二者复用同一 `/workspace`；整沙箱 Stop 必须
    返回 `project.busy`。

@@ -1,8 +1,9 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-07-30 的私有 Cloudflare 环境。Sentry 与交付加固代码、
-> 第三版 Pi/Goose 组合模板已部署；`0006_integrity_guards.sql` 和
+> 状态：本文记录截至 2026-07-30 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
+> 受控 Preview 预检和可调桌面检查器已部署；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql` 继续保持已应用状态。
+> 本地新增的 `0008_archived_run_usage.sql` 尚未应用到远程 Preview。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -30,7 +31,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `d9808939-2c9b-4f56-a0ba-62d65b2d6109` |
+| 当前部署版本 | `772c6b92-b294-4741-9b61-ef4c6db82468` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -64,7 +65,13 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 登录/API smoke，最后恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
 [私有 Preview 部署](./preview-deployment.md)执行。
 
-D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 usage，以及当前 Terminal/Preview 的临时协调行。Terminal/Preview 停止后对应行删除；Changes 不新增表，不保存 Git status/diff/history。没有创建 R2、KV、Durable Object 或文件快照。
+下一次发布必须在维护窗口先应用 `0008_archived_run_usage.sql`，再部署依赖该表的
+Usage 查询和 Project 删除代码。
+
+D1 schema 还包括已删除 Project 的最小 per-Run usage 归档，以及当前
+Terminal/Preview 的临时协调行。归档不保存 Message、文件或 Provider 引用；
+Terminal/Preview 停止后对应行删除；Changes 不保存 Git status/diff/history。没有创建
+R2、KV、Durable Object 或文件快照。
 
 ## 4. Workflow
 
@@ -85,7 +92,7 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 | `ACCESS_MODE` | `allowlist` |
 | `BETTER_AUTH_URL` | `https://agent-online-preview.mdy1145141.workers.dev` |
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` |
-| `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:a57d8d0d-5b9b-4d1e-8cca-06a9c94752a4` |
+| `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c` |
 | `GOOSE_RUNTIME_MODE` | `spike` |
 | `MAX_RUN_WALL_SECONDS` | `1800` |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` |
@@ -95,9 +102,10 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-07-30，本表记录的是当前已部署 Preview。第三版组合模板显式安装并探测
-Node、Pi、Goose、Git、Bash 与 coreutils，并确保 E2B 默认非 root 用户拥有
-`/workspace`、可直接初始化 Git；`GOOSE_RUNTIME_MODE=spike` 已上线，
+截至 2026-07-30，本表记录的是当前已部署 Preview。v4 组合模板显式安装并探测
+Node/npm/pnpm、Pi/Goose、Python/pip、Git/Bash、rg/jq、归档、进程诊断、编译器和
+平台固定 Vite；只读 `/opt/agent-online` 与默认非 root 用户拥有的可写
+`/workspace` 保持分离。`GOOSE_RUNTIME_MODE=spike` 已上线，
 该模式允许受邀测试者显式调用 Goose，
 但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
 随 Worker 配置原地升级；本次验收使用新 Project，让首个 Run 按组合模板创建沙箱。
@@ -223,6 +231,20 @@ Preview 已验证：
   `d9808939-2c9b-4f56-a0ba-62d65b2d6109`；健康检查、Pi-only 公开 capability 和九项
   远程协调预检通过。Sentry 两组源码映射以完整 Git SHA
   `7c54f26ab07cb17b711c5587c09f06977f131803` 上传，release 与实际部署源码一致。
+- 标签页 favicon 随版本 `cc7a2a70-e4f6-4d67-b595-4b3c3b01e957` 部署；线上首页显式
+  引用 `/favicon.svg`，该资源返回 `200 image/svg+xml`，部署后健康检查通过。
+- v4 平台底座与可调检查器随版本
+  `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 完成完整登录态浏览器验收。浏览器验证桌面 Inspector
+  宽度调整与刷新持久化、空入口与缺依赖错误、平台固定 Vite 页面、运行中 Preview
+  与真实 Pi Run/Files 文件连续性；测试 Project、Preview 和沙箱均已清理，最终九项
+  远程协调预检全部通过。
+- 清除原生 separator 默认 margin/border 的 CSS-only 收敛版本为
+  `1521d72a-d565-4dee-888d-c09d5275211f`。最终线上验证 separator margin/border 均为
+  `0px`、宽度键盘调整和固定左栏成立；健康、公开 capability 和九项远程预检通过。
+- 桌面 Project Inspector 横向分隔线对齐版本为
+  `772c6b92-b294-4741-9b61-ef4c6db82468`。线上量测 Project tabs/header 底边均为
+  `110px`，Run status/Inspector tabs 底边均为 `162px`，两组偏差均为 `0px`；健康检查
+  和九项远程预检通过。
 
 尚未验证：
 

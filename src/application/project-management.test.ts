@@ -68,7 +68,11 @@ describe("ProjectManagementService", () => {
       fixture.service.delete({ projectId: project.id, userId: project.userId }),
     ).resolves.toEqual({ kind: "deleted", project });
     expect(fixture.projectSandboxes.stop).toHaveBeenCalledWith(project.id);
-    expect(fixture.projects.deleteOwned).toHaveBeenCalledWith(project.id, project.userId);
+    expect(fixture.projects.deleteOwned).toHaveBeenCalledWith({
+      deletedAt: "2026-07-28T01:00:00.000Z",
+      projectId: project.id,
+      userId: project.userId,
+    });
   });
 
   it.each([

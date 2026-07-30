@@ -96,6 +96,7 @@ export type UserUsageResponse = {
     usage: UsageMetricsResponse;
   }>;
   projects: Array<{
+    projectDeleted: boolean;
     projectId: string;
     projectTitle: string;
     usage: UsageMetricsResponse;

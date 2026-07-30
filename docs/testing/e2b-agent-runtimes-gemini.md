@@ -37,12 +37,21 @@
 | 组件 | 版本 |
 | --- | --- |
 | Node.js | `24.16.0` |
+| npm | `11.13.0` |
+| pnpm | `10.33.2` |
+| 平台 Vite | `8.1.5` |
+| Python / pip | `3.11.2` / `23.0.1` |
 | Pi | `0.82.0` |
 | Goose | `1.44.0` |
 | Git | `2.39.5` |
 | Bash | `5.2.15` |
+| ripgrep / jq | `13.0.0` / `1.6` |
 
-Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。模板显式安装 `bash`、`coreutils` 和 `git`，供受控 Changes 使用；模板不包含任何 Key、token 或用户数据。第三版模板以 E2B 默认非 root 用户运行，并由该用户拥有 `/workspace`，避免 Terminal/Agent 创建的 repository 因目录所有权不一致触发 Git `safe.directory` 拒绝。
+Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。v4
+模板显式安装常用 shell、归档、Git、搜索、JSON、Python 和原生编译工具，并在只读
+`/opt/agent-online/preview` 固定平台 Vite。模板不包含任何 Key、token 或用户数据；
+E2B 默认非 root 用户拥有唯一可写的 `/workspace`，避免 Terminal/Agent 创建的
+repository 因目录所有权不一致触发 Git `safe.directory` 拒绝。
 
 构建：
 
@@ -53,7 +62,7 @@ pnpm build:e2b-agent-template
 当前已验证的精确 build：
 
 ```text
-agent-online-pi-goose-runtime:a57d8d0d-5b9b-4d1e-8cca-06a9c94752a4
+agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c
 ```
 
 旧 `agent-online-pi-runtime` 模板和构建脚本暂时保留为回滚工具，但新的 Project Runtime 验证必须使用组合模板，不能因切换 Agent 重建沙箱。
@@ -88,7 +97,7 @@ pnpm test:e2e:e2b-agent-runtimes
 
 ## 通过条件
 
-1. 组合模板实测 Node/Pi/Goose/Git/Bash 版本正确，`/workspace` 由默认用户拥有且可写，并能完成 Git init/status。
+1. 组合模板实测 Node/npm/pnpm、Pi/Goose、Python/pip、Git/Bash、rg/jq、编译器和平台 Vite 版本正确；只读 manifest 与平台目录不可被运行用户修改，`/workspace` 由默认用户拥有且可写，并能完成 Git init/status。
 2. 沙箱环境中没有 Gemini/E2B Key，也没有常驻 ModelGateway token。
 3. Pi 创建共享文件，Goose 读取并修改，Pi 再读取并修改；全程使用同一 Provider sandbox。
 4. 两个 adapter 都解析真实协议并产生成功的 `agent.completed` 与最终文本。
@@ -96,6 +105,8 @@ pnpm test:e2e:e2b-agent-runtimes
 6. Goose 通过 shell 创建“已进入长命令”标记后才执行取消；进程被精确终止，随后共享文件和沙箱仍可访问。
 7. Pi 和 Goose provider 配置均不包含 capability token 值。
 8. 四个 Run 使用四个不同的正式签名 capability，Gateway usage 可按实际 `runId` 区分。
+9. 空工作区被 Preview 预检识别为 `entry_missing`；创建静态 `index.html` 后由平台固定
+   Vite 启动，并通过固定 base path 读取真实 marker，随后进程可精确停止。
 
 ## 2026-07-26 结果
 
@@ -129,3 +140,13 @@ pnpm test:e2e:e2b-agent-runtimes
   `/workspace` 所有权、写入、Git init/status 和密钥缺失。
 - 真实 adapter E2E 在同一个第三版沙箱完成 `Pi -> Goose -> Pi -> Goose cancel`，
   最终 Message、按 Run usage、共享文件、精确取消和 Key 隔离全部通过；耗时约 65 秒。
+
+## 2026-07-30 v4 平台底座结果
+
+- v4 不可变 build 为
+  `agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c`。构建探针验证
+  Node/npm/pnpm、Pi/Goose、Python/pip、Git/Bash、rg/jq、归档、进程诊断、编译器和
+  平台 Vite；`/opt/agent-online` 及 manifest 对运行用户只读，`/workspace` 保持空白可写。
+- 真实 E2E 先验证空工作区返回 `entry_missing`，再写入静态入口并由平台固定 Vite
+  返回真实 marker；随后在同一沙箱完成 `Pi -> Goose -> Pi -> Goose cancel`、usage、
+  文件连续性、精确取消和 Key 隔离。1 个完整用例通过，耗时约 63 秒。

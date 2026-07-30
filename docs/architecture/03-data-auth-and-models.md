@@ -1,13 +1,13 @@
 # 数据、认证、模型与基础用量
 
 > 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-30 已接入严格脱敏的 Sentry Error Monitoring。当前没有维护者角色或管理视图。
-> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
+> 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [ADR-0010](../adr/0010-deleted-project-usage-archive.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
 
 | 位置 | 保存内容 | 不保存内容 |
 | --- | --- | --- |
-| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage，以及当前临时 Terminal/Preview 协调行。 | Project 文件、Git status/diff/history、原始 Agent 事件、终端输入/输出/滚屏、Preview 页面/日志/截图/访问历史、Provider 明文 Key、私有推理。 |
+| D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage、已删除 Project 的最小 Run usage 归档，以及当前临时 Terminal/Preview 协调行。 | Project 文件、Git status/diff/history、原始 Agent 事件、终端输入/输出/滚屏、Preview 页面/日志/截图/访问历史、Provider 明文 Key、私有推理。 |
 | 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
 | Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
 | Sentry | 严格 allowlist 清洗后的服务端和浏览器错误、stack/debug ID、应用关联 ID 与少量数值上下文。 | prompt、消息正文、代码文件、文件路径、密钥、Provider 引用、原始 Agent/终端流、请求正文、Cookie、用户身份和 breadcrumbs。 |
@@ -40,6 +40,7 @@ Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth �
 | `messages` | `id`, `project_id`, `agent_run_id`, `sequence`, `role`, `content`, `created_at` | 用户消息和最终 assistant 消息。 |
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
 | `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `failure_code`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、稳定失败分类、关联、当前私有进程引用和基础计量。 |
+| `archived_run_usage` | `run_id`, `user_id`, Project/Runtime/Model 快照、终态、用量与时间字段 | Project 删除前按 Run 归档最小计量事实；不保存消息、失败详情或 Provider 引用。 |
 | `terminal_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 PTY 的硬互斥与私有终止引用；关闭即删除，不是历史表。`expires_at` 只供 Workflow 调度，不能自动解锁。 |
 | `preview_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `status`, `port`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 Preview 的所有权与私有终止引用；固定端口 3000，停止即删除，不是页面或访问历史。 |
 
@@ -81,7 +82,7 @@ END;
 
 `preview_sessions.status='starting'` 只覆盖启动竞态；进入 `running` 后允许后续 AgentRun 和 Terminal 复用同一沙箱。停止沙箱与 idle cleanup 则必须检查任意活动 Preview。`expires_at` 只供 durable Workflow 调度，不能仅因墙钟经过就把私有进程当作已经停止。
 
-不建立 `workspace_revisions`、Git changes/history、`usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。Changes 每次直接读取当前沙箱 Git working tree/index，不新增 D1 表或迁移。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
+不建立 `workspace_revisions`、Git changes/history、逐请求 `usage_events`、`usage_reservations`、`model_connections`、`credential_leases` 或 `audit_events`。`archived_run_usage` 只是删除 Project 时的一行一 Run 计量快照，不是账单流水。Changes 每次直接读取当前沙箱 Git working tree/index，不新增 D1 表。本项目处于个人开发阶段，迁移重建可以清洗本地 D1 数据，不需要兼容这些旧表。
 
 ## 4. 平台 Gemini 与 ModelGateway
 
@@ -97,14 +98,17 @@ BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的�
 
 ## 5. 用量与管理，不是计费
 
-Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token 与模型请求仍为零。认证后的 `GET /api/usage` 与 Usage 页面已经实现，直接按当前 `user_id` 聚合全部现存 `agent_runs`，返回：
+Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token 与模型请求仍为零。认证后的 `GET /api/usage` 与 Usage 页面已经实现，按当前 `user_id` 合并现存 `agent_runs` 与 `archived_run_usage`，返回：
 
 - `totals`：Run 数、输入/输出/总 token、模型请求数和沙箱时长；
-- `projects`：按 Project 分组的同一组指标；
+- `projects`：按 Project 分组的同一组指标，并用 `projectDeleted` 区分不可进入的已删除 Project；
 - `agentRuntimes`：按 AgentRuntime 分组的同一组指标；
 - `scope: "all_time"`：当前版本没有日期筛选或时间序列。
 
-聚合不按 Run 状态过滤。取消、失败、超时或仍在执行的 Run 只要已有真实落库用量，就计入当前读数。前端只显示 API 数据，不推算价格；实现没有新增迁移、`usage_events`、外部依赖或环境变量。内部管理视图仍未实现。
+现存 Run 的聚合不按状态过滤。取消、失败、超时或仍在执行的 Run 只要已有真实落库
+用量，就计入当前读数；Project 只能在没有活动执行时删除，因此归档表只接受终态 Run。
+前端只显示 API 数据，不推算价格；实现没有逐请求 `usage_events`、外部依赖或环境变量。
+内部管理视图仍未实现。
 
 `AgentRun` 是 V1 的计量单位，不是单次模型调用。一个 Run 可包含多次模型请求和工具调用；终态时，平台记录该次总 token、模型请求数和沙箱执行时长。临时 Terminal 和 Preview 不生成 AgentRun，也不写长期 usage；其成本只由各自 30 分钟上限、E2B timeout 和停止后的 10 分钟 idle cleanup 约束。
 

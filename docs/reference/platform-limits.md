@@ -75,7 +75,7 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | Project 列表 | 无分页、无应用级条数上限 | D1 查询 |
 | Message 列表 | 无分页，返回 Project 全部可见消息 | D1 查询 |
 | AgentRun 列表 | 只返回最新 50 条 | D1 `LIMIT 50` |
-| Usage 范围 | 当前 User 现存 AgentRun，固定 `all_time`；Project 删除后相应减少 | D1 聚合 |
+| Usage 范围 | 当前 User 的现存 AgentRun 与删除归档，固定 `all_time`；无日期筛选 | D1 聚合 |
 | 默认模型 ID | 最长 200，只允许 `[A-Za-z0-9._:/-]` | Worker 配置解析 |
 
 当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 无分页适合个人阶段，但数据变大后会增加响应和 D1 扫描成本。
@@ -102,8 +102,9 @@ ModelGateway 的 4 MiB 实际读取上限。公开注册前仍需增加独立的
 
 沙箱停止不是永久 Project 删除。停止会清空 Provider 引用，Project 元数据、Message、Run 和 usage 仍在 D1，但 `/workspace` 文件允许丢失。
 
-Project 硬删除会先停止空闲沙箱，再删除 Project 聚合。Message、Run、Usage 和 Lease
-随 D1 外键删除，`/workspace` 文件永久丢失；当前没有回收站或恢复副本。
+Project 硬删除会先停止空闲沙箱，再按 Run 归档最小 usage 并删除 Project 聚合。
+Message、Run 和 Lease 随 D1 外键删除，归档 usage 保留，`/workspace` 文件永久丢失；
+当前没有回收站或恢复副本。
 
 ## 5. AgentRuntime 和模型限制
 
@@ -212,8 +213,11 @@ Terminal 是受控但真实的 shell。登录用户可以通过它修改 `/works
 | --- | --- | --- |
 | 工作目录 | 固定 `/workspace` | 不能传 cwd。 |
 | preset | 固定 `vite-v1` | 不能传任意命令或脚本。 |
+| Preview 工具 | `/opt/agent-online/preview` 中固定 Vite `8.1.5` | Project 不能替换平台二进制。 |
+| Web 入口 | 根目录普通文件 `index.html` | `409 preview.entry_missing`，不创建会话。 |
+| 项目依赖 | 小型 `package.json` 声明依赖时要求根目录 `node_modules` | `409 preview.dependencies_missing`，不创建会话。 |
 | 端口 | 固定 `3000`，D1 CHECK | 其他端口拒绝。 |
-| 启动等待 | 最多 20 秒；每 500 ms 探测，单次探测 2 秒 | `503 preview.unavailable`。 |
+| 启动等待 | 最多 20 秒；每 500 ms 探测，单次探测 2 秒，只接受 `2xx` | `503 preview.unavailable`。 |
 | 内容代理上游请求 | 每次最多 15 秒 | Provider fetch 超时并映射为 Preview 通用错误。 |
 | 会话时长 | 最长 30 分钟 | Workflow 终止进程并删临时行。 |
 | 进程 timeout | 会话时长 + 15 秒 | Provider 最终终止。 |
@@ -229,7 +233,9 @@ Terminal 是受控但真实的 shell。登录用户可以通过它修改 `/works
 | CSP | `connect-src 'none'`、`form-action 'none'`、`object-src 'none'` 等 | HMR/WebSocket/外部 fetch 不工作。 |
 | 缓存 | `no-store` | 不保证离线或历史内容。 |
 
-Preview 不提供任意端口代理、后端服务、WebSocket/HMR、环境变量、Provider URL、日志、截图或部署。它用于手动刷新查看前端 Vite 输出，不是通用应用托管平台。
+Preview 不自动安装依赖，也不提供任意端口代理、后端服务、WebSocket/HMR、环境变量、
+Provider URL、日志、截图或部署。它用于手动刷新查看前端 Vite 输出，不是通用应用托管
+平台。无入口和缺少依赖是正常产品状态，不应产生 Sentry 平台错误。
 
 ## 10. ModelGateway 和密钥边界
 

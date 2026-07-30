@@ -137,8 +137,12 @@ function messageForApiError(error: PublicErrorCode) {
       return "未找到请求的项目或执行记录。";
     case "project_path.not_found":
       return "文件路径已不存在，请刷新目录后重试。";
+    case "preview.dependencies_missing":
+      return "项目依赖尚未安装，请先安装 package.json 声明的依赖。";
+    case "preview.entry_missing":
+      return "当前项目没有可预览的 Web 入口，请先创建 /workspace/index.html。";
     case "preview.unavailable":
-      return "项目 Preview 暂时不可用，请确认项目根目录已安装 Vite 后重试。";
+      return "项目 Preview 暂时不可用，请稍后重试。";
     case "project.busy":
       return "该项目已有正在执行的任务。";
     case "run.creation_disabled":

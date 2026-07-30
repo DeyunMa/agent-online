@@ -13,6 +13,8 @@ export const publicErrorCodes = [
   "project_path.unsupported",
   "file.too_large",
   "file.content_unsupported",
+  "preview.dependencies_missing",
+  "preview.entry_missing",
   "preview.unavailable",
   "service.unavailable",
   "internal.unexpected",

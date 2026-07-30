@@ -6,6 +6,7 @@ export type UsageMetrics = AgentRunUsage & {
 };
 
 export type ProjectUsageSummary = {
+  projectDeleted: boolean;
   projectId: string;
   projectTitle: string;
   usage: UsageMetrics;

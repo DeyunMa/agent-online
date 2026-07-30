@@ -235,15 +235,30 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
+  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page.getByRole("tab", { name: "Preview" }).click();
+  await projectInspector.getByRole("button", { exact: true, name: "Start" }).click();
+  await expect(
+    projectInspector.getByText("当前项目没有可预览的 Web 入口，请先创建 /workspace/index.html。", {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("tab", { name: "Terminal" }).click();
+  await projectInspector.getByRole("button", { exact: true, name: "Connect" }).click();
+  await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   const fixtureCommand = [
     "mkdir -p src",
     `printf %s ${shellQuote('<div id="app"></div><script type="module" src="/src/main.js"></script>')} > index.html`,
     `printf %s ${shellQuote("document.querySelector('#app').textContent = 'baseline';")} > src/main.js`,
-    `printf %s ${shellQuote('{"private":true,"devDependencies":{"vite":"8.1.5"}}')} > package.json`,
-    `printf %s ${shellQuote("node_modules/")} > .gitignore`,
-    "npm install --no-audit --no-fund",
     "git init -q /workspace",
-    "git -C /workspace add .gitignore index.html package.json package-lock.json src/main.js",
+    "git -C /workspace add index.html src/main.js",
     "git -C /workspace -c user.email=e2e@agent-online.test -c user.name=Agent-Online-E2E commit -qm baseline",
     `printf %s ${shellQuote(`document.querySelector('#app').textContent = '${previewMarker}';`)} > src/main.js`,
     `printf %s ${shellQuote("hosted capability fixture")} > E2E-NOTES.txt`,

@@ -3,6 +3,7 @@
 - 状态：Accepted；代码、本地测试与 Hosted E2E 已实现
 - 日期：2026-07-28
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) ·
+  [ADR-0010](./0010-deleted-project-usage-archive.md) ·
   [D1 表设计](../reference/database-schema.md) ·
   [平台限制](../reference/platform-limits.md)
 
@@ -32,8 +33,9 @@ Terminal 或 Preview 也可能正在修改同一文件系统；已完成 Run 的
   PreviewSession 都返回 `409 project.busy`。
 - 若存在空闲 Provider sandbox，先原子脱离并调用 SandboxRuntime 停止；停止成功后才
   删除 Project。
-- D1 通过现有外键级联删除 SandboxLease、Message、AgentRun、TerminalSession 和
-  PreviewSession。AgentRun 被删除后，当前 all-time Usage 聚合会相应减少。
+- D1 在同一 batch 中先按 Run 把最小计量事实写入 `archived_run_usage`，再通过现有
+  外键级联删除 SandboxLease、Message、AgentRun、TerminalSession 和 PreviewSession。
+  all-time Usage 随后合并现存 Run 与归档用量，不因 Project 删除减少。
 - Provider 停止失败或 Lease 并发冲突时保留 Project，并返回可重试错误。
 
 ### 3. Workflow 收敛
@@ -45,8 +47,9 @@ Terminal 或 Preview 也可能正在修改同一文件系统；已完成 Run 的
 ### 4. UI
 
 桌面侧栏、Project 列表和 Project 标题区复用同一个操作菜单。Rename 对话框禁止空标题、
-未变化标题和重复提交；Delete 对话框明确列出 Message、Run、Usage 与沙箱文件的永久
-删除后果。删除成功后清理 Project 查询缓存并返回 Projects 页面。
+未变化标题和重复提交；Delete 对话框明确列出 Message、Run 与沙箱文件的永久删除后果，
+并说明聚合 Run usage 仍保留在 all-time activity。删除成功后清理 Project 查询缓存并
+返回 Projects 页面。
 
 ## 未采用方案
 
@@ -54,16 +57,16 @@ Terminal 或 Preview 也可能正在修改同一文件系统；已完成 Run 的
 | --- | --- |
 | `deleted_at` 软删除 | 需要所有查询、用量和资源回收长期携带额外状态，不符合个人项目边界。 |
 | 回收站或 R2 快照 | 引入恢复、保留、配额和对象生命周期责任。 |
-| 保留 AgentRun 作为账单记录 | 当前 Usage 不是结算账本；保留会破坏简单 Project 归属。 |
+| 保留完整 AgentRun 作为账单记录 | 当前 Usage 不是结算账本；最小归档避免保留运行关联和失败详情。 |
 | 活动资源自动强制取消 | 删除可能与正在写文件的 Run/Terminal 竞争；明确返回 busy 更可预测。 |
 | 先删 D1 再异步停沙箱 | Provider 调用失败后会失去可重试的 Lease 引用。 |
 
 ## 后果
 
-- 删除 Project 会永久减少 Message、Run 和 Usage 汇总，并丢失当前沙箱文件。
+- 删除 Project 会永久移除 Message、AgentRun 和当前沙箱文件，但保留最小 Run 用量事实。
 - 当前实现不宣称删除与恶意并发请求之间具备跨 D1/Provider 的分布式事务；服务端所有权、
   活动资源检查和 Lease 条件更新提供个人阶段的受控一致性。
-- 不新增 D1 migration、环境变量、R2 或外部依赖。
+- 新增一张轻量 D1 归档表；不新增环境变量、R2 或外部依赖。
 
 ## 验收
 
@@ -71,6 +74,6 @@ Terminal 或 Preview 也可能正在修改同一文件系统；已完成 Run 的
 2. Rename 与 Create 使用同一标题限制，UI 和列表缓存同步更新。
 3. 活动 Run/Terminal/Preview 阻止删除。
 4. 空闲真实沙箱在 Project 行删除前停止。
-5. D1 级联后 Project、Lease、Message 和 Run 均无残留，Usage 随 Run 删除减少。
+5. D1 级联后 Project、Lease、Message 和 Run 均无残留，每个 Run 的最小 usage 归档存在。
 6. 休眠 Workflow 遇到已删除 Run 时 no-op。
 7. 本地门禁、浏览器流程和真实 Hosted E2E 均通过。

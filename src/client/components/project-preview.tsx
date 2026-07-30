@@ -144,7 +144,7 @@ export function ProjectPreview({
           src={preview.data.contentUrl}
           title="Project preview"
         />
-      ) : preview.isSuccess ? (
+      ) : preview.isSuccess && !mutationError ? (
         <PreviewNotice
           projectBusy={projectBusy}
           sandboxAvailable={sandboxAvailable}

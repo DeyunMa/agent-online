@@ -22,11 +22,12 @@
 
 全能力路径：
 
-1. Terminal 在一个新沙箱中创建确定性 Vite/Git fixture，并留下 modified/untracked Changes；
-2. Changes 列表和 diff 返回真实当前工作树；
-3. 浏览器通过 WebSocket Terminal 写入文件，关闭后由 Files 回读；
-4. 固定 Vite Preview 加载真实 marker，并完成显式停止；
-5. 最后停止整个沙箱并再次完成 JSON API 私有状态审计。
+1. Terminal 创建空沙箱后，Preview 先验证缺少根 `index.html` 的明确错误；
+2. Terminal 创建不含 Project 本地 Vite 的静态 Git fixture，并留下 modified/untracked Changes；
+3. Changes 列表和 diff 返回真实当前工作树；
+4. 浏览器通过 WebSocket Terminal 写入文件，关闭后由 Files 回读；
+5. 模板内固定 Vite Preview 加载真实 marker，并完成显式停止；
+6. 最后停止整个沙箱并再次完成 JSON API 私有状态审计。
 
 Project 生命周期路径：
 
@@ -65,8 +66,8 @@ unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 
 完整执行会创建两个 AgentRun 和三个 E2B 沙箱：只有基线路径使用一次真实 Pi 成功
 Run 和一次可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
-这样仍覆盖真实 ModelGateway/Workflow/usage/取消，同时避免用模型安装 Vite 或只为
-创建沙箱而运行 Agent。成功路径会主动关闭 Terminal/Preview
+这样仍覆盖真实 ModelGateway/Workflow/usage/取消，同时证明平台 Preview 底座不依赖
+Project 安装 Vite，也避免用模型安装依赖或只为创建沙箱而运行 Agent。成功路径会主动关闭 Terminal/Preview
 并停止沙箱；测试中途失败时，`afterEach` 也会尽力按 Terminal、Preview、sandbox 顺序
 清理，E2B timeout 仍是最终回收边界。Project 生命周期用例会删除自己的
 Project/Message/Run/Usage；其余发布证据仍保留在 D1。
@@ -85,6 +86,34 @@ Terminal fixture 的 ready marker 必须由命令实际输出，不能让 marker
 `git -C /workspace` 并避免把多行文本直接拼进 shell，以保持结果可重复。
 
 ## 最近执行
+
+2026-07-30 针对 Preview 版本 `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 完成登录态
+浏览器纵向验收：
+
+- 桌面 Inspector 通过键盘从 320 px 调整为 352 px，中栏同步变化、左栏保持 280 px，
+  刷新后偏好仍保留；本地自动浏览器测试另覆盖真实拖动和移动端隐藏；
+- 新 v4 沙箱的空工作区返回 `preview.entry_missing`，声明依赖但没有
+  `node_modules` 返回 `preview.dependencies_missing`；
+- 不安装 Project 本地 Vite，仅创建静态根 `index.html`，平台固定 Vite 即在 iframe
+  显示真实 marker；
+- Preview 运行期间真实 Pi Run 成功，记录 2 次模型请求和非零 token；Pi 新文件由
+  Files 读取，原 Preview 页面保持可用；
+- 显式停止 Preview 和沙箱并删除临时 Project，随后九项远程协调预检全部通过。
+
+本次使用既有登录态完成发布后纵向验收，没有把测试账号密码写入 shell 环境或仓库；
+三条 `pnpm test:e2e:preview` 自动用例源码已同步改为使用平台 Vite fixture，下一次提供
+显式 `PREVIEW_E2E_*` 进程变量时可原样复跑。
+
+随后只清除原生 separator 的默认 margin/border，并部署最终版本
+`1521d72a-d565-4dee-888d-c09d5275211f`。该版本重新通过 lint、typecheck 和 3 条本地
+浏览器测试；线上确认 separator margin/border 为 `0px`、Inspector 键盘调整和固定
+左栏成立，健康、公开 capability 和九项远程协调预检通过。由于真实执行链路没有变化，
+没有再次创建 E2B 沙箱或调用 Gemini。
+
+桌面横向分隔线随后在版本 `772c6b92-b294-4741-9b61-ef4c6db82468` 对齐。浏览器量测
+Project tabs/header 底边均为 `110px`，Run status/Inspector tabs 底边均为 `162px`，
+两组偏差均为 `0px`；`pnpm check`、线上健康检查和九项远程协调预检通过。该 CSS-only
+调整同样没有重新创建 E2B 沙箱或调用 Gemini。
 
 2026-07-30 针对 Preview 版本 `50a111c7-1c22-4f80-8bca-0810fb772e84` 通过：
 

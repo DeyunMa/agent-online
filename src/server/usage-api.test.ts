@@ -24,6 +24,7 @@ const usageSummary: UserUsageSummary = {
   ],
   projects: [
     {
+      projectDeleted: false,
       projectId: "project-1",
       projectTitle: "Demo",
       usage: {

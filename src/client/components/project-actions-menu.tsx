@@ -317,9 +317,9 @@ export function ProjectActionsMenu({
                 <header>
                   <h2 id={`${menuId}-delete-title`}>Delete project</h2>
                   <p>
-                    Delete <strong>{project.title}</strong>? Messages, Agent Runs, usage recorded by
-                    those Runs, and current sandbox files will be permanently removed. This cannot
-                    be undone.
+                    Delete <strong>{project.title}</strong>? Messages, Agent Runs, and current
+                    sandbox files will be permanently removed. Aggregate Run usage remains in your
+                    all-time activity. This cannot be undone.
                   </p>
                 </header>
                 {deleteProject.isError ? <ErrorState compact error={deleteProject.error} /> : null}

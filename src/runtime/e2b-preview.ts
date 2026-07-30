@@ -1,9 +1,14 @@
-import type { SandboxPreviewRequest, SandboxPreviewStartInput } from "./contract";
+import type {
+  SandboxPreviewAvailability,
+  SandboxPreviewRequest,
+  SandboxPreviewStartInput,
+} from "./contract";
 import { SandboxPreviewUnavailableError } from "./contract";
 import { toShellCommand } from "./e2b-shell";
 import type { E2BSandbox } from "./e2b-types";
 
 export const e2bPreviewConfigPath = "/tmp/agent-online-vite-preview.config.mjs";
+export const e2bPreviewExecutable = "/opt/agent-online/preview/node_modules/.bin/vite";
 export const e2bPreviewConfig = `export default {
   appType: "spa",
   clearScreen: false,
@@ -19,6 +24,7 @@ export const e2bPreviewConfig = `export default {
 const previewFetchTimeoutMs = 15_000;
 const previewPort = 3000;
 const previewWorkingDirectory = "/workspace";
+const previewPackageJsonLimitBytes = 64 * 1024;
 
 export function assertE2BPreviewStartInput(input: SandboxPreviewStartInput) {
   if (
@@ -45,7 +51,7 @@ export function createE2BVitePreviewCommand(contentBasePath: string) {
       "--base",
       contentBasePath,
     ],
-    command: "./node_modules/.bin/vite",
+    command: e2bPreviewExecutable,
     cwd: previewWorkingDirectory,
     env: {
       BROWSER: "none",
@@ -53,6 +59,31 @@ export function createE2BVitePreviewCommand(contentBasePath: string) {
       PORT: String(previewPort),
     },
   };
+}
+
+export async function inspectE2BPreview(sandbox: E2BSandbox): Promise<SandboxPreviewAvailability> {
+  const entries = await sandbox.files.list(previewWorkingDirectory);
+  const entry = entries.find((candidate) => candidate.name === "index.html");
+  if (entry?.type !== "file") {
+    return { kind: "entry_missing" };
+  }
+
+  const packageJson = entries.find(
+    (candidate) => candidate.name === "package.json" && candidate.type === "file",
+  );
+  const nodeModules = entries.find(
+    (candidate) => candidate.name === "node_modules" && candidate.type === "dir",
+  );
+  if (
+    packageJson &&
+    packageJson.size <= previewPackageJsonLimitBytes &&
+    !nodeModules &&
+    (await packageJsonDeclaresDependencies(sandbox))
+  ) {
+    return { kind: "dependencies_missing" };
+  }
+
+  return { kind: "ready" };
 }
 
 export function requireE2BTrafficAccessToken(sandbox: E2BSandbox) {
@@ -118,7 +149,7 @@ export async function waitForE2BPreviewReady(
         signal: AbortSignal.timeout(2_000),
       });
       await response.body?.cancel();
-      if (![502, 503, 504].includes(response.status)) {
+      if (response.ok) {
         return;
       }
     } catch {
@@ -131,6 +162,28 @@ export async function waitForE2BPreviewReady(
   throw new SandboxPreviewUnavailableError(
     "Preview port did not become ready before the startup deadline",
   );
+}
+
+async function packageJsonDeclaresDependencies(sandbox: E2BSandbox) {
+  try {
+    const content = await sandbox.files.read("/workspace/package.json", {
+      format: "bytes",
+    });
+    const value: unknown = JSON.parse(new TextDecoder().decode(content));
+    if (!isRecord(value)) {
+      return false;
+    }
+    return ["dependencies", "devDependencies", "optionalDependencies"].some((key) => {
+      const dependencies = value[key];
+      return isRecord(dependencies) && Object.keys(dependencies).length > 0;
+    });
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function fetchE2BPreview(

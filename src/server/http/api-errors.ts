@@ -15,6 +15,8 @@ export const publicErrorDefinitions = {
   "file.content_unsupported": { retryable: false, status: 415 },
   "file.too_large": { retryable: false, status: 413 },
   "internal.unexpected": { retryable: true, status: 500 },
+  "preview.dependencies_missing": { retryable: false, status: 409 },
+  "preview.entry_missing": { retryable: false, status: 409 },
   "preview.unavailable": { retryable: true, status: 503 },
   "project.busy": { retryable: true, status: 409 },
   "project_path.not_found": { retryable: false, status: 404 },

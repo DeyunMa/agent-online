@@ -19,7 +19,13 @@ const templateAlias = `${piGooseRuntimeTemplate.name}:${piGooseRuntimeTemplate.t
 
 console.log(`Building E2B template ${templateAlias}`);
 console.log(
-  `Runtime versions: Node ${piGooseRuntimeTemplate.nodeVersion}, Pi ${piGooseRuntimeTemplate.piVersion}, Goose ${piGooseRuntimeTemplate.gooseVersion}`,
+  [
+    `Runtime versions: Node ${piGooseRuntimeTemplate.nodeVersion}`,
+    `Pi ${piGooseRuntimeTemplate.piVersion}`,
+    `Goose ${piGooseRuntimeTemplate.gooseVersion}`,
+    `pnpm ${piGooseRuntimeTemplate.pnpmVersion}`,
+    `Preview Vite ${piGooseRuntimeTemplate.previewViteVersion}`,
+  ].join(", "),
 );
 
 const build = await Template.build(createPiGooseRuntimeTemplate(), templateAlias, {

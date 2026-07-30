@@ -97,10 +97,15 @@ function UsageReport({ report }: { report: UserUsageResponse }) {
       </section>
 
       <UsageTableSection
-        description="All recorded runs grouped by Project."
+        description="All recorded runs grouped by current and deleted Projects."
         rows={report.projects.map((project) => ({
           key: project.projectId,
-          label: (
+          label: project.projectDeleted ? (
+            <span className="usage-project-deleted">
+              <span>{project.projectTitle}</span>
+              <small>Deleted</small>
+            </span>
+          ) : (
             <Link
               className="usage-project-link"
               params={{ projectId: project.projectId }}

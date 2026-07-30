@@ -4,7 +4,10 @@ import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectChangesService } from "../application/project-changes";
 import { ProjectFilesService } from "../application/project-files";
 import { ProjectManagementService } from "../application/project-management";
-import { ProjectPreviewService } from "../application/project-preview";
+import {
+  ProjectPreviewService,
+  type ProjectPreviewServiceOptions,
+} from "../application/project-preview";
 import { ProjectReadService } from "../application/project-read";
 import {
   ProjectSandboxService,
@@ -13,7 +16,11 @@ import {
 import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import { ProjectTerminalService } from "../application/project-terminal";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
-import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
+import type {
+  DiagnosticContext,
+  DiagnosticReporter,
+  DiagnosticStage,
+} from "../observability/contract";
 import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import { createE2BSandboxRuntime } from "./e2b-runtime-factory";
@@ -175,12 +182,12 @@ export function createServerServices(
       createId: () => crypto.randomUUID(),
       getSandboxRuntime: getTerminalRuntime,
       previewSessions,
-      reportFailure: () => {
+      reportFailure: (failure) => {
         diagnostics.report({
           errorCode: "PREVIEW_START_FAILED",
           event: "project_preview.failed",
           outcome: "failed",
-          stage: "preview_start",
+          stage: toPreviewDiagnosticStage(failure),
         });
       },
       sandboxLeases,
@@ -222,6 +229,39 @@ export function createServerServices(
     }),
     runExecutions,
   };
+}
+
+function toPreviewDiagnosticStage(
+  failure: Parameters<NonNullable<ProjectPreviewServiceOptions["reportFailure"]>>[0],
+): DiagnosticStage {
+  if (failure.stage === "preflight") {
+    return "preview_preflight";
+  }
+  if (failure.stage === "schedule_expiry") {
+    return "preview_schedule_expiry";
+  }
+  if (failure.stage === "content_base") {
+    return "preview_content_base";
+  }
+  if (failure.stage === "mark_running" || failure.stage === "mark_running_conflict") {
+    return "preview_mark_running";
+  }
+  if (failure.stage === "runtime_lookup") {
+    return "resolve_sandbox_runtime";
+  }
+  if (failure.errorName.includes(".command_start.")) {
+    return "preview_command_start";
+  }
+  if (failure.errorName.includes(".wait_ready.")) {
+    return "preview_wait_ready";
+  }
+  if (
+    failure.errorName.includes(".traffic_token.") ||
+    failure.errorName.includes(".write_config")
+  ) {
+    return "preview_platform_config";
+  }
+  return "preview_runtime_start";
 }
 
 export function createProjectPreviewService(env: AppBindings) {

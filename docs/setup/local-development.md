@@ -33,9 +33,11 @@ worker/         Cloudflare Worker 入口
 - `AgentRunWorkflow`、ModelGateway、Run capability、真实 usage、deadline 和空闲 TTL 已实现。远程 Preview 已通过代表性的文件工具调用、取消、deadline 与 10 分钟空闲回收；更复杂任务下的 Workflows Free CPU/subrequest 限额仍需观察。
 - 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
 - 只读 Files 已实现并通过远端 E2B 验收；fake Runtime 的内存文件不跨请求，因此本地 fake 控制面会显示明确的沙箱不可用状态。停止 Lease 不发 Files 请求，也不显示缓存的旧目录或文本。
-- `GET /api/usage` 和响应式 Usage 页面已实现，直接聚合现有 `agent_runs`；它不需要新迁移、环境变量或外部服务。本地 fake Run 会产生 Run 数和沙箱生命周期事实，但不会伪造 token 或模型请求。
+- `GET /api/usage` 和响应式 Usage 页面已实现，合并现有 `agent_runs` 与 Project 删除时
+  写入的 `archived_run_usage`；它不需要环境变量或外部服务。本地 fake Run 会产生
+  Run 数和沙箱生命周期事实，但不会伪造 token 或模型请求。
 - Terminal 已实现并通过远端真实 E2B 验收：同源 WebSocket、临时 D1 硬互斥、30 分钟会话上限、显式关闭、断线清理和 idle Workflow；fake Runtime 明确不提供 Terminal。
-- Project Preview 已实现并通过远端真实 E2B 验收：现有 Lease、固定 `/workspace`/Vite/端口、同源签名 GET/HEAD 网关、30 分钟 expiry、显式停止、Agent 修改后手动刷新，以及 Run/Terminal 并行。fake Runtime 明确不提供 Preview。
+- Project Preview 已实现并通过远端真实 E2B 验收：现有 Lease、固定 `/workspace`、平台只读 Vite/端口、入口与依赖预检、同源签名 GET/HEAD 网关、30 分钟 expiry、显式停止、Agent 修改后手动刷新，以及 Run/Terminal 并行。fake Runtime 明确不提供 Preview。
 - 只读 Changes 已实现并通过远端真实 E2B 验收：固定 `/workspace/.git`、系统 Git/Bash/coreutils、危险本地配置拒绝、500 项/128 KiB status、每段 128 KiB diff、staged/unstaged 分离和 no-store。fake Runtime 明确不提供 Changes；它不新增 D1、环境变量或外部服务。
 - Goose 是当前唯一获准实现的第二 Runtime 候选；Claude Code、Codex CLI 仍仅在 Runtime ID 合同中预留。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
@@ -48,7 +50,7 @@ worker/         Cloudflare Worker 入口
 4. 启动：`pnpm dev`，Vite/Workers 本地地址为 `http://localhost:5173`。
 5. 默认 `RUNTIME_PROVIDER` 为空时使用 fake；真实链路设置 `RUNTIME_PROVIDER=e2b`、`E2B_API_KEY`、`E2B_TEMPLATE_ID`，并为本地 E2B 提供可访问的 `MODEL_GATEWAY_BASE_URL`。
 6. 首次运行浏览器门禁前安装 Chromium：`pnpm exec playwright install chromium`。
-7. 验证：`pnpm check`。该命令依次执行 import boundary、源码凭据扫描、Biome lint/format、严格 typecheck、Node 测试、真实 Workers/D1 迁移测试、production build/产物凭据与 `_headers` 校验，以及独立本地 D1 上的浏览器核心 smoke；GitHub Actions 使用同一门禁。真实 Preview 还要求当前 E2B `/workspace` 已有项目本地 `./node_modules/.bin/vite`；平台不会通过 `npx` 下载或执行 Project 自定义 script。
+7. 验证：`pnpm check`。该命令依次执行 import boundary、源码凭据扫描、Biome lint/format、严格 typecheck、Node 测试、真实 Workers/D1 迁移测试、production build/产物凭据与 `_headers` 校验，以及独立本地 D1 上的浏览器核心 smoke；GitHub Actions 使用同一门禁。真实 Preview 使用模板内固定的 `/opt/agent-online/preview/node_modules/.bin/vite`，Project 至少需要根目录 `index.html`；若 `package.json` 声明依赖，还必须先在 `/workspace` 安装依赖。平台不会通过 `npx` 下载、读取 Project Vite 配置或执行 Project 自定义 script。
 
 `pnpm build` 会先清理旧 `dist`，并在构建后拒绝任何 `.dev.vars*`、`.env*` 或可识别的凭据内容，同时要求 `public/_headers` 被复制到产物并包含 CSP、referrer、MIME 与 frame 防护。`validate:source-secrets` 同时扫描 Git tracked 和未忽略的工作树文件，但不打印匹配值。Cloudflare Vite 插件在 build 模式下不会序列化本地 Secret；部署产物只使用已通过 Wrangler 配置的远程 Secret。
 

@@ -112,9 +112,7 @@ export function sanitizeSentryEvent(event: ErrorEvent): ErrorEvent {
   const exception = sanitizeException(event.exception);
   const tags = sanitizeTags(event.tags);
   const contexts = sanitizeContexts(event.contexts);
-  const fingerprint = event.fingerprint?.filter(
-    (value): value is string => typeof value === "string" && value.startsWith("agent-online"),
-  );
+  const fingerprint = sanitizeFingerprint(event.fingerprint);
 
   return {
     ...(event.debug_meta ? { debug_meta: event.debug_meta } : {}),
@@ -133,6 +131,23 @@ export function sanitizeSentryEvent(event: ErrorEvent): ErrorEvent {
     message: "Agent Online application error",
     type: event.type,
   };
+}
+
+function sanitizeFingerprint(fingerprint: ErrorEvent["fingerprint"]) {
+  if (
+    fingerprint?.[0] !== "agent-online" ||
+    fingerprint.length > 4 ||
+    !fingerprint.every(
+      (value) =>
+        typeof value === "string" &&
+        value.length > 0 &&
+        value.length <= 64 &&
+        /^[A-Za-z0-9_.-]+$/.test(value),
+    )
+  ) {
+    return undefined;
+  }
+  return fingerprint;
 }
 
 export function shouldReportDiagnosticToSentry(event: DiagnosticEvent) {

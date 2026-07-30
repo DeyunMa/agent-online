@@ -33,6 +33,8 @@ export type ProjectPreviewStatus =
     };
 
 export type StartProjectPreviewResult =
+  | { kind: "dependencies_missing" }
+  | { kind: "entry_missing" }
   | { kind: "project_busy" }
   | { kind: "provider_error" }
   | { kind: "runtime_mismatch" }
@@ -77,6 +79,7 @@ export type ProjectPreviewServiceOptions = {
       | "content_base"
       | "mark_running"
       | "mark_running_conflict"
+      | "preflight"
       | "runtime_lookup"
       | "runtime_start"
       | "schedule_expiry";
@@ -142,6 +145,23 @@ export class ProjectPreviewService {
     }
     if (!runtime) {
       return { kind: "sandbox_unavailable" };
+    }
+
+    try {
+      const availability = await runtime.inspectPreview({
+        id: lease.providerRef,
+        kind: lease.runtimeId,
+        sandboxLeaseId: lease.id,
+      });
+      if (availability.kind !== "ready") {
+        return availability;
+      }
+    } catch (error) {
+      if (error instanceof SandboxUnavailableError) {
+        return { kind: "sandbox_unavailable" };
+      }
+      this.reportFailure("preflight", error);
+      return { kind: "provider_error" };
     }
 
     const now = this.options.clock.now();

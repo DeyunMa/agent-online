@@ -89,7 +89,11 @@ export interface ProjectRepository {
   create(
     input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string },
   ): Promise<ProjectRecord>;
-  deleteOwned(projectId: string, userId: string): Promise<boolean>;
+  /**
+   * Deletes an owned Project aggregate while retaining its per-Run metering
+   * facts in the persistence adapter's usage archive.
+   */
+  deleteOwned(input: { deletedAt: string; projectId: string; userId: string }): Promise<boolean>;
   findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null>;
   listOwned(userId: string): Promise<ProjectRecord[]>;
   renameOwned(input: {

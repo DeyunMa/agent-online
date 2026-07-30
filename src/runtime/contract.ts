@@ -202,6 +202,11 @@ export type SandboxPreviewStartInput = {
   startupTimeoutMs: number;
 };
 
+export type SandboxPreviewAvailability =
+  | { kind: "dependencies_missing" }
+  | { kind: "entry_missing" }
+  | { kind: "ready" };
+
 export type SandboxPreviewRequest = {
   headers: Readonly<Record<string, string>>;
   method: "GET" | "HEAD";
@@ -220,6 +225,7 @@ export interface SandboxPreviewRuntime {
     providerProcessRef: string,
     port: number,
   ): Promise<boolean>;
+  inspectPreview(handle: RuntimeHandle): Promise<SandboxPreviewAvailability>;
   startPreview(
     handle: RuntimeHandle,
     input: SandboxPreviewStartInput,

@@ -24,9 +24,12 @@ const modelId = "gemini-3.6-flash";
 const goosePackageVersion = "1.44.0";
 const piPackageVersion = "0.82.0";
 const nodeRuntimeVersion = "24.16.0";
+const pnpmRuntimeVersion = "10.33.2";
+const previewViteVersion = "8.1.5";
 const piCreatedMarker = "PI_CREATED";
 const gooseUpdatedMarker = "GOOSE_UPDATED";
 const piVerifiedMarker = "PI_VERIFIED";
+const previewTemplateMarker = "AGENT_ONLINE_TEMPLATE_PREVIEW_READY";
 const gooseCancellationMarkerPath = "/workspace/agent-online-goose-cancel-started";
 const isEnabled = process.env.RUN_E2E === "1";
 
@@ -92,8 +95,28 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       const templateProbe = await runSandboxCommand(
         sandbox,
         "sandbox template and isolation probe",
-        // biome-ignore lint/suspicious/noTemplateCurlyInString: The remote shell expands these variables.
-        'test -z "${E2B_API_KEY:-}" && test -z "${GEMINI_API_KEY:-}" && test -z "${AGENT_ONLINE_GATEWAY_TOKEN:-}" && test -w /workspace && test "$(stat -c %U /workspace)" = "$(id -un)" && git init -q /workspace && git -C /workspace status --porcelain && rm -rf /workspace/.git && node --version && pi --version && goose --version',
+        [
+          `test -z "\${E2B_API_KEY:-}"`,
+          `test -z "\${GEMINI_API_KEY:-}"`,
+          `test -z "\${AGENT_ONLINE_GATEWAY_TOKEN:-}"`,
+          "test -w /workspace",
+          'test "$(stat -c %U /workspace)" = "$(id -un)"',
+          "test -r /opt/agent-online/manifest.json",
+          "test ! -w /opt/agent-online",
+          `test "$(pnpm --version)" = "${pnpmRuntimeVersion}"`,
+          `/opt/agent-online/preview/node_modules/.bin/vite --version | grep -F "${previewViteVersion}" >/dev/null`,
+          "python3 --version >/dev/null",
+          "python3 -m pip --version >/dev/null",
+          "rg --version >/dev/null",
+          "jq --version >/dev/null",
+          "cc --version >/dev/null",
+          "git init -q /workspace",
+          "git -C /workspace status --porcelain",
+          "rm -rf /workspace/.git",
+          "node --version",
+          "pi --version",
+          "goose --version",
+        ].join(" && "),
         { timeoutMs: 30_000 },
         redactOutput,
       );
@@ -102,6 +125,37 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       expect(nodeVersion).toBe(`v${nodeRuntimeVersion}`);
       expect(piVersion).toContain(piPackageVersion);
       expect(gooseVersion).toContain(goosePackageVersion);
+
+      await expect(runtime.inspectPreview(runtimeHandle)).resolves.toEqual({
+        kind: "entry_missing",
+      });
+      await sandbox.files.write("/workspace/index.html", `<main>${previewTemplateMarker}</main>`);
+      await expect(runtime.inspectPreview(runtimeHandle)).resolves.toEqual({
+        kind: "ready",
+      });
+      const previewBasePath = "/api/projects/spike-project/preview/content/template-capability/";
+      const preview = await runtime.startPreview(runtimeHandle, {
+        contentBasePath: previewBasePath,
+        port: 3000,
+        preset: "vite-v1",
+        processTimeoutMs: 60_000,
+        startupTimeoutMs: 20_000,
+      });
+      const previewResponse = await runtime.fetchPreview(runtimeHandle, 3000, {
+        headers: { accept: "text/html" },
+        method: "GET",
+        pathAndQuery: previewBasePath,
+      });
+      expect(previewResponse.status).toBe(200);
+      expect(await previewResponse.text()).toContain(previewTemplateMarker);
+      await runtime.terminatePreview(runtimeHandle, preview.providerProcessRef, "client_stopped");
+      await runSandboxCommand(
+        sandbox,
+        "Preview fixture cleanup",
+        "rm -f /workspace/index.html",
+        { cwd: "/workspace", timeoutMs: 30_000 },
+        redactOutput,
+      );
 
       const context = createAgentExecutionContext(runtime, runtimeHandle);
       const piCreate = await piRuntime.start(

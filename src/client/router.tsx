@@ -61,7 +61,12 @@ function AppShell() {
         onContextSlotReady={setHeaderSlot}
         onSignOut={() => void signOut()}
       />
-      <ProjectSidebar />
+      <ProjectSidebar
+        email={session.data.user.email}
+        isSigningOut={isSigningOut}
+        name={session.data.user.name || session.data.user.email}
+        onSignOut={() => void signOut()}
+      />
       <div className="main-content">
         {signOutError ? (
           <p className="global-notice" role="alert">

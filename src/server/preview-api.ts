@@ -122,6 +122,12 @@ export function createPreviewApi(overrides: Partial<PreviewApiDependencies> = {}
     if (result.kind === "runtime_mismatch") {
       return internalError(c);
     }
+    if (result.kind === "entry_missing") {
+      return renderApiError(c, "preview.entry_missing");
+    }
+    if (result.kind === "dependencies_missing") {
+      return renderApiError(c, "preview.dependencies_missing");
+    }
     if (result.kind === "provider_error") {
       return previewUnavailable(c);
     }

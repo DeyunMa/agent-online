@@ -2,9 +2,9 @@
 
 > 文档状态：当前 schema 基准
 >
-> 校准日期：2026-07-28
+> 校准日期：2026-07-30
 >
-> 权威来源：`migrations/0001_app.sql` 至 `migrations/0007_agent_run_failure_codes.sql`
+> 权威来源：`migrations/0001_app.sql` 至 `migrations/0008_archived_run_usage.sql`
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
@@ -16,6 +16,7 @@ erDiagram
   user ||--o{ account : has
   user ||--o{ projects : owns
   user ||--o{ agent_runs : executes
+  user ||--o{ archived_run_usage : retains
 
   projects ||--o| sandbox_leases : has
   projects ||--o{ messages : contains
@@ -44,6 +45,7 @@ erDiagram
 | `sandbox_leases` | 产品控制面 | 每个 Project 的逻辑沙箱槽位和当前状态 | 与 Project 同生命周期；Provider 引用可清空。 |
 | `messages` | 产品 | 用户输入和最终可见 assistant 回复 | 作为 Project 对话记录保留。 |
 | `agent_runs` | 产品 | 每次 Agent 执行的状态、模型和聚合用量 | 作为运行与计量记录保留。 |
+| `archived_run_usage` | 产品计量 | 已删除 Project 的一行一 Run 最小计量事实 | 保留到 User 删除；不是账单或对话历史。 |
 | `terminal_sessions` | 临时协调 | 当前 PTY 互斥、到期时间和私有 Provider 引用 | 关闭、断线清理或到期后删除。 |
 | `preview_sessions` | 临时协调 | 当前 Preview 进程所有权和到期时间 | 停止、失效或到期后删除。 |
 
@@ -63,7 +65,8 @@ erDiagram
 | `createdAt` | `DATE NOT NULL` | 创建时间。 |
 | `updatedAt` | `DATE NOT NULL` | 更新时间。 |
 
-删除 User 会级联删除 `session`、`account`、`projects` 和 `agent_runs`，并继续通过 Project 外键清理产品子记录。
+删除 User 会级联删除 `session`、`account`、`projects`、`agent_runs` 和
+`archived_run_usage`，并继续通过 Project 外键清理产品子记录。
 
 ### 3.2 `session`
 
@@ -214,7 +217,30 @@ starting/running/cancelling -> failed | timed_out | interrupted
 - `agent_runs_by_user_created_at(user_id, created_at DESC)`。
 - 列表 API 只读取最新 50 条，但表本身不自动删除更早记录。
 
-### 4.5 跨表完整性与状态机 trigger
+### 4.5 `archived_run_usage`
+
+| 列 | 类型/约束 | 含义 |
+| --- | --- | --- |
+| `run_id` | `TEXT PRIMARY KEY`，无 AgentRun FK | 被删除 Run 的稳定历史标签，并防止重复归档。 |
+| `user_id` | `TEXT NOT NULL`，FK `user.id`，`ON DELETE CASCADE` | 所属用户；账号删除时清理归档。 |
+| `project_id` / `project_title` | `TEXT NOT NULL`，无 Project FK | Project 删除后的分组 ID 与删除时标题快照。 |
+| `agent_runtime_id` / `sandbox_runtime_id` / `model_id` | `TEXT NOT NULL` | Run 的 Runtime 和模型维度。 |
+| `status` | 终态 `TEXT NOT NULL CHECK (...)` | 只允许 succeeded、failed、cancelled、timed_out、interrupted。 |
+| token、模型请求和沙箱时长字段 | 非负 `INTEGER NOT NULL` | 从 AgentRun 复制的最终聚合用量。 |
+| `created_at` / `started_at` / `finished_at` | `TEXT` | 原 Run 生命周期时间。 |
+| `deleted_at` | `TEXT NOT NULL` | Project 完成硬删除时的归档时间。 |
+
+该表不保存 Message ID、prompt、回复、失败详情、Provider 引用、文件或原始 Agent 事件。
+Project 删除仓储在同一 D1 batch 中先执行幂等 `INSERT ... SELECT`，再删除 Project；
+因此归档行与现存 `agent_runs` 不会同时进入 Usage 聚合。
+
+索引：
+
+- `archived_run_usage_by_user_created_at(user_id, created_at DESC)`。
+- `archived_run_usage_by_user_project(user_id, project_id)`。
+- `archived_run_usage_by_user_agent_runtime(user_id, agent_runtime_id)`。
+
+### 4.6 跨表完整性与状态机 trigger
 
 `0006_integrity_guards.sql` 在外键和唯一索引之外增加以下数据库最终边界：
 
@@ -265,7 +291,8 @@ Terminal 字节流不进入此表。
 
 ## 6. 用量模型
 
-系统不新增 usage、ledger 或 invoice 表。用量事实直接存在 `agent_runs`：
+系统不新增逐请求 usage ledger 或 invoice 表。当前 Project 的用量事实存在
+`agent_runs`；Project 删除时，最小 Run 计量事实转入 `archived_run_usage`：
 
 ```text
 input_tokens
@@ -275,19 +302,22 @@ model_request_count
 sandbox_duration_ms
 ```
 
-`GET /api/usage` 按当前 `user_id` 对全部 AgentRun 做 all-time 聚合，并分别按 Project 和 AgentRuntime 分组。它用于成本观察，不代表可结算账单：
+`GET /api/usage` 按当前 `user_id` 合并两组记录做 all-time 聚合，并分别按 Project 和
+AgentRuntime 分组。Project 分组通过 `projectDeleted` 标记归档记录。它用于成本观察，
+不代表可结算账单：
 
 - 没有价格快照、货币、税、折扣或 Provider 账单对账。
 - 没有额度、预授权、余额扣减或超额阻断。
 - Provider 返回且成功写入的 usage 才会计入 D1。
-- Project 硬删除会级联删除其 AgentRun，因此这些 Run 不再计入 Usage。
+- Project 硬删除会级联删除 AgentRun，但归档计量继续进入 Usage。
 
 ## 7. 删除与重建策略
 
 - 删除 User 或 Project 时，外键按上文规则级联；`agent_runs.sandbox_lease_id` 使用
   `RESTRICT`，因此只能删除 Project 聚合，不能先随意直删 Lease。
 - 公开 Project 硬删除用例先验证所有权与活动资源，再停止空闲 Provider sandbox，最后
-  删除 Project。Message、AgentRun、Usage、Lease 和临时协调行随外键级联删除。
+  在一个 D1 batch 中归档每个 Run 的最小 usage 并删除 Project。Message、AgentRun、
+  Lease 和临时协调行随外键级联删除；归档 usage 保留。
 - 没有软删除、回收站、删除历史或恢复副本。已休眠的 Run idle-cleanup Workflow
   发现对应 Run 已删除时直接 no-op。
 - `terminal_sessions` 和 `preview_sessions` 是可重建的临时协调状态，不是审计历史。

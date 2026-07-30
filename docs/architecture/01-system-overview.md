@@ -141,7 +141,7 @@ sequenceDiagram
 | `/api/projects/:id/preview/start` | 在现有空闲 E2B Lease 中启动平台固定的 `vite-v1` Preview。 |
 | `/api/projects/:id/preview/stop` | 终止当前固定 Preview 进程、删除临时 D1 行并安排 Lease idle cleanup。 |
 | `/api/projects/:id/preview/content/:token/*` | 使用绑定 Project/PreviewSession/expiry 的短时 capability 代理 GET/HEAD 内容；不接受任意端口。 |
-| `/api/usage` | 认证后按当前 `user_id` 返回全量 AgentRun 总计、Project 和 AgentRuntime 聚合，不返回用户或 Provider 私有字段。 |
+| `/api/usage` | 认证后按当前 `user_id` 合并现存 AgentRun 与删除归档，返回 all-time 总计、Project 和 AgentRuntime 聚合，不返回用户或 Provider 私有字段。 |
 
 所有 API 都以应用级资源 ID 工作。公共 API 不接受或返回 `provider_ref`；`agent_runtime_id` 只能由服务端 registry 和策略白名单解析，不能直接转换为 shell 命令。
 

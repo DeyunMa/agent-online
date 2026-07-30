@@ -2,7 +2,10 @@ import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ProjectRecord } from "../application/ports";
-import type { FetchProjectPreviewResult } from "../application/project-preview";
+import type {
+  FetchProjectPreviewResult,
+  StartProjectPreviewResult,
+} from "../application/project-preview";
 import type { SandboxPreviewRequest } from "../runtime/contract";
 import type { ProjectPreviewResponse } from "../shared/api";
 import type { AppEnv } from "./env";
@@ -80,6 +83,27 @@ describe("Preview API", () => {
     expect(missingResponse.status).toBe(404);
     expect(crossOrigin.start).not.toHaveBeenCalled();
     expect(missing.start).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["entry_missing", "preview.entry_missing"],
+    ["dependencies_missing", "preview.dependencies_missing"],
+  ] as const)("maps %s to a stable public error", async (kind, code) => {
+    const fixture = createFixture({ startResult: { kind } });
+    const response = await fixture.app.request(
+      "https://agent-online.test/api/projects/project-1/preview/start",
+      {
+        headers: { origin: "https://agent-online.test" },
+        method: "POST",
+      },
+      fixture.env,
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code, retryable: false },
+      requestId: "request-1",
+    });
   });
 
   it("verifies the platform capability and forwards only safe request headers", async () => {
@@ -171,22 +195,31 @@ describe("Preview API", () => {
   });
 });
 
-function createFixture(options: { authenticated?: boolean; projectOwned?: boolean } = {}) {
+function createFixture(
+  options: {
+    authenticated?: boolean;
+    projectOwned?: boolean;
+    startResult?: StartProjectPreviewResult;
+  } = {},
+) {
   const inspect = vi.fn(async () => ({
     expiresAt,
     issuedAt: now.toISOString(),
     kind: "running" as const,
     sessionId: "preview-1",
   }));
-  const start = vi.fn(async () => ({
-    kind: "started" as const,
-    status: {
-      expiresAt,
-      issuedAt: now.toISOString(),
-      kind: "running" as const,
-      sessionId: "preview-1",
-    },
-  }));
+  const start = vi.fn(
+    async (): Promise<StartProjectPreviewResult> =>
+      options.startResult ?? {
+        kind: "started",
+        status: {
+          expiresAt,
+          issuedAt: now.toISOString(),
+          kind: "running",
+          sessionId: "preview-1",
+        },
+      },
+  );
   const stop = vi.fn(async () => ({ kind: "stopped" as const }));
   const fetchPreview = vi.fn(
     async (

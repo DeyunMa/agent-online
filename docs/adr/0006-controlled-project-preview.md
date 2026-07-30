@@ -1,6 +1,6 @@
 # ADR-0006：以同源只读网关提供受控 Project Preview
 
-- 状态：Accepted；实现、迁移、部署与远程验收已完成
+- 状态：Accepted；2026-07-30 以平台 Preview 工具链修订
 - 日期：2026-07-26
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0005](./0005-controlled-project-terminal.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
@@ -25,18 +25,23 @@ V1 只运行以下平台固定 `vite-v1` preset：
 
 ```text
 cwd: /workspace
-command: ./node_modules/.bin/vite --host 0.0.0.0 --port 3000 --strictPort
+command: /opt/agent-online/preview/node_modules/.bin/vite --host 0.0.0.0 --port 3000 --strictPort
 config: /tmp/agent-online-vite-preview.config.mjs
 base: /api/projects/<projectId>/preview/content/<signed-capability>/
 env: HOST=0.0.0.0, PORT=3000, BROWSER=none
 ```
 
-浏览器不能传入 command、args、cwd、env、端口或 Provider 参数。项目必须在本地
-`node_modules` 中安装 Vite；缺少固定二进制时 Preview 明确失败，不通过 `npx` 下载，
-也不执行项目自定义 script 或加载项目自定义 Vite config。E2B adapter 在 `/tmp`
-写入平台固定 config，关闭浏览器 HMR、WebSocket 和 CORS，同时保留 Vite 服务端文件
-监听来失效转换缓存，让用户手动 Reload 后能看到 Agent 的文件修改。平台在启动前生成与该
-Preview session 同寿命的签名 base，
+浏览器不能传入 command、args、cwd、env、端口或 Provider 参数。固定 Vite 是 E2B
+模板中 `/opt/agent-online/preview` 的 root-owned 平台工具，不属于用户项目，
+运行时用户只能读取和执行。项目不需要自行安装 Vite，但必须提供普通文件
+`/workspace/index.html`；若小型 `package.json` 已声明 dependencies/devDependencies/
+optionalDependencies 且没有根目录 `node_modules`，启动返回稳定的依赖缺失错误。
+项目框架和业务依赖仍由 Project 自己安装。平台不通过 `npx` 下载，不自动执行
+`npm install`，也不执行项目自定义 script 或加载项目自定义 Vite config。
+
+E2B adapter 在 `/tmp` 写入平台固定 config，关闭浏览器 HMR、WebSocket 和 CORS，
+同时保留 Vite 服务端文件监听来失效转换缓存，让用户手动 Reload 后能看到 Agent 的文件
+修改。平台在启动前生成与该 Preview session 同寿命的签名 base，
 Vite 因此会把 HTML、模块依赖和 CSS 资源统一指向同源代理路径；Worker 不对任意
 JavaScript 内容做字符串改写。Vite 8 即使关闭 HMR 仍会从 HTML 或转换后的 CSS 模块
 加载固定的 `@vite/client`；网关只对这一条平台已知资源返回不联网的最小 style runtime，
@@ -83,7 +88,9 @@ Cookie、Authorization、Set-Cookie、Provider Location、内部 host 与控制�
 
 ### 4. 生命周期与成本上限
 
-启动请求同步等待固定端口最多 20 秒；失败时终止 Preview 进程并释放临时行。成功后
+启动请求同步等待固定端口最多 20 秒，只有受控 base path 返回 `2xx` 才视为就绪；
+`404`、认证失败和其他非成功响应继续等待并最终失败。失败时终止 Preview 进程并释放
+临时行。成功后
 `preview-expiry-<sessionId>` Workflow 是 30 分钟上限的 durable owner。显式 Stop、
 自然退出、探测失败或 expiry 会按记录中的 sandbox/process reference 终止进程并删除
 当前行；释放后 `preview-idle-<sessionId>` Workflow 复用 10 分钟 idle TTL。
@@ -94,6 +101,7 @@ E2B 自身 timeout 是 Provider 故障下的最终成本边界。
 ## V1 限制
 
 - 只支持一个固定端口和 `vite-v1` preset。
+- 只识别根目录 `index.html`；不自动发现其他 Web root、项目脚本或后端端口。
 - 内容网关只支持 GET/HEAD，不支持表单提交、应用后端 API、WebSocket 或 HMR。
 - path-based 代理会处理 HTML 中常见的相对和 root-relative URL，但不承诺重写任意
   JavaScript、CSS 或运行时生成的绝对 URL。
@@ -114,7 +122,8 @@ E2B 自身 timeout 是 Provider 故障下的最终成本边界。
 ## 验收
 
 1. 非所有者不能读状态、启动、停止或取得内容 capability。
-2. 无存活沙箱、缺少固定 Vite 二进制、端口未就绪和 Provider 故障都有明确状态。
+2. 无存活沙箱、缺少 Web 入口、缺少已声明依赖、平台工具异常、端口未就绪和 Provider
+   故障都有明确状态；前两类产品前置条件不进入 Sentry。
 3. 浏览器、公共 JSON、iframe URL、响应头和日志不包含 Provider ID、host、内部端口或 Key。
 4. Preview running 时可执行 Pi Run 和 Terminal；整沙箱 Stop/TTL 不会误回收。
 5. Stop、进程自然退出、expiry 和沙箱消失都会收敛 D1 行并安排 idle cleanup。
@@ -135,6 +144,16 @@ E2B 自身 timeout 是 Provider 故障下的最终成本边界。
   `preview_sessions` 清空，最终手动 Stop 让 Lease 收敛为 `stopped` 并清除私有引用。
 - `1440x900` 和 `390x844` 真实浏览器均成功加载页面，控制台无 error/warning；
   公共响应和页面未出现 Provider host、sandbox ID、内部端口或 Key。
+
+2026-07-30 修订：
+
+- v4 E2B 模板将 Vite `8.1.5` 固定安装到只读 `/opt/agent-online/preview`，同时加入
+  pnpm、Python/pip、rg/jq、归档、进程诊断和原生编译工具；`/workspace` 仍为空且由
+  非 root 用户拥有。
+- `SandboxPreviewRuntime.inspectPreview()` 在申请 PreviewSession 前识别缺少入口和
+  已声明但未安装的依赖；这两类返回稳定 `409` 公共错误，不产生平台故障事件。
+- 真实模板 E2E 已验证空目录预检、平台 Vite 启动、同源 base 下 HTML 读取，以及随后
+  Pi/Goose 共用同一沙箱、取消、usage 和密钥隔离。
 
 ## 后果
 

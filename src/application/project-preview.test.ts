@@ -66,6 +66,21 @@ describe("ProjectPreviewService", () => {
     expect(stopped.previewSessions.claim).not.toHaveBeenCalled();
   });
 
+  it.each(["entry_missing", "dependencies_missing"] as const)(
+    "returns %s before claiming Preview ownership",
+    async (previewAvailability) => {
+      const harness = createHarness({ previewAvailability });
+
+      await expect(harness.service.start("project-1")).resolves.toEqual({
+        kind: previewAvailability,
+      });
+      expect(harness.runtime.inspectPreview).toHaveBeenCalledOnce();
+      expect(harness.previewSessions.claim).not.toHaveBeenCalled();
+      expect(harness.scheduleExpiry).not.toHaveBeenCalled();
+      expect(harness.reportFailure).not.toHaveBeenCalled();
+    },
+  );
+
   it("releases the D1 claim when durable expiry cannot be scheduled", async () => {
     const harness = createHarness({ expiryError: true });
 
@@ -197,6 +212,7 @@ function createHarness(
     existingStatus?: PreviewSessionRecord["status"];
     expiryError?: boolean;
     processRunning?: boolean;
+    previewAvailability?: "dependencies_missing" | "entry_missing" | "ready";
     runtimeFactoryError?: boolean;
     sandboxAvailable?: boolean;
     sandboxGone?: boolean;
@@ -239,6 +255,9 @@ function createHarness(
       });
     }),
     isPreviewRunning: vi.fn(async () => options.processRunning !== false),
+    inspectPreview: vi.fn(async () => ({
+      kind: options.previewAvailability ?? "ready",
+    })),
     kind: "e2b",
     startPreview: vi.fn(async () => ({
       providerProcessRef: "process-42",

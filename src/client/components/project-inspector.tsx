@@ -110,6 +110,7 @@ export function ProjectInspector({
       {...mobileDialogAttributes}
       aria-labelledby="project-inspector-title"
       className={`project-inspector ${mobileOpen ? "project-inspector-mobile-open" : ""}`}
+      id="project-inspector"
       ref={inspectorRef}
     >
       <header className="project-inspector-header">

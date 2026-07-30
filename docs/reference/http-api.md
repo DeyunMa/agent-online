@@ -62,6 +62,8 @@ type ApiErrorResponse = {
 | `project_path.unsupported` | `400` | false | 路径超出受控范围。 |
 | `file.too_large` | `413` | false | 文件超过读取上限。 |
 | `file.content_unsupported` | `415` | false | 不是可公开的 UTF-8 文本。 |
+| `preview.entry_missing` | `409` | false | `/workspace` 没有可预览的根 `index.html`。 |
+| `preview.dependencies_missing` | `409` | false | 项目声明了依赖但根 `node_modules` 不存在。 |
 | `preview.unavailable` | `503` | true | 固定 Preview 无法启动或访问。 |
 | `service.unavailable` | `503` | true | 通用依赖暂不可用。 |
 | `internal.unexpected` | `500` | true | 未知内部错误；使用 `requestId` 定位。 |
@@ -191,8 +193,9 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 - Rename 与 Create 共用 trim 后 1 至 120 字符的标题合同；标题变化会 touch
   `updated_at`，相同标题不写 D1。
 - Delete 是不可恢复的硬删除。活动 Run、Terminal 或 Preview 返回
-  `409 project.busy`；空闲 Provider sandbox 先停止，再级联删除 Project、Message、
-  AgentRun、Usage 和 Lease。Provider 停止失败或 Lease 冲突时保留 Project。
+  `409 project.busy`；空闲 Provider sandbox 先停止，再在同一 D1 batch 中归档最小
+  per-Run usage 并级联删除 Project、Message、AgentRun 和 Lease。Provider 停止失败、
+  归档失败或 Lease 冲突时保留 Project。
 - 手动停止先以 D1 条件更新脱离 Provider 引用，再调用 Provider；活动 Run、Terminal 或 Preview 会阻止停止。
 - 当前没有 Project 分享或成员接口。
 
@@ -343,6 +346,7 @@ type UserUsageResponse = {
   scope: "all_time";
   totals: UsageMetricsResponse;
   projects: Array<{
+    projectDeleted: boolean;
     projectId: string;
     projectTitle: string;
     usage: UsageMetricsResponse;
@@ -354,7 +358,9 @@ type UserUsageResponse = {
 };
 ```
 
-该接口是运行事实聚合，不是账单、余额或配额接口。
+该接口合并现存 AgentRun 和已删除 Project 的最小 Run usage 归档。
+`projectDeleted=true` 的 Project 只用于历史分组，客户端不得链接到已删除资源。该接口
+是运行事实聚合，不是账单、余额或配额接口。
 
 ## 9. Terminal WebSocket
 
@@ -420,6 +426,8 @@ type ProjectPreviewResponse = {
 
 `contentUrl` 只在 `running` 时存在。内容网关：
 
+- `start` 在申请临时所有权前检查 Web 入口和常规依赖状态；前置条件错误使用上述稳定
+  `409` code。
 - 只允许 `GET` 和 `HEAD`。
 - 只转发白名单请求头和响应头。
 - 不跟随上游重定向；只改写安全的相对 Location。

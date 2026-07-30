@@ -23,11 +23,15 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 
 | 区域 | 责任 | 数据来源 |
 | --- | --- | --- |
-| 左栏 | 品牌、Project 导航、创建入口、账号。 | Better Auth 和 `GET /api/projects`。 |
+| 左栏 | 品牌、顶部 New project、Project 导航、底部账号菜单。Usage 和退出登录从账号菜单进入；不提供 Project 筛选。 | Better Auth 和 `GET /api/projects`。 |
 | 中栏 | 当前 Project、Conversation、AgentRun 状态和任务输入。 | D1 Message、AgentRun 与 SSE。 |
 | 右栏 | 当前 Project 检查器；显示 Project、Sandbox、AgentRun 和真实 usage，并按后端能力启用文件、changes、终端、preview 标签。 | D1 公开事实和受控 Sandbox API。 |
 
-移动端保留 Project/Conversation 主内容，并通过页头图标打开全高 Project Inspector 抽屉；不能把检查器简单排在长对话末尾。固定格式区域需要稳定尺寸和滚动容器，不能因状态文字、消息长度或按钮出现而导致整体跳动。
+桌面端左栏固定；中栏与右侧 Project Inspector 之间提供可拖动、可键盘操作的分隔条，
+在保证两侧最小可用宽度的范围内分配空间，并在当前浏览器保存偏好。移动端保留
+Project/Conversation 主内容，并通过页头图标打开全高 Project Inspector 抽屉；不能把
+检查器简单排在长对话末尾。固定格式区域需要稳定尺寸和滚动容器，不能因状态文字、
+消息长度或按钮出现而导致整体跳动。
 
 ## 3. 视觉规则
 
@@ -58,4 +62,6 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 2. 已启用受控只读 Files：目录、文本读取和真实无沙箱/过期/错误状态。
 3. 当前用户用量聚合、受控 Terminal、固定 Vite Preview 和只读 Changes 已启用；维护重点是保持真实状态和自动化回归。浏览器始终不能接触 Provider ID、内部端口或未受控 Provider URL。
 
-视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、布局跳动和无语义的大面积绿色。
+视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、
+布局跳动和无语义的大面积绿色。桌面还需验证拖动、键盘调整、刷新持久化和左栏宽度
+不变；移动端不得显示桌面分隔条。

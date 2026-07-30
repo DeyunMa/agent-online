@@ -22,6 +22,7 @@ describe("D1 user usage repository", () => {
           input_tokens: 100,
           model_request_count: 3,
           output_tokens: 60,
+          project_deleted: 0,
           project_id: "project-1",
           project_title: "Alpha",
           run_count: 2,
@@ -32,6 +33,7 @@ describe("D1 user usage repository", () => {
           input_tokens: 50,
           model_request_count: 1,
           output_tokens: 30,
+          project_deleted: 1,
           project_id: "project-2",
           project_title: "Beta",
           run_count: 1,
@@ -70,6 +72,7 @@ describe("D1 user usage repository", () => {
       ],
       projects: [
         {
+          projectDeleted: false,
           projectId: "project-1",
           projectTitle: "Alpha",
           usage: {
@@ -82,6 +85,7 @@ describe("D1 user usage repository", () => {
           },
         },
         {
+          projectDeleted: true,
           projectId: "project-2",
           projectTitle: "Beta",
           usage: {
@@ -105,10 +109,14 @@ describe("D1 user usage repository", () => {
     });
     expect(db.batches[0]).toHaveLength(3);
     for (const statement of db.batches[0] ?? []) {
-      expect(statement.bindings).toEqual(["user-1"]);
+      expect(statement.bindings).toEqual(["user-1", "user-1"]);
       expect(statement.query).not.toContain("status IN");
+      expect(statement.query).toContain("UNION ALL");
+      expect(statement.query).toContain("archived_run_usage");
     }
-    expect(db.batches[0]?.[1]?.query).toContain("GROUP BY agent_runs.project_id, projects.title");
+    expect(db.batches[0]?.[1]?.query).toContain(
+      "GROUP BY project_id, project_title, project_deleted",
+    );
     expect(db.batches[0]?.[2]?.query).toContain("GROUP BY agent_runtime_id");
   });
 });

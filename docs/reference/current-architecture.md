@@ -189,7 +189,10 @@ Provider reference、Key、capability、异常 message 或 stack。
 
 ### 5.5 Preview
 
-- Worker 只允许启动平台固定的 `vite-v1` preset、固定端口 `3000` 和固定工作目录 `/workspace`。
+- Worker 只允许启动只读 `/opt/agent-online/preview` 中的平台固定 `vite-v1`、固定端口
+  `3000` 和固定工作目录 `/workspace`。
+- 启动前由 Runtime 检查普通文件 `index.html` 和常规项目依赖状态；缺少入口或已声明
+  依赖未安装属于产品前置条件，不创建 PreviewSession，也不进入 Sentry。
 - 浏览器拿到的是短时签名的同源内容 URL，不是 Provider host、端口或 traffic token。
 - Worker 仅代理 `GET`/`HEAD`，过滤请求/响应头，注入 CSP 并改写 HTML 根路径。
 - PreviewSession 只记录当前进程所有权；不保存页面内容、日志、截图或访问历史。
@@ -210,12 +213,23 @@ Provider reference、Key、capability、异常 message 或 stack。
 - Sentry `beforeSend` 以 allowlist 重建事件，只保留 stack/debug metadata、环境、
   release、固定诊断标签和应用关联/数值上下文；Logs、Tracing、Metrics、Replay、
   breadcrumbs、用户/请求内容与原始异常正文均关闭。
+- 诊断 fingerprint 保留固定 `errorCode + stage`，Preview 将 preflight、平台配置、
+  command start 和 readiness 分组，避免不同平台故障合并到同一个 Issue。
 - Hono API 使用统一安全响应头；静态 Assets 的 CSP、frame、referrer 和 MIME
   防护由 `public/_headers` 声明，production build 会验证该文件进入 `dist`。
 - Workflow 重试和取消竞争可能产生重复事件；日志采用至少一次语义，业务终态与 usage
   始终以 D1 为准，不能把日志条数当计费或审计数据。
 - Cloudflare invocation trace 只能作为单次执行的辅助视图；跨 invocation 关联以
   `runId` 日志为准，不伪造一个持续数分钟的父子 span tree。
+
+### 5.7 浏览器布局
+
+- 桌面端左侧 Project 导航宽度固定；Project 主内容与右侧 Inspector 使用同一个
+  `--inspector-width` 合同保持页头和正文边界对齐。
+- 两栏之间的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
+  Inspector 宽度限制为 260 至 720 px，并尽量为主内容保留至少 420 px。
+- 用户宽度偏好只保存在当前浏览器 localStorage，不进入 D1，也不构成产品数据。
+- `760px` 以下隐藏桌面 separator，Inspector 继续使用带焦点恢复的移动端抽屉。
 
 ## 6. 数据与信任边界
 
@@ -238,6 +252,7 @@ Provider reference、Key、capability、异常 message 或 stack。
 - Project 元数据。
 - 用户可见 Message。
 - AgentRun 生命周期、稳定 failure code 与聚合 usage。
+- 已删除 Project 的最小 per-Run usage 归档，不含消息或 Provider 引用。
 - SandboxLease 和当前 Terminal/Preview 的临时协调行。
 
 ### D1/R2 不保存
@@ -257,9 +272,9 @@ Provider reference、Key、capability、异常 message 或 stack。
 | Pi + Gemini | 已公开并通过真实 E2E。 |
 | Goose | adapter、组合模板和远端 spike 已完成；浏览器仍不公开。 |
 | Files | E2B 下受控只读；fake 下明确 unavailable。 |
-| Usage | 当前用户 all-time 聚合；无计费语义。 |
+| Usage | 合并现存 Run 与删除归档的当前用户 all-time 聚合；无计费语义。 |
 | Terminal | E2B 下受控 PTY。 |
-| Preview | E2B 下固定 Vite Preview。 |
+| Preview | E2B v4 下平台固定 Vite、入口/依赖预检与同源内容网关。 |
 | Changes | E2B 下当前 Git 状态和有界 diff。 |
 | Sentry | Preview 已启用脱敏 Error Monitoring 和 Worker/React 源码映射；不是产品运行前提。 |
 | R2、BYOK、支付、团队 | 未实现，且不属于当前版本。 |

@@ -43,13 +43,63 @@ export class D1ProjectRepository implements ProjectRepository {
     };
   }
 
-  async deleteOwned(projectId: string, userId: string): Promise<boolean> {
-    const result = await this.db
-      .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
-      .bind(projectId, userId)
-      .run();
+  async deleteOwned(input: {
+    deletedAt: string;
+    projectId: string;
+    userId: string;
+  }): Promise<boolean> {
+    const results = await this.db.batch([
+      this.db
+        .prepare(
+          `INSERT INTO archived_run_usage (
+            run_id,
+            user_id,
+            project_id,
+            project_title,
+            agent_runtime_id,
+            sandbox_runtime_id,
+            model_id,
+            status,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            model_request_count,
+            sandbox_duration_ms,
+            created_at,
+            started_at,
+            finished_at,
+            deleted_at
+          )
+          SELECT
+            agent_runs.id,
+            agent_runs.user_id,
+            agent_runs.project_id,
+            projects.title,
+            agent_runs.agent_runtime_id,
+            agent_runs.sandbox_runtime_id,
+            agent_runs.model_id,
+            agent_runs.status,
+            agent_runs.input_tokens,
+            agent_runs.output_tokens,
+            agent_runs.total_tokens,
+            agent_runs.model_request_count,
+            agent_runs.sandbox_duration_ms,
+            agent_runs.created_at,
+            agent_runs.started_at,
+            agent_runs.finished_at,
+            ?
+          FROM agent_runs
+          INNER JOIN projects ON projects.id = agent_runs.project_id
+          WHERE projects.id = ? AND projects.user_id = ?
+          ON CONFLICT(run_id) DO NOTHING`,
+        )
+        .bind(input.deletedAt, input.projectId, input.userId),
+      this.db
+        .prepare("DELETE FROM projects WHERE id = ? AND user_id = ?")
+        .bind(input.projectId, input.userId),
+    ]);
 
-    return result.meta.changes > 0;
+    return (results[1]?.meta.changes ?? 0) > 0;
   }
 
   async findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null> {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { D1MessageRepository, D1ProjectRepository } from "./d1-repositories";
-import { TestD1Database } from "./d1-test-database";
+import { result, TestD1Database } from "./d1-test-database";
 
 describe("D1 Project and Message repositories", () => {
   it("maps owned Project rows from snake_case", async () => {
@@ -40,6 +40,7 @@ describe("D1 Project and Message repositories", () => {
       updated_at: "2026-07-25T01:00:00.000Z",
       user_id: "user-1",
     });
+    db.batchResults.push([result([], 1), result([], 1)]);
     const repository = new D1ProjectRepository(db.asBinding());
 
     const renamed = await repository.renameOwned({
@@ -48,7 +49,11 @@ describe("D1 Project and Message repositories", () => {
       updatedAt: "2026-07-25T01:00:00.000Z",
       userId: "user-1",
     });
-    const deleted = await repository.deleteOwned("project-1", "user-1");
+    const deleted = await repository.deleteOwned({
+      deletedAt: "2026-07-25T02:00:00.000Z",
+      projectId: "project-1",
+      userId: "user-1",
+    });
 
     expect(renamed).toMatchObject({
       id: "project-1",
@@ -63,8 +68,10 @@ describe("D1 Project and Message repositories", () => {
       "project-1",
       "user-1",
     ]);
-    expect(db.prepared[2]?.query).toContain("DELETE FROM projects WHERE id = ? AND user_id = ?");
-    expect(db.prepared[2]?.bindings).toEqual(["project-1", "user-1"]);
+    expect(db.prepared[2]?.query).toContain("INSERT INTO archived_run_usage");
+    expect(db.prepared[2]?.bindings).toEqual(["2026-07-25T02:00:00.000Z", "project-1", "user-1"]);
+    expect(db.prepared[3]?.query).toContain("DELETE FROM projects WHERE id = ? AND user_id = ?");
+    expect(db.prepared[3]?.bindings).toEqual(["project-1", "user-1"]);
   });
 
   it("lists visible messages by Project in sequence order", async () => {

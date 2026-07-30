@@ -1,23 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChartNoAxesColumn, Folder, LoaderCircle, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { Folder, LoaderCircle, Plus } from "lucide-react";
 
 import { browserApi } from "../api";
 import { projectQueryKey } from "../query-keys";
+import { AccountMenu, type AccountMenuProps } from "./account-menu";
 import { ProjectActionsMenu } from "./project-actions-menu";
 
-export function ProjectSidebar() {
-  const [filter, setFilter] = useState("");
+export function ProjectSidebar({
+  email,
+  isSigningOut,
+  name,
+  onSignOut,
+}: Omit<AccountMenuProps, "placement">) {
   const projects = useQuery({
     queryFn: browserApi.listProjects,
     queryKey: projectQueryKey,
   });
-  const normalizedFilter = filter.trim().toLocaleLowerCase();
-  const visibleProjects =
-    projects.data?.filter((project) =>
-      project.title.toLocaleLowerCase().includes(normalizedFilter),
-    ) ?? [];
+  const visibleProjects = projects.data ?? [];
 
   return (
     <aside className="project-sidebar">
@@ -25,16 +25,10 @@ export function ProjectSidebar() {
         <h2>Projects</h2>
       </div>
 
-      <label className="project-search">
-        <Search aria-hidden="true" size={15} />
-        <input
-          aria-label="Filter projects"
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder="Filter projects"
-          type="search"
-          value={filter}
-        />
-      </label>
+      <Link className="project-sidebar-new" to="/projects/new">
+        <Plus aria-hidden="true" size={17} />
+        <span>New project</span>
+      </Link>
 
       <div className="project-sidebar-section-label">All projects</div>
       <div className="project-sidebar-list">
@@ -54,9 +48,7 @@ export function ProjectSidebar() {
           </button>
         ) : null}
         {projects.isSuccess && visibleProjects.length === 0 ? (
-          <p className="project-sidebar-state">
-            {normalizedFilter ? "No matching projects" : "No projects yet"}
-          </p>
+          <p className="project-sidebar-state">No projects yet</p>
         ) : null}
         {visibleProjects.length > 0 ? (
           <ul>
@@ -83,20 +75,13 @@ export function ProjectSidebar() {
       </div>
 
       <div className="project-sidebar-footer">
-        <Link
-          activeProps={{
-            className: "project-sidebar-usage project-sidebar-usage-active",
-          }}
-          className="project-sidebar-usage"
-          to="/usage"
-        >
-          <ChartNoAxesColumn aria-hidden="true" size={16} />
-          <span>Usage</span>
-        </Link>
-        <Link className="project-sidebar-new" to="/projects/new">
-          <Plus aria-hidden="true" size={17} />
-          <span>New project</span>
-        </Link>
+        <AccountMenu
+          email={email}
+          isSigningOut={isSigningOut}
+          name={name}
+          onSignOut={onSignOut}
+          placement="sidebar"
+        />
       </div>
     </aside>
   );

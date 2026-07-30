@@ -102,6 +102,7 @@ export type UsageAggregateRow = {
 };
 
 export type ProjectUsageRow = UsageAggregateRow & {
+  project_deleted: number;
   project_id: string;
   project_title: string;
 };
@@ -294,7 +295,12 @@ export function toUsageMetrics(row: UsageAggregateRow): UsageMetrics {
 }
 
 export function toProjectUsageSummary(row: ProjectUsageRow): ProjectUsageSummary {
+  if (row.project_deleted !== 0 && row.project_deleted !== 1) {
+    throw new Error("D1 returned invalid Project deletion state for user usage");
+  }
+
   return {
+    projectDeleted: row.project_deleted === 1,
     projectId: row.project_id,
     projectTitle: row.project_title,
     usage: toUsageMetrics(row),

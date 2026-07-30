@@ -235,7 +235,10 @@ idle cleanup。
 
 `SandboxPreviewRuntime` 只接收平台生成的 `vite-v1` 参数：
 
-- 工作目录 `/workspace`、固定端口 `3000`、固定本地 Vite 二进制；
+- 工作目录 `/workspace`、固定端口 `3000`、固定平台 Vite 二进制
+  `/opt/agent-online/preview/node_modules/.bin/vite`；
+- 启动前只读检查根目录普通文件 `index.html`；小型 `package.json` 声明依赖但没有
+  `node_modules` 时返回产品前置条件错误，不申请 PreviewSession；
 - 不执行 Project script、不加载 Project Vite config、不通过 `npx` 下载；
 - E2B public traffic 关闭，Provider traffic token 只在 Worker adapter 内使用；
 - 单次 Preview 内容代理到 E2B 的 fetch 有 15 秒 deadline；
@@ -286,7 +289,12 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 - Cloudflare Workflow 的执行所有权、重试恢复、跨请求取消、deadline 和空闲 TTL。
 - 真实 Provider sandbox ID 和 process reference 的私有持久化与失效处理。
 - Pi RPC 的最终回复、受控 ModelGateway 通道和真实 usage 聚合。
-- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板；E2B 默认非 root 用户必须拥有可写的 `/workspace`，模板探针需实际完成 Git init/status。不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
+- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。当前 v4 组合模板
+  在同一镜像中固定 Node/Pi/Goose、npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/
+  进程诊断/原生编译工具和只读平台 Preview Vite，并通过
+  `/opt/agent-online/manifest.json` 描述平台能力。E2B 默认非 root 用户必须拥有可写的
+  `/workspace`，模板探针需实际完成工具版本、目录权限和 Git init/status。不能按 Agent
+  切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
 - wall-clock timeout、空闲 TTL 与明确的资源释放路径。
 - 固定 `vite-v1` Preview、同源 GET/HEAD 内容网关、D1 临时所有权、30 分钟 expiry 与停止后的 idle cleanup。
 - 固定 Git status/diff、危险 repository 配置拒绝、输出截断、no-store 和桌面/移动端 Project Inspector。

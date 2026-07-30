@@ -75,7 +75,11 @@ export class ProjectManagementService {
       return blocked;
     }
 
-    const deleted = await this.dependencies.projects.deleteOwned(project.id, input.userId);
+    const deleted = await this.dependencies.projects.deleteOwned({
+      deletedAt: this.dependencies.now().toISOString(),
+      projectId: project.id,
+      userId: input.userId,
+    });
     return deleted ? { kind: "deleted", project } : { kind: "not_found" };
   }
 }
