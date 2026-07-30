@@ -2,8 +2,7 @@
 
 > 状态：本文记录截至 2026-07-30 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
 > 受控 Preview 预检和可调桌面检查器已部署；`0006_integrity_guards.sql` 和
-> `0007_agent_run_failure_codes.sql` 继续保持已应用状态。
-> 本地新增的 `0008_archived_run_usage.sql` 尚未应用到远程 Preview。
+> `0007_agent_run_failure_codes.sql`、`0008_archived_run_usage.sql` 均已应用。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
 ## 1. Account
@@ -31,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `772c6b92-b294-4741-9b61-ef4c6db82468` |
+| 当前部署版本 | `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -59,14 +58,16 @@ Worker 同时提供 React Assets 和 Hono API。没有为本项目创建第二�
 - `0005_preview_sessions.sql`
 - `0006_integrity_guards.sql`
 - `0007_agent_run_failure_codes.sql`
+- `0008_archived_run_usage.sql`
 
 `0006` 和 `0007` 均在 `RUNS_ENABLED=false` 的维护窗口应用。`0007` 发布先部署迁移前
 旧代码锁定版本，九项只读完整性预检全部为零，再迁移、部署新代码锁定版本并完成
 登录/API smoke，最后恢复 Run。未来涉及执行顺序或 D1 trigger 的发布仍按
 [私有 Preview 部署](./preview-deployment.md)执行。
 
-下一次发布必须在维护窗口先应用 `0008_archived_run_usage.sql`，再部署依赖该表的
-Usage 查询和 Project 删除代码。
+`0008` 是纯 additive table/index 迁移。发布提交 `d2ac70f` 推送后，先在仍运行旧
+Worker 时应用该迁移，再部署读取归档表的新代码，避免 schema 不兼容窗口；迁移前后
+九项只读预检均通过。
 
 D1 schema 还包括已删除 Project 的最小 per-Run usage 归档，以及当前
 Terminal/Preview 的临时协调行。归档不保存 Message、文件或 Provider 引用；
@@ -245,6 +246,12 @@ Preview 已验证：
   `772c6b92-b294-4741-9b61-ef4c6db82468`。线上量测 Project tabs/header 底边均为
   `110px`，Run status/Inspector tabs 底边均为 `162px`，两组偏差均为 `0px`；健康检查
   和九项远程预检通过。
+- Project 删除用量归档和账号导航版本为
+  `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa`，对应完整提交
+  `d2ac70fd5a3fe8a64ddc27375826652e5dceb4b9`。远程确认 `0008` 已登记且
+  `archived_run_usage` 可查询；登录态浏览器确认桌面顶栏账号入口隐藏、左下账号菜单可
+  进入 Usage、New project 位于左栏顶部且无筛选框。Usage 成功读取 4 个现存 Run；
+  健康、Pi-only capability 和九项远程预检通过。
 
 尚未验证：
 

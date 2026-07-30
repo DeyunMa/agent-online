@@ -115,6 +115,12 @@ Project tabs/header 底边均为 `110px`，Run status/Inspector tabs 底边均�
 两组偏差均为 `0px`；`pnpm check`、线上健康检查和九项远程协调预检通过。该 CSS-only
 调整同样没有重新创建 E2B 沙箱或调用 Gemini。
 
+提交 `d2ac70f` 随版本 `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa` 发布。远程先应用纯
+additive 的 `0008_archived_run_usage.sql`，再部署依赖归档表的 Worker；迁移登记和
+空归档表查询成功。登录态 smoke 确认左下账号菜单进入 Usage、左上 New project、无
+Project 筛选和桌面顶栏账号入口隐藏；Usage 成功读取 4 个现存 Run。健康、Pi-only
+capability 和九项远程协调预检通过，本轮没有创建 E2B 沙箱或调用 Gemini。
+
 2026-07-30 针对 Preview 版本 `50a111c7-1c22-4f80-8bca-0810fb772e84` 通过：
 
 - 基线路径 27.0 秒通过：真实 Pi、Workflow、ModelGateway、最终 Message、usage、

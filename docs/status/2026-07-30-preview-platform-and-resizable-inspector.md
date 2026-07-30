@@ -89,21 +89,21 @@ Cloudflare Preview：
 
 - URL：<https://agent-online-preview.mdy1145141.workers.dev>
 - Worker Version：
-  `772c6b92-b294-4741-9b61-ef4c6db82468`
+  `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa`
 - E2B Template：
   `agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c`
 
 Worker 与 React 源码映射均已上传到 Sentry，部署产物扫描通过且不保留 `.map`。
-完整真实产品 E2E 在前一版本 `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 通过；后续版本
-只收敛原生 separator 样式和桌面 Project Inspector 两组横向分隔线。当前版本重新通过
-完整 `pnpm check`，线上量测两组边界偏差均为 0 px，并通过健康检查与九项远程预检；
-执行链路未变化，因此无需重复创建沙箱或调用 Gemini。
+完整真实产品 E2E 在前一版本 `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 通过。当前版本
+对应提交 `d2ac70f`，重新通过完整 `pnpm check`，并加入 Project 删除用量归档和左下
+账号菜单。远程 `0008` 迁移、健康、capability、登录态 Usage/侧栏 smoke 和九项远程
+预检通过；本轮没有创建沙箱或调用 Gemini。
 
 ## 6. 剩余限制
 
-1. 当前部署发生在工作树提交之前。Sentry 自动 release 使用部署时的 Git HEAD，不能
-   单独证明本次未提交差异；代码提交后应在下一次发布重新上传源码映射，使 release
-   与可追溯源码一致。
+1. Sentry release 与部署提交
+   `d2ac70fd5a3fe8a64ddc27375826652e5dceb4b9` 一致；后续修改仍需先提交再部署，保持
+   源码映射可追溯。
 2. 依赖预检只读取小型根 `package.json` 的常规 dependency 字段，不替代完整包管理器
    状态检查；损坏或部分安装的 `node_modules` 仍可能在 Vite 启动时返回
    `preview.unavailable`。

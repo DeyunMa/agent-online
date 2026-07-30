@@ -3,8 +3,7 @@
 > 状态：2026-07-30 已部署并验证 v4 组合模板、平台 Preview 底座与可调桌面检查器；
 > 当前 Worker 版本和 Hosted E2E 证据见资源台账；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
-> `0008_archived_run_usage.sql` 已在本地准备，尚未应用到远程 Preview；发布依赖该表的
-> 代码前必须先按维护窗口流程应用迁移。
+> `0008_archived_run_usage.sql` 已先于依赖它的 Worker 版本应用并完成远程验证。
 > 本文继续作为后续发布与重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
 

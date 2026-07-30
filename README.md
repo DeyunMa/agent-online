@@ -61,8 +61,8 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
 2026-07-30 的 v4 Preview 平台底座与可调检查器版本已部署到私有 Cloudflare Preview；
-当前 Worker 版本为 `772c6b92-b294-4741-9b61-ef4c6db82468`，并已包含标签页 favicon
-和桌面三栏横向分隔线对齐修复。
+当前 Worker 版本为 `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa`，对应提交 `d2ac70f`，
+并已包含标签页 favicon、可调桌面检查器、Project 删除用量归档和左下账号菜单。
 当前试用入口仍为 allowlist 私有环境，不代表已经开放公共注册；最新完整验收结果记录在
 [2026-07-30 Preview 平台底座与可调检查器](./docs/status/2026-07-30-preview-platform-and-resizable-inspector.md)。
 
