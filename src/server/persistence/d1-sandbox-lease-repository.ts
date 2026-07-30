@@ -145,6 +145,27 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
     return row === null ? null : toSandboxLeaseRecord(row);
   }
 
+  async findByProjectIds(projectIds: readonly string[]): Promise<SandboxLeaseRecord[]> {
+    if (projectIds.length === 0) {
+      return [];
+    }
+
+    const chunks = chunk(projectIds, 90);
+    const results = await this.db.batch<SandboxLeaseRow>(
+      chunks.map((projectIdChunk) =>
+        this.db
+          .prepare(
+            `SELECT ${sandboxLeaseColumns}
+            FROM sandbox_leases
+            WHERE project_id IN (${projectIdChunk.map(() => "?").join(", ")})`,
+          )
+          .bind(...projectIdChunk),
+      ),
+    );
+
+    return results.flatMap((result) => result.results.map(toSandboxLeaseRecord));
+  }
+
   async getOrCreate(input: {
     id: string;
     now: string;
@@ -221,4 +242,12 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
       requireBatchRow<SandboxLeaseRow>(results, results.length - 1, "update sandbox lease"),
     );
   }
+}
+
+function chunk<T>(values: readonly T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }

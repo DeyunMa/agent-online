@@ -42,7 +42,7 @@
 | Git | `2.39.5` |
 | Bash | `5.2.15` |
 
-Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。模板显式安装 `bash`、`coreutils` 和 `git`，供受控 Changes 使用；模板不包含任何 Key、token 或用户数据。
+Goose 从官方 `v1.44.0` Linux x86_64 GNU release 安装，并在构建时校验 SHA-256。模板显式安装 `bash`、`coreutils` 和 `git`，供受控 Changes 使用；模板不包含任何 Key、token 或用户数据。第三版模板以 E2B 默认非 root 用户运行，并由该用户拥有 `/workspace`，避免 Terminal/Agent 创建的 repository 因目录所有权不一致触发 Git `safe.directory` 拒绝。
 
 构建：
 
@@ -53,7 +53,7 @@ pnpm build:e2b-agent-template
 当前已验证的精确 build：
 
 ```text
-agent-online-pi-goose-runtime:8916fff0-6236-43ba-a397-b0e2b8f97c47
+agent-online-pi-goose-runtime:a57d8d0d-5b9b-4d1e-8cca-06a9c94752a4
 ```
 
 旧 `agent-online-pi-runtime` 模板和构建脚本暂时保留为回滚工具，但新的 Project Runtime 验证必须使用组合模板，不能因切换 Agent 重建沙箱。
@@ -88,7 +88,7 @@ pnpm test:e2e:e2b-agent-runtimes
 
 ## 通过条件
 
-1. 组合模板实测 Node/Pi/Goose/Git/Bash 版本正确，`/workspace` 可写。
+1. 组合模板实测 Node/Pi/Goose/Git/Bash 版本正确，`/workspace` 由默认用户拥有且可写，并能完成 Git init/status。
 2. 沙箱环境中没有 Gemini/E2B Key，也没有常驻 ModelGateway token。
 3. Pi 创建共享文件，Goose 读取并修改，Pi 再读取并修改；全程使用同一 Provider sandbox。
 4. 两个 adapter 都解析真实协议并产生成功的 `agent.completed` 与最终文本。
@@ -120,3 +120,12 @@ pnpm test:e2e:e2b-agent-runtimes
 配置部署后，Worker 与 Workflow 版本存在短暂传播窗口。第一次 TTL 探针命中旧 Workflow 版本，因此正式 timeout/TTL 验收必须先在 Workflow 详情确认最新版本，再运行探针。
 
 `GOOSE_RUNTIME_MODE` 仍不能设置为 `public`。剩余门槛是 capability 的工具继承与精确输出/日志脱敏、React Runtime 选择、刷新恢复和移动端验收。
+
+## 2026-07-30 模板权限修复结果
+
+- 首次尝试只指定 `makeDir(..., user: "user")`，因非 root 用户不能在 `/` 下创建
+  `/workspace` 而在构建阶段失败；该构建未发布。
+- 第三版改为 root 创建和 `chown`，再显式切换到 E2B 默认用户；模板探针验证
+  `/workspace` 所有权、写入、Git init/status 和密钥缺失。
+- 真实 adapter E2E 在同一个第三版沙箱完成 `Pi -> Goose -> Pi -> Goose cancel`，
+  最终 Message、按 Run usage、共享文件、精确取消和 Key 隔离全部通过；耗时约 65 秒。

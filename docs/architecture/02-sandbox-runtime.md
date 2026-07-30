@@ -286,7 +286,7 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 - Cloudflare Workflow 的执行所有权、重试恢复、跨请求取消、deadline 和空闲 TTL。
 - 真实 Provider sandbox ID 和 process reference 的私有持久化与失效处理。
 - Pi RPC 的最终回复、受控 ModelGateway 通道和真实 usage 聚合。
-- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板和可写 `/workspace`，不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
+- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。Goose spike 使用同一个固定 Node/Pi/Goose 组合模板；E2B 默认非 root 用户必须拥有可写的 `/workspace`，模板探针需实际完成 Git init/status。不能按 Agent 切换模板、在每个 Run 下载二进制，或把任何模型 Key 烘焙进 template。
 - wall-clock timeout、空闲 TTL 与明确的资源释放路径。
 - 固定 `vite-v1` Preview、同源 GET/HEAD 内容网关、D1 临时所有权、30 分钟 expiry 与停止后的 idle cleanup。
 - 固定 Git status/diff、危险 repository 配置拒绝、输出截断、no-store 和桌面/移动端 Project Inspector。

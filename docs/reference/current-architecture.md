@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现基准
 >
-> 校准日期：2026-07-28
+> 校准日期：2026-07-30
 >
 > 适用范围：`main` 分支当前代码、Cloudflare Preview 部署和 E2B 组合模板
 
@@ -48,6 +48,7 @@ flowchart LR
   end
 
   G["Gemini OpenAI-compatible API"]
+  S["Sentry Error Monitoring<br/>sanitized errors only"]
 
   B -->|"same-origin HTTPS / SSE / WebSocket"| H
   B --> A
@@ -63,6 +64,9 @@ flowchart LR
   GIT --> FS
   AR -->|"short-lived Run capability"| MG
   MG -->|"platform Gemini key"| G
+  H -->|"allowlisted error events"| S
+  W -->|"allowlisted error events"| S
+  B -->|"React errors after beforeSend"| S
 ```
 
 一个仓库只产生一个 Worker 部署单元：
@@ -125,13 +129,19 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 服务端内部继续按变更原因拆分：`src/server/persistence/d1-repositories.ts` 只是稳定的
 导出入口，Project/Message、SandboxLease、AgentRun、Terminal、Preview 和 Usage
 adapter 分别位于独立模块，公共 snake_case 映射集中在 `d1-records.ts`；
+`ProjectReadService` 统一执行 owner-scoped Project/Message/Run/Lease 查询，
+`ProjectManagementService` 统一执行 Project 创建、重命名和硬删除，Hono 不直接取得
+原始 repository；
 `run-execution-dispatcher.ts` 单独拥有 Workflow 创建、取消和 expiry/idle 调度，
 `e2b-runtime-factory.ts` 只构造当前 E2B 配置与 adapter，避免 Files/Terminal/Preview
 请求间接初始化完整 RunExecution；`services.ts` 只装配这些端口。E2B adapter 的会话、
 Git Changes、Preview 和 SDK 类型分别位于内部模块，公开入口仍只有
 `E2BSandboxRuntime`。ModelGateway 的 HTTP 编排、协议转换和有界流读取也分离，
-上游模型 POST 使用 120 秒 deadline 且不自动重试。客户端 `router.tsx` 只声明路由和 App shell，认证、
-Project 列表和创建页面由各自组件承担。
+上游模型 POST 使用 120 秒 deadline 且不自动重试。Run、Terminal、Preview 和手动 Stop
+释放沙箱时共用 `SandboxReclaimer` 的条件脱离与 Provider stop 顺序。客户端
+`router.tsx` 只声明路由和 App shell，认证、Project 列表和创建页面由各自组件承担；
+Project 活动状态把排他的 Run/Terminal/Preview-starting 与可并行的 running Preview
+分为两个状态轴。
 
 ## 5. 主要执行流
 
@@ -194,8 +204,12 @@ Provider reference、Key、capability、异常 message 或 stack。
   Run 后 idle cleanup 和未处理 HTTP；这些接缝将异常归一化成固定 diagnostic code。
   合同中预留但尚未接线的 code 不代表已有对应观测。原始异常只作为瞬时原因，不进入
   浏览器、D1 或普通结构化事件。
-- `src/server/observability/` 当前 adapter 只输出 Cloudflare Workers 可索引的结构化
-  console 记录，不依赖 Sentry 或其他外部服务。
+- `src/server/observability/` 将同一受控诊断事件扇出到结构化 console 与可选 Sentry
+  adapter；任一 Reporter 失败都不能改变产品执行。Hono 未捕获异常和 Workflow 由
+  Sentry Cloudflare/Hono integration 捕获，React 由 Error Boundary 捕获。
+- Sentry `beforeSend` 以 allowlist 重建事件，只保留 stack/debug metadata、环境、
+  release、固定诊断标签和应用关联/数值上下文；Logs、Tracing、Metrics、Replay、
+  breadcrumbs、用户/请求内容与原始异常正文均关闭。
 - Hono API 使用统一安全响应头；静态 Assets 的 CSP、frame、referrer 和 MIME
   防护由 `public/_headers` 声明，production build 会验证该文件进入 `dist`。
 - Workflow 重试和取消竞争可能产生重复事件；日志采用至少一次语义，业务终态与 usage
@@ -247,6 +261,7 @@ Provider reference、Key、capability、异常 message 或 stack。
 | Terminal | E2B 下受控 PTY。 |
 | Preview | E2B 下固定 Vite Preview。 |
 | Changes | E2B 下当前 Git 状态和有界 diff。 |
+| Sentry | Preview 已启用脱敏 Error Monitoring 和 Worker/React 源码映射；不是产品运行前提。 |
 | R2、BYOK、支付、团队 | 未实现，且不属于当前版本。 |
 
 ## 8. 工程门禁
@@ -258,7 +273,7 @@ Provider reference、Key、capability、异常 message 或 stack。
 - Node 单元/API 测试；
 - Cloudflare Workers 运行时中的真实 D1 migrations、trigger 和 batch 测试；
 - production build、构建产物凭据扫描和静态 `_headers` 校验；
-- Chromium 中注册、创建 Project、fake Run 取消和刷新恢复 smoke。
+- Chromium 中注册、创建/重命名/删除 Project、fake Run 取消、刷新恢复和 tab 键盘导航 smoke。
 
 门禁同时覆盖 public error catalog 完整性、错误响应 request ID、一致的 Run failure
 状态组合、结构化日志 schema 和敏感字段缺失。

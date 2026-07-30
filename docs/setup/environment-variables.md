@@ -1,14 +1,15 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成私有 Cloudflare 验收；Terminal/Preview/Changes 复用现有 E2B/D1/Workflow 配置且不新增环境变量，Goose 仍保持 `spike`，不向 UI 公开。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、Project Preview、Changes 和脱敏 Sentry Error Monitoring 均已完成私有 Cloudflare 配置；Goose 仍保持 `spike`，不向 UI 公开。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
 
 | 类别 | 放置位置 | 示例 |
 | --- | --- | --- |
-| Secret | 本地 `.dev.vars`；远程环境使用 `wrangler secret put --env <name>`。 | Better Auth Secret、Gemini Key、E2B Key、私有部署邮箱。 |
-| 非敏感变量 | `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、访问模式和 Run 开关。 |
+| Worker Secret | 本地 `.dev.vars`；远程环境使用 `wrangler secret put --env <name>`。 | Better Auth Secret、Gemini Key、E2B Key、私有部署邮箱、服务端 Sentry DSN。 |
+| Worker 非敏感变量 | `wrangler.jsonc` 的 `vars`。 | Sandbox Provider、空闲 TTL、默认模型 ID、访问模式、Run 开关和 Sentry environment。 |
+| 浏览器/构建变量 | 忽略的 `.env.<mode>.local` 或构建进程环境。 | 浏览器 Sentry DSN/environment、源码映射上传组织/项目/token。 |
 | Cloudflare Binding | `wrangler.jsonc`。 | `DB`、`ASSETS`、`AGENT_RUN_WORKFLOW`。 |
 
 不要把真实 Key 放进 `wrangler.jsonc`、Git、截图或聊天消息。`.dev.vars.example` 只保留变量名和示例值。
@@ -47,12 +48,34 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference；当前 build 还显式安装并探测 Git、Bash 和 coreutils，供受控 Changes 使用。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
 | `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 当前为 `spike` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose，但不向 UI 公布；`public` 才公开选择。只有 E2B 支持 Goose。 |
+| `SENTRY_ENVIRONMENT` | 本地通常不设置；Preview 为 `preview` | 服务端错误事件的固定环境标签；没有 DSN 时不会初始化 SDK。 |
 
 当前默认 AgentRuntime 固定为 `pi`，不是环境变量。`GOOSE_RUNTIME_MODE` 只控制第二 adapter 的执行与公开门槛，不改变 Project 默认值。
 `spike` 不构成用户权限边界：已通过现有认证和部署访问策略的调用者仍可手工提交
 `agentRuntimeId=goose`。它只能在邮箱 allowlist 保护的私有 Preview 中短时启用。
 
-## 5. 部署访问与执行开关
+## 5. Sentry 错误监控与源码映射
+
+Sentry 不属于产品功能前提。完全不配置这些变量时，应用、测试和普通
+`pnpm build` 仍可运行；只有错误上报和源码还原不可用。
+
+| 变量 | 位置 | 用途 |
+| --- | --- | --- |
+| `SENTRY_DSN` | 本地 `.dev.vars` 或远程 Worker Secret | Hono、Workflow 与服务端 `DiagnosticReporter` 的错误上报。 |
+| `SENTRY_ENVIRONMENT` | `wrangler.jsonc` 非敏感变量 | 服务端环境标签。 |
+| `VITE_SENTRY_DSN` | 忽略的 `.env.preview.local` | 编译进 React bundle 的公开 DSN 配置。 |
+| `VITE_SENTRY_ENVIRONMENT` | 忽略的 `.env.preview.local` | 浏览器环境标签。 |
+| `SENTRY_AUTH_TOKEN` | 忽略的 `.env.sentry-build-plugin` 或部署进程环境 | 仅用于构建期上传源码映射；当前 token 只需要 `org:ci`。 |
+| `SENTRY_ORG` | 同上 | 源码映射目标组织。 |
+| `SENTRY_PROJECT` | 同上 | 源码映射目标项目。 |
+| `SENTRY_UPLOAD_SOURCEMAPS` | 部署脚本内部 | 显式打开源码映射上传；普通 build/dry-run 不设置。 |
+
+`VITE_SENTRY_DSN` 会进入浏览器 bundle，因此不能承担认证作用。`SENTRY_AUTH_TOKEN`
+才是敏感上传凭据，不能写入 `.env.example` 的有效值、Worker Secret、Cloudflare
+Dashboard 变量或 Git。当前两端都关闭 Logs、Tracing、Metrics、Replay 和 breadcrumbs；
+变量存在不代表允许扩大采集范围。
+
+## 6. 部署访问与执行开关
 
 | 变量 | 本地默认 | Preview 值 | 说明 |
 | --- | --- | --- | --- |
@@ -64,7 +87,7 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 
 浏览器通过 `/api/capabilities` 读取 `runCreationEnabled`、`terminalEnabled`、`previewEnabled`、`changesEnabled`、默认 Runtime 和可公开 Runtime ID，不会得到 `spike` Runtime、白名单、Secret 或其他部署配置。这些 capability 只表示服务端安装了对应 E2B 能力，不包含 Provider 标识、端口、traffic token、Git command 或内部路径。前端禁用只是交互反馈，服务端所有权、固定参数与互斥才是强制边界。
 
-## 6. Cloudflare Binding，不是环境变量
+## 7. Cloudflare Binding，不是环境变量
 
 这些由 `wrangler.jsonc` 绑定，在 Worker 中通过 `env` 访问；用户不应把它们填进 `.dev.vars`：
 
@@ -78,7 +101,7 @@ V1 不配置 `PROJECT_BUCKET`、R2 或 Durable Object Binding。`AGENT_RUN_WORKF
 
 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` 只在 Wrangler 自动化/CI 部署时需要，不是 Worker 运行时 Secret；本机交互式 `wrangler login` 时不必提供给应用。
 
-## 7. `.dev.vars` 与远程 Secret
+## 8. `.dev.vars` 与远程 Secret
 
 本地：复制示例文件为 `.dev.vars` 后填写当前必需值。该文件已在 `.gitignore` 中。
 
@@ -89,13 +112,16 @@ pnpm wrangler secret put GEMINI_API_KEY --env preview
 pnpm wrangler secret put BETTER_AUTH_SECRET --env preview
 pnpm wrangler secret put E2B_API_KEY --env preview
 pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
+pnpm wrangler secret put SENTRY_DSN --env preview
 ```
 
-启用真实 E2B 才写入 Gemini/E2B Secret。当前代码不读取 `SENTRY_DSN` 或 `ADMIN_EMAILS`。不同环境的 Binding 和 `vars` 不会自动继承，部署 staging/production 前必须逐项配置和检查。
+启用真实 E2B 才写入 Gemini/E2B Secret。`SENTRY_DSN` 只启用服务端错误监控；
+`ADMIN_EMAILS` 仍不存在。不同环境的 Binding、`vars` 和构建期 `VITE_*` 不会自动继承，
+部署 staging/production 前必须逐项配置和检查。
 
 完整顺序见 [Cloudflare 私有 Preview 部署](./preview-deployment.md)。
 
-## 8. 当前不需要的变量
+## 9. 当前不需要的变量
 
 - R2 Bucket、R2 S3 Access Key 或 Project 文件备份配置。
 - Stripe / 支付平台 Key，订阅、账单、发票或价格配置。
@@ -106,7 +132,7 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 - Preview 固定端口、preset、启动等待和 30 分钟上限是代码合同，不提供环境变量或浏览器覆盖；改动这些边界需要先更新 ADR-0006。
 - Changes 的固定 Git/Bash/coreutils 路径、输出上限和危险配置拒绝是代码合同，不提供环境变量或浏览器覆盖；改动前先更新 ADR-0007。
 
-## 9. 外部依据
+## 10. 外部依据
 
 - [Better Auth 环境变量](https://better-auth.com/docs/installation)
 - [Better Auth 邮箱密码登录](https://better-auth.com/docs/authentication/email-password)
@@ -114,3 +140,5 @@ pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
 - [E2B Quickstart 与 `E2B_API_KEY`](https://e2b.dev/docs/quickstart)
 - [Cloudflare Wrangler 配置](https://developers.cloudflare.com/workers/wrangler/configuration/) 与 [Bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/)
 - [Cloudflare Workflows Workers API](https://developers.cloudflare.com/workflows/build/workers-api/)
+- [Sentry Cloudflare SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/cloudflare/README.md)
+- [Sentry JavaScript Source Maps](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/)

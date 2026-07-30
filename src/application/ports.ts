@@ -138,6 +138,8 @@ export interface SandboxLeaseRepository {
     updatedAt: string;
   }): Promise<boolean>;
   findByProjectId(projectId: string): Promise<SandboxLeaseRecord | null>;
+  /** Batch read used by the Project list query to avoid one D1 request per Project. */
+  findByProjectIds(projectIds: readonly string[]): Promise<SandboxLeaseRecord[]>;
   getOrCreate(input: {
     id: string;
     now: string;

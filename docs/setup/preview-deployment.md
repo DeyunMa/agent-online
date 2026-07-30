@@ -1,7 +1,6 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-28 已部署 Project 生命周期版本并通过基线、Project 生命周期与全能力
-> Hosted Preview E2E；
+> 状态：2026-07-30 已部署 Sentry 与交付加固版本及第三版组合模板；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
 > 本文继续作为后续发布与重建流程。
 > 关联：[资源台账](./cloudflare-preview-resources.md) · [环境变量](./environment-variables.md) · [外部依赖](./external-dependencies.md) · [交付阶段与成本](../architecture/04-delivery-and-cost.md)
@@ -28,6 +27,12 @@ pnpm deploy:preview:dry-run
 ```
 
 `pnpm check` 还执行源码凭据扫描、Biome、真实 Workers/D1 migration 测试和独立 fake 浏览器 smoke。生产和 Preview 构建都会先清理旧 `dist`，再执行内容型 `validate:build-artifacts`；Cloudflare 插件可能在本地构建时探测 `.dev.vars`，但 build 配置不要求本地 Secret，也不会把该文件或其中的凭据序列化进可部署产物。
+
+普通 `pnpm build`、`pnpm build:preview` 和 dry-run 不上传源码映射。只有
+`pnpm deploy:preview` 设置 `SENTRY_UPLOAD_SOURCEMAPS=true`；此时构建进程必须能从环境
+或忽略的 `.env.sentry-build-plugin` 读取 `SENTRY_AUTH_TOKEN`、`SENTRY_ORG` 和
+`SENTRY_PROJECT`。React DSN/environment 由忽略的 `.env.preview.local` 提供。上传成功
+后 Vite 插件删除 `dist` 内的 `.map`，最终产物扫描仍会运行。
 
 `pnpm deploy:preview:dry-run` 允许配置中保留远程占位值，以便先验证构建包和 Binding 结构。真实部署前，`pnpm validate:preview-config` 会拒绝：
 
@@ -82,9 +87,13 @@ pnpm wrangler secret put BETTER_AUTH_SECRET --env preview
 pnpm wrangler secret put GEMINI_API_KEY --env preview
 pnpm wrangler secret put E2B_API_KEY --env preview
 pnpm wrangler secret put ACCESS_ALLOWED_EMAILS --env preview
+pnpm wrangler secret put SENTRY_DSN --env preview
 ```
 
-`ACCESS_ALLOWED_EMAILS` 是逗号分隔的受邀邮箱。Preview 使用独立的 `BETTER_AUTH_SECRET`；`BETTER_AUTH_URL` 和 `E2B_TEMPLATE_ID` 是非敏感部署变量，不通过 Secret 写入。
+`ACCESS_ALLOWED_EMAILS` 是逗号分隔的受邀邮箱。Preview 使用独立的
+`BETTER_AUTH_SECRET`；`BETTER_AUTH_URL`、`E2B_TEMPLATE_ID` 和
+`SENTRY_ENVIRONMENT` 是非敏感部署变量，不通过 Secret 写入。`SENTRY_DSN` 只控制
+服务端错误上报，缺失时产品仍应正常运行。
 
 ## 5. 锁定、排空并迁移
 
@@ -215,6 +224,8 @@ status/failure code 非法组合计数为零，Hosted E2E 通过。
   并行、整沙箱 Stop 互斥、显式停止和 expiry/idle cleanup 均收敛。
 - Changes 只读取当前 Git working tree/index；固定命令、危险配置拒绝、输出上限、
   no-store、公开响应脱敏和移动端抽屉均通过。
+- Sentry 只收集 allowlist 清洗后的 Error Monitoring 事件；Logs、Tracing、Replay 和
+  Metrics 保持关闭，Worker/React 源码映射已上传且部署产物不含 `.map`。
 
 完成以上条件后，D2/D3 对应纵切才算通过完整远程环境验收。只读 Files 已使用真实 E2B Lease 验证目录、文本、停止状态和陈旧缓存清理。Terminal 已应用 `0004_terminal_sessions.sql` 并验证同源 WebSocket、真实 `/workspace` PTY、Run/Files/Stop 互斥、显式关闭、断线关闭和 Terminal/Pi Run 文件连续性；30 分钟 durable expiry 由测试覆盖，本轮没有为了验收等待完整时长。Project Preview 已应用 `0005_preview_sessions.sql` 并按上述步骤通过。Changes 不新增迁移，已按上述步骤通过。
 

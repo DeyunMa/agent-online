@@ -1,6 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 私有 spike 均已完成既定验收。2026-07-28 完成交付加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 私有 spike 均已完成既定验收。2026-07-30 已接入脱敏 Sentry Error Monitoring，并完成应用层、沙箱回收、前端状态与 Hosted E2E 成本加固；Goose 仍不向浏览器公开，配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -23,7 +23,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
   先停止空闲沙箱，再级联删除 Message、AgentRun、usage 和 Lease；不提供回收站。
 - Pi 是默认且已验收的 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成本地和私有 Preview spike，但继续由服务端门控且不出现在 UI。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
-- 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。无外部依赖的结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup，且不记录用户内容或 Provider 私有值。
+- 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup。Preview 还启用了同一窄 `DiagnosticReporter` 外层的 Sentry Error Monitoring；两条路径都不记录用户内容或 Provider 私有值。
 - 普通产品 mutation 在进入鉴权和 JSON 解析前统一要求同源，并限制请求体为 256 KiB；API 与静态资源分别设置安全响应头，构建门禁会校验 `_headers` 未丢失。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。单次上游模型请求有 120 秒 deadline 且不自动重放非幂等 POST；Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
@@ -41,15 +41,18 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
   锁定、九项只读 D1 完整性预检、迁移和解锁顺序发布；同一流程保留为后续 trigger
   变更的发布门禁。
 - Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择和 capability/工具继承输出脱敏复核尚未完成，因此公开产品能力仍是 Pi-only。
+- 当前 E2B 组合模板固定以非 root 用户运行，并让该用户拥有 `/workspace`。模板探针会验证目录可写、Git 初始化与 status 可用，避免 Terminal/Agent 创建的 repository 因所有权不一致触发 Git `safe.directory` 拒绝。
+- Project 查询经 application `ProjectReadService` 统一执行 owner scope；Run 空闲回收、Terminal/Preview 释放后的回收和手动停止复用同一 `SandboxReclaimer`。客户端将排他活动与可并行的 running Preview 分成两个状态轴，并支持桌面/移动端 tab 键盘导航。
+- Sentry 只启用 Error Monitoring。React、Hono 和 Workflow 异常经过严格 allowlist 清洗后上报；Logs、Tracing、Replay、Metrics 和用户内容采集均关闭。Preview 部署上传隐藏源码映射，上传后从 `dist` 删除 `.map`。
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏；桌面三栏、移动端检查器抽屉和跨响应式断点状态均通过真实浏览器验收。Goose 选择器仍须保持禁用或不展示。
 
-2026-07-28 的 Project 生命周期版本 `0c374d75-5f52-484a-9f7e-b0d0bfabd24e`
-已部署到私有 Cloudflare Preview，并通过基线、Project 重命名/硬删除和全能力
-Hosted E2E；测试完成后九项远程协调预检全部为零。当前试用入口仍为 allowlist
-私有环境，不代表已经开放公共注册。
+2026-07-30 的 Sentry 与交付加固版本
+`50a111c7-1c22-4f80-8bca-0810fb772e84` 已部署到私有 Cloudflare Preview。当前试用入口
+仍为 allowlist 私有环境，不代表已经开放公共注册；最新完整验收结果记录在
+[2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md)。
 
-D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，最近远程发布与 Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
+D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)，最近 Sentry 与架构收敛结果见 [2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
 
@@ -65,7 +68,7 @@ D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结�
 
 ## 依赖边界
 
-V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运行时还依赖 Cloudflare Worker/Assets/Workflows、Gemini API 和一个 Sandbox Provider（当前为 E2B）。Better Auth 是 Worker 内的库，不是另一个托管服务；Sentry 是可选观测工具，不是功能依赖。
+V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运行时还依赖 Cloudflare Worker/Assets/Workflows、Gemini API 和一个 Sandbox Provider（当前为 E2B）。Better Auth 是 Worker 内的库，不是另一个托管服务；Sentry 已用于 Preview 错误监控，但不是产品功能或执行链路的可用性前提。
 
 ## 文档索引
 
@@ -87,7 +90,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [ADR-0009](./docs/adr/0009-project-rename-and-hard-delete.md) | Project 重命名、活动资源拒绝、空闲沙箱停止与无回收站硬删除。 |
 | [系统总览](./docs/architecture/01-system-overview.md) | 单 Worker 请求流与浏览器、Worker、Agent、沙箱之间的数据路径。 |
 | [沙箱与 Agent 运行时](./docs/architecture/02-sandbox-runtime.md) | `SandboxLease` 生命周期、`SandboxRuntime` 与 `AgentRuntime` 的合同。 |
-| [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与可选观测。 |
+| [数据、认证与模型](./docs/architecture/03-data-auth-and-models.md) | D1、Better Auth、Gemini 网关、AgentRun 用量与脱敏错误观测。 |
 | [阶段与成本](./docs/architecture/04-delivery-and-cost.md) | fake/E2B/Cloudflare 的推进方式和成本护栏。 |
 | [视觉与产品目标](./docs/design/visual-product-target.md) | 已确认的工作台视觉基准、真实数据原则和分阶段功能映射。 |
 | [环境变量](./docs/setup/environment-variables.md) | 当前需要的 Key、Binding 和可选配置。 |
@@ -110,6 +113,7 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [2026-07-27 错误语义与结构化日志](./docs/status/2026-07-27-errors-and-observability.md) | 统一错误合同、Run failure code、执行关联、Preview 发布与验收结果。 |
 | [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md) | HTTP 边界、上游 deadline、运行时模块拆分、严格类型和最终本地门禁。 |
 | [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md) | Project 重命名、空闲沙箱停止、硬删除、移动端菜单和最新 Preview E2E。 |
+| [2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md) | Sentry 配置与脱敏边界、应用层和回收模块加固、模板权限修复、低成本 E2E 与验收证据。 |
 | [ADR-0001（历史）](./docs/adr/0001-user-project-sandbox-boundary.md) | 已被 ADR-0002 取代的旧基线，保留供决策追溯。 |
 
 ## 审计顺序

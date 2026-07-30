@@ -7,7 +7,7 @@ export const piGooseRuntimeTemplate = Object.freeze({
   gooseVersion: "1.44.0",
   gooseArchive: "goose-x86_64-unknown-linux-gnu.tar.bz2",
   gooseSha256: "87883ab52e3748e49cf7b1ed08677337651c35d6f68f1ef9f74e8c58bcaecd73",
-  tag: "v2",
+  tag: "v3",
 });
 
 export function createPiGooseRuntimeTemplate() {
@@ -36,7 +36,9 @@ export function createPiGooseRuntimeTemplate() {
       { user: "root" },
     )
     .runCmd(installGoose, { user: "root" })
-    .makeDir("/workspace", { mode: 0o1777, user: "root" })
+    .makeDir("/workspace", { mode: 0o755, user: "root" })
+    .runCmd("chown user:user /workspace", { user: "root" })
+    .setUser("user")
     .setWorkdir("/workspace")
     .runCmd("node --version")
     .runCmd("/usr/bin/git --version")

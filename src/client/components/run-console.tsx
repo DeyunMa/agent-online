@@ -27,6 +27,7 @@ import {
   shortRunId,
 } from "../presentation";
 import { ErrorState, LoadingState } from "./ui-states";
+import { handleRovingTabKeyDown } from "../tab-navigation";
 
 export type ProjectConsoleView = "conversation" | "runs";
 
@@ -38,12 +39,18 @@ export function ProjectRunTabs({
   view: ProjectConsoleView;
 }) {
   return (
-    <div aria-label="Project views" className="project-run-tabs" role="tablist">
+    <div
+      aria-label="Project views"
+      className="project-run-tabs"
+      onKeyDown={handleRovingTabKeyDown}
+      role="tablist"
+    >
       <button
         aria-selected={view === "conversation"}
         className={view === "conversation" ? "console-tab console-tab-active" : "console-tab"}
         onClick={() => onViewChange("conversation")}
         role="tab"
+        tabIndex={view === "conversation" ? 0 : -1}
         type="button"
       >
         Conversation
@@ -53,6 +60,7 @@ export function ProjectRunTabs({
         className={view === "runs" ? "console-tab console-tab-active" : "console-tab"}
         onClick={() => onViewChange("runs")}
         role="tab"
+        tabIndex={view === "runs" ? 0 : -1}
         type="button"
       >
         Runs

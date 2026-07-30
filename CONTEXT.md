@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-27 已补强 D1 原子完成、跨表完整性、稳定错误码、结构化执行关联、真实迁移测试和统一工程门禁。Goose 浏览器选择仍未开放。
+> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-30 已补强应用层读取边界、统一沙箱回收、前端活动状态、E2B 工作区所有权和脱敏 Sentry Error Monitoring。Goose 浏览器选择仍未开放。
 
 ## 产品定义
 
@@ -25,6 +25,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | `AgentRun` 上的聚合计量字段，以及由这些字段计算出的当前用户汇总。 | 真实 Runtime 写 token、模型请求数和沙箱时长；`GET /api/usage` 只做全量聚合，它不是账单流水或套餐。 |
+| `DiagnosticReporter` | application 与外层 adapter 之间的窄诊断端口。 | 结构化 console 和 Sentry 共享受控 schema；Reporter 失败不能改变产品结果，也不能接收用户内容、Provider 引用或原始异常正文。 |
 
 ## 对应关系
 
@@ -66,11 +67,14 @@ erDiagram
 17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
 18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
 19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、status/failure code 合法组合、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
-20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。
+20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。Sentry 只能作为 `DiagnosticReporter` 的外层 adapter 接收 allowlist 字段，不能启用 Replay、Logs、Tracing、Metrics 或自动用户/请求内容采集。
 21. Project 重命名只修改标题和 `updated_at`。硬删除必须拒绝活动 Run、Terminal 或
     Preview，先通过 SandboxRuntime 停止空闲 Provider sandbox，再由 Project 外键级联
     删除 Message、AgentRun、usage 和 Lease；不建软删除、回收站或删除历史。休眠中的
     idle-cleanup Workflow 发现 Run 已删除时直接 no-op。
+22. 当前真实 E2B 模板以非 root 默认用户运行，且 `/workspace` 必须归该用户所有并可
+    初始化 Git。模板构建和真实 adapter E2E 必须验证该前提，不能依赖全局
+    `safe.directory` 绕过所有权错误。
 
 ## 有意不建模的内容
 

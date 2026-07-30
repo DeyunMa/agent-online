@@ -22,7 +22,7 @@
 
 全能力路径：
 
-1. Pi 在一个新沙箱中安装固定 Vite、初始化 Git 并留下 modified/untracked Changes；
+1. Terminal 在一个新沙箱中创建确定性 Vite/Git fixture，并留下 modified/untracked Changes；
 2. Changes 列表和 diff 返回真实当前工作树；
 3. 浏览器通过 WebSocket Terminal 写入文件，关闭后由 Files 回读；
 4. 固定 Vite Preview 加载真实 marker，并完成显式停止；
@@ -30,7 +30,7 @@
 
 Project 生命周期路径：
 
-1. 创建唯一 Project 并完成真实 Pi Run，使 Project 持有空闲 E2B sandbox；
+1. 创建唯一 Project并通过 Terminal 创建沙箱，使 Project 持有空闲 E2B sandbox；
 2. 从 Project 操作菜单重命名并验证侧栏同步；
 3. 硬删除 Project，由产品路径停止空闲 sandbox；
 4. 验证页面返回 Projects、旧 Project API 为 `404`，且 JSON 响应未泄露 Provider 状态。
@@ -63,7 +63,10 @@ pnpm test:e2e:preview
 unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 ```
 
-完整执行会创建四个 AgentRun 和三个 E2B 沙箱。成功路径会主动关闭 Terminal/Preview
+完整执行会创建两个 AgentRun 和三个 E2B 沙箱：只有基线路径使用一次真实 Pi 成功
+Run 和一次可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
+这样仍覆盖真实 ModelGateway/Workflow/usage/取消，同时避免用模型安装 Vite 或只为
+创建沙箱而运行 Agent。成功路径会主动关闭 Terminal/Preview
 并停止沙箱；测试中途失败时，`afterEach` 也会尽力按 Terminal、Preview、sandbox 顺序
 清理，E2B timeout 仍是最终回收边界。Project 生命周期用例会删除自己的
 Project/Message/Run/Usage；其余发布证据仍保留在 D1。
@@ -77,7 +80,23 @@ Project/Message/Run/Usage；其余发布证据仍保留在 D1。
 - 失败产物位于 `output/playwright/preview-results`，该目录被 Git 忽略。
 - 完成后在 Cloudflare Workflow、D1 和 E2B 控制台抽查资源已收敛，再记录部署版本和结果。
 
+Terminal fixture 的 ready marker 必须由命令实际输出，不能让 marker 明文预先出现在
+终端输入回显中；否则自动化会在前序命令尚未完成时误判 ready。命令还必须显式使用
+`git -C /workspace` 并避免把多行文本直接拼进 shell，以保持结果可重复。
+
 ## 最近执行
+
+2026-07-30 针对 Preview 版本 `50a111c7-1c22-4f80-8bca-0810fb772e84` 通过：
+
+- 基线路径 27.0 秒通过：真实 Pi、Workflow、ModelGateway、最终 Message、usage、
+  Files、取消、刷新恢复、停止和响应脱敏均成立；
+- Project 生命周期路径 11.1 秒通过：Terminal 创建真实沙箱，重命名、停止空闲
+  sandbox、硬删除和旧 Project 不可访问均成立；
+- 全能力路径 34.6 秒通过：确定性 Terminal fixture、Changes、Files、Preview 和停止在
+  同一沙箱中成立；
+- Playwright 总结果为 `3 passed (1.2m)`；随后外层 zsh 包装误用只读变量 `status`，
+  只影响 shell exit code，不代表测试失败；
+- 完成后独立执行远程发布预检，九项检查全部通过。
 
 2026-07-28 针对 Preview 版本 `0c374d75-5f52-484a-9f7e-b0d0bfabd24e` 通过：
 

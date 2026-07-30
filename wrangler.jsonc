@@ -51,12 +51,13 @@
         "ACCESS_MODE": "allowlist",
         "BETTER_AUTH_URL": "https://agent-online-preview.mdy1145141.workers.dev",
         "DEFAULT_MODEL_ID": "gemini-3.6-flash",
-        "E2B_TEMPLATE_ID": "agent-online-pi-goose-runtime:8916fff0-6236-43ba-a397-b0e2b8f97c47",
+        "E2B_TEMPLATE_ID": "agent-online-pi-goose-runtime:a57d8d0d-5b9b-4d1e-8cca-06a9c94752a4",
         "GOOSE_RUNTIME_MODE": "spike",
         "MAX_RUN_WALL_SECONDS": "1800",
         "RUNTIME_IDLE_TTL_SECONDS": "600",
         "RUNTIME_PROVIDER": "e2b",
-        "RUNS_ENABLED": "true"
+        "RUNS_ENABLED": "true",
+        "SENTRY_ENVIRONMENT": "preview"
       },
       "d1_databases": [
         {

@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现限制基准
 >
-> 校准日期：2026-07-28
+> 校准日期：2026-07-30
 >
 > 目标：说明每一类限制约束什么对象、当前值、由哪一层执行，以及达到限制后的行为
 
@@ -247,6 +247,17 @@ Preview 不提供任意端口代理、后端服务、WebSocket/HMR、环境变�
 
 当前没有 BYOK、Key 轮换 UI、Key 按用户隔离、模型价格表或预算强制。`input_tokens` 等字段是 Provider usage 的累计事实，不保证等于最终账单。
 
+### 10.1 错误观测边界
+
+| 限制对象 | 当前限制 |
+| --- | --- |
+| Sentry 能力 | 只启用 Error Monitoring；Logs、Tracing、Metrics、Replay 和 breadcrumbs 关闭。 |
+| 事件字段 | 由 `beforeSend` allowlist 重建；只允许 stack/debug metadata、环境、release、受控诊断标签、应用关联 ID 和数值上下文。 |
+| 禁止内容 | prompt、Message/Agent 输出、文件内容/路径、终端流、Cookie、Authorization、用户身份、Provider reference、内部端口、Key 和原始错误正文。 |
+| 可用性 | DSN 缺失、Sentry 网络失败或 Reporter 抛错时继续产品请求；Sentry 不是执行依赖。 |
+| 源码映射 | 只在显式 Preview deploy 上传隐藏 map，上传后从 `dist` 删除；认证 token 不进入构建产物或 Worker。 |
+| 关联 | 单 invocation 使用 `requestId`，跨 invocation AgentRun 使用 `runId`；不新增持久 `trace_id`。 |
+
 ## 11. 数据保存和恢复限制
 
 | 数据 | 保存位置 | 当前恢复能力 |
@@ -279,13 +290,14 @@ Preview 不提供任意端口代理、后端服务、WebSocket/HMR、环境变�
 
 ## 13. 外部免费层和 Provider 限制
 
-Cloudflare、E2B 和 Gemini 的免费额度、并发、CPU、存储、日志保留和请求配额会变化，不写成代码常量，也不由本项目保证。
+Cloudflare、E2B、Gemini 和 Sentry 的免费额度、并发、CPU、存储、日志/错误保留和请求配额会变化，不写成代码常量，也不由本项目保证。
 
 当前处理原则：
 
 - Cloudflare Worker、Assets、D1 和 Workflows 的额度由对应 Cloudflare 账号/计划决定。
 - E2B 沙箱分钟数、并发和模板构建额度由 E2B 账号决定。
 - Gemini token、请求和模型可用性由 Gemini 项目决定。
+- Sentry 错误量、事件保留和源码映射额度由 Sentry 组织当前计划决定。
 - 外部配额耗尽可能表现为 `503`、Run `failed` 或 Provider 清理延迟。
 - 本项目没有自动预算告警、熔断、降级 Provider 或费用上限。
 
@@ -306,8 +318,9 @@ Cloudflare、E2B 和 Gemini 的免费额度、并发、CPU、存储、日志保�
 | 无应用级 rate limit/abuse control | 只适合私有 allowlist Preview；公开注册前必须补。 |
 | Project 文件无备份 | 当前明确接受；停止沙箱前用户需自行理解数据可丢失。 |
 | import boundary 检查不覆盖未来 path alias/计算式动态导入 | 当前 tsconfig 无 alias，现有生产代码满足边界；引入 alias 时需同步门禁。 |
-| 浏览器 tab ARIA 模式未覆盖完整 roving/arrow-key 规范 | 不影响当前数据安全；属于后续可访问性完善项。 |
-| 浏览器自动化只覆盖核心 smoke | 当前覆盖注册、Project、fake Run 取消和刷新恢复；真实 Terminal/Preview/Changes 仍依赖显式 E2B E2E。 |
+| 浏览器自动化不覆盖完整辅助技术组合 | 已覆盖 roving tab 的方向键/Home/End 与焦点保持，但未自动验证所有屏幕阅读器。 |
+| 浏览器自动化只覆盖核心 smoke | 当前覆盖注册、Project 生命周期、fake Run 取消、刷新恢复和 tab 键盘导航；真实 Terminal/Preview/Changes 仍依赖显式 E2B E2E。 |
+| Sentry 事件清洗依赖 allowlist 持续维护 | 新增诊断字段或 SDK integration 时必须先补脱敏测试；不能靠 Dashboard 规则替代代码边界。 |
 | 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；重复漂移按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
 
 接口结构见 [HTTP、SSE 与 WebSocket 接口](./http-api.md)，数据所有权见 [D1 表设计](./database-schema.md)。

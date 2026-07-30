@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-28 已补充 ModelGateway 120 秒上游 deadline。当前没有维护者角色或管理视图。
+> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-30 已接入严格脱敏的 Sentry Error Monitoring。当前没有维护者角色或管理视图。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -10,7 +10,7 @@
 | D1 | Better Auth 表、Project 元数据、用户可见 Message、当前 SandboxLease 状态、AgentRun 状态和聚合 usage，以及当前临时 Terminal/Preview 协调行。 | Project 文件、Git status/diff/history、原始 Agent 事件、终端输入/输出/滚屏、Preview 页面/日志/截图/访问历史、Provider 明文 Key、私有推理。 |
 | 沙箱磁盘 | 当前 `/workspace`、Agent 进程、依赖缓存和开发服务。 | 唯一可恢复的长期备份、认证 Secret、Gemini 原始 Key。 |
 | Worker Secrets | `GEMINI_API_KEY`、`BETTER_AUTH_SECRET`，以及以后真实运行时所需的 Provider Key。 | 普通业务数据、完整 Project 内容。 |
-| 可选 Sentry | 脱敏错误和稀疏的服务端追踪元数据。 | prompt、消息正文、代码文件、密钥、原始 Agent/终端流。 |
+| Sentry | 严格 allowlist 清洗后的服务端和浏览器错误、stack/debug ID、应用关联 ID 与少量数值上下文。 | prompt、消息正文、代码文件、文件路径、密钥、Provider 引用、原始 Agent/终端流、请求正文、Cookie、用户身份和 breadcrumbs。 |
 
 V1 没有 R2 Binding。Project 文件只在沙箱存活期间存在；沙箱停止或故障后，Project 可以留下元数据和对话，但文件允许丢失。
 
@@ -117,13 +117,25 @@ Project Inspector 显示所选 Run 的真实聚合值；fake Runtime 的 token �
 
 它不用于保存价格、套餐、信用余额、订单、发票或付款。需要强配额、预留或商用计费时，必须作为新的领域设计引入，而不是提前保留半套表。
 
-## 6. 未集成的可选观测：Sentry
+## 6. 脱敏错误观测：Sentry
 
 当前代码通过 `DiagnosticReporter` 输出受控结构化事件，使用 `requestId` 关联一次 Worker invocation，使用现有 `runId` 关联跨请求、Workflow、ModelGateway、取消和 idle cleanup 的完整业务执行。D1 不保存 trace event，也不新增重复的持久化 `trace_id`。
 
-Sentry 不是运行依赖，当前代码也不读取 `SENTRY_DSN`。若以后单独批准接入，只能作为 `DiagnosticReporter` 的外层 adapter 上传脱敏错误和低采样服务端 trace，标签使用应用级 Run ID、Runtime 种类和状态等无敏感元数据。
+Preview 已将 Sentry 接为 `DiagnosticReporter` 的外层 adapter，并覆盖 Hono 未捕获异常、
+Cloudflare Workflow 和 React Error Boundary。服务端读取 `SENTRY_DSN` 与
+`SENTRY_ENVIRONMENT`；浏览器构建读取 `VITE_SENTRY_DSN` 与
+`VITE_SENTRY_ENVIRONMENT`。DSN 缺失或 Reporter 上报失败时，产品执行和结构化
+console 仍然继续，因此 Sentry 不是运行可用性前提。
 
-第一版不要启用 Session Replay、日志全量导出或 AI Agent transcript 追踪；这些能力更容易意外收集 prompt、文件或终端输出。接入前应明确 `beforeSend`/数据清洗策略、采样率和错误阈值。
+两端 `beforeSend` 都采用 allowlist 重建事件，而不是仅删除几个已知字段。当前只启用
+Error Monitoring，保留异常类型、stack、release/debug metadata、固定环境、受控
+diagnostic tags 和 `requestId`/`runId` 等应用关联字段；原始 message 会被通用文案替代。
+Logs、Tracing、Metrics、Replay、breadcrumbs、自动 user/request context 和默认
+integration 内容采集全部关闭。
+
+Preview 发布时由 Vite 插件上传 Worker 与 React 的隐藏源码映射，上传完成后删除
+`dist` 中的 `.map`。上传 token 只存在于本地忽略文件，不进入 Worker Secret、浏览器或
+Git。源码映射用于还原 stack，不改变前述数据清洗边界。
 
 ## 7. 非目标
 
@@ -138,4 +150,6 @@ Sentry 不是运行依赖，当前代码也不读取 `SENTRY_DSN`。若以后单
 - [Better Auth 安装与环境变量](https://better-auth.com/docs/installation) 和 [邮箱密码登录](https://better-auth.com/docs/authentication/email-password)
 - [Gemini API Key 指南](https://ai.google.dev/gemini-api/docs/api-key)
 - [Cloudflare D1 Binding](https://developers.cloudflare.com/d1/worker-api/d1-database/)
-- [Sentry for Hono on Cloudflare](https://docs.sentry.io/platforms/javascript/guides/cloudflare/frameworks/hono/)
+- [Sentry Cloudflare SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/cloudflare/README.md)
+- [Sentry Hono SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/hono/README.md)
+- [Sentry JavaScript Source Maps](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/)

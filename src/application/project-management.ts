@@ -1,3 +1,4 @@
+import type { AgentRuntimeId } from "../agent/contract";
 import type { ProjectRecord, ProjectRepository } from "./ports";
 import type { StopProjectSandboxResult } from "./project-sandbox";
 
@@ -13,6 +14,8 @@ export type DeleteProjectResult =
   | { kind: "provider_error" };
 
 export type ProjectManagementServiceDependencies = {
+  createId(): string;
+  defaultAgentRuntimeId: AgentRuntimeId;
   now(): Date;
   projects: ProjectRepository;
   projectSandboxes: {
@@ -26,6 +29,16 @@ export type ProjectManagementServiceDependencies = {
  */
 export class ProjectManagementService {
   constructor(private readonly dependencies: ProjectManagementServiceDependencies) {}
+
+  create(input: { title: string; userId: string }) {
+    return this.dependencies.projects.create({
+      defaultAgentRuntimeId: this.dependencies.defaultAgentRuntimeId,
+      id: this.dependencies.createId(),
+      now: this.dependencies.now().toISOString(),
+      title: input.title,
+      userId: input.userId,
+    });
+  }
 
   async rename(input: {
     projectId: string;

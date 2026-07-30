@@ -212,8 +212,8 @@ function createFixture(options: { authenticated?: boolean; projectOwned?: boolea
       start,
       stop,
     },
-    projects: {
-      findOwnedById: vi.fn(async () => (options.projectOwned === false ? null : project)),
+    projectReads: {
+      findOwnedProject: vi.fn(async () => (options.projectOwned === false ? null : project)),
     },
   } as unknown as ServerServices;
   const dependencies: Partial<PreviewApiDependencies> = {

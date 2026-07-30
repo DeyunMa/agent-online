@@ -17,7 +17,7 @@ import { renderApiError } from "./http/api-errors";
 import { createServerServices, type ServerServices } from "./services";
 
 type AppContext = Context<AppEnv>;
-type ChangesServices = Pick<ServerServices, "projectChanges" | "projects">;
+type ChangesServices = Pick<ServerServices, "projectChanges" | "projectReads">;
 
 export type ChangesApiDependencies = {
   createServices(env: AppBindings, diagnosticContext?: DiagnosticContext): ChangesServices;
@@ -80,7 +80,7 @@ async function getOwnedProject(c: AppContext, dependencies: ChangesApiDependenci
   if (!projectId) {
     return { kind: "not_found" as const };
   }
-  const project = await services.projects.findOwnedById(projectId, user.id);
+  const project = await services.projectReads.findOwnedProject(projectId, user.id);
   return project
     ? { kind: "ok" as const, projectId: project.id, services }
     : { kind: "not_found" as const };

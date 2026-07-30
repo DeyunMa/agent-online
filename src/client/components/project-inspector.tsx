@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
 import { isActiveSandboxLease } from "../../domain/sandbox-lease";
+import type { ProjectActivity } from "../project-activity";
 import {
   agentRunStatusLabel,
   agentRunStatusTone,
@@ -14,6 +15,7 @@ import {
   shortRunId,
 } from "../presentation";
 import { ErrorState } from "./ui-states";
+import { handleRovingTabKeyDown } from "../tab-navigation";
 import { ProjectChanges } from "./project-changes";
 import { ProjectFiles } from "./project-files";
 import { ProjectPreview } from "./project-preview";
@@ -22,8 +24,8 @@ import { ProjectTerminal } from "./project-terminal";
 type InspectorView = "changes" | "files" | "overview" | "preview" | "terminal";
 
 export function ProjectInspector({
+  activity,
   changesEnabled,
-  hasActiveRun,
   isStopping,
   mobileOpen,
   onMobileClose,
@@ -31,17 +33,14 @@ export function ProjectInspector({
   onPreviewActivityChange,
   onPreviewStartingChange,
   onTerminalActivityChange,
-  previewActive,
   previewEnabled,
-  previewStarting,
   project,
   run,
   stopError,
-  terminalActive,
   terminalEnabled,
 }: {
+  activity: ProjectActivity;
   changesEnabled: boolean;
-  hasActiveRun: boolean;
   isStopping: boolean;
   mobileOpen: boolean;
   onMobileClose(): void;
@@ -49,13 +48,10 @@ export function ProjectInspector({
   onPreviewActivityChange(active: boolean): void;
   onPreviewStartingChange(starting: boolean): void;
   onTerminalActivityChange(active: boolean): void;
-  previewActive: boolean;
   previewEnabled: boolean;
-  previewStarting: boolean;
   project: ProjectResponse;
   run: AgentRunResponse | undefined;
   stopError: Error | null;
-  terminalActive: boolean;
   terminalEnabled: boolean;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -94,6 +90,10 @@ export function ProjectInspector({
     };
   }, [mobileOpen]);
   const lease = project.sandboxLease;
+  const hasActiveRun = activity.exclusive === "run";
+  const terminalActive = activity.exclusive === "terminal";
+  const previewStarting = activity.preview === "starting";
+  const previewActive = activity.preview !== "stopped";
   const canStop =
     lease !== null &&
     lease.status !== "stopped" &&
@@ -128,12 +128,18 @@ export function ProjectInspector({
         ) : null}
       </header>
 
-      <div aria-label="Project inspector views" className="inspector-tabs" role="tablist">
+      <div
+        aria-label="Project inspector views"
+        className="inspector-tabs"
+        onKeyDown={handleRovingTabKeyDown}
+        role="tablist"
+      >
         <button
           aria-selected={view === "overview"}
           className={`inspector-tab ${view === "overview" ? "inspector-tab-active" : ""}`}
           onClick={() => setView("overview")}
           role="tab"
+          tabIndex={view === "overview" ? 0 : -1}
           type="button"
         >
           Overview
@@ -143,6 +149,7 @@ export function ProjectInspector({
           className={`inspector-tab ${view === "files" ? "inspector-tab-active" : ""}`}
           onClick={() => setView("files")}
           role="tab"
+          tabIndex={view === "files" ? 0 : -1}
           type="button"
         >
           Files
@@ -153,6 +160,7 @@ export function ProjectInspector({
             className={`inspector-tab ${view === "changes" ? "inspector-tab-active" : ""}`}
             onClick={() => setView("changes")}
             role="tab"
+            tabIndex={view === "changes" ? 0 : -1}
             type="button"
           >
             Changes
@@ -166,6 +174,7 @@ export function ProjectInspector({
             className={`inspector-tab ${view === "terminal" ? "inspector-tab-active" : ""}`}
             onClick={() => setView("terminal")}
             role="tab"
+            tabIndex={view === "terminal" ? 0 : -1}
             type="button"
           >
             Terminal
@@ -179,6 +188,7 @@ export function ProjectInspector({
             className={`inspector-tab ${view === "preview" ? "inspector-tab-active" : ""}`}
             onClick={() => setView("preview")}
             role="tab"
+            tabIndex={view === "preview" ? 0 : -1}
             type="button"
           >
             Preview

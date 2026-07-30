@@ -48,6 +48,8 @@ export interface AppBindings {
   RUNS_ENABLED?: string;
   RUNTIME_IDLE_TTL_SECONDS?: string;
   RUNTIME_PROVIDER?: string;
+  SENTRY_DSN?: string;
+  SENTRY_ENVIRONMENT?: string;
 }
 
 export interface AppVariables {

@@ -1,19 +1,16 @@
 import type { AgentRuntimeId } from "../agent/contract";
-import type {
-  AgentRunRepository,
-  MessageRepository,
-  ProjectRepository,
-  SandboxLeaseRepository,
-} from "../application/ports";
+import { defaultAgentRuntimeId } from "../agent/registry";
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectChangesService } from "../application/project-changes";
 import { ProjectFilesService } from "../application/project-files";
 import { ProjectManagementService } from "../application/project-management";
 import { ProjectPreviewService } from "../application/project-preview";
+import { ProjectReadService } from "../application/project-read";
 import {
   ProjectSandboxService,
   type StopProjectSandboxResult,
 } from "../application/project-sandbox";
+import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import { ProjectTerminalService } from "../application/project-terminal";
 import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
@@ -45,7 +42,7 @@ import {
   scheduleTerminalExpiry,
   scheduleTerminalIdleCleanupBestEffort,
 } from "./run-execution-dispatcher";
-import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
+import { createDiagnosticReporter } from "./observability/reporter";
 
 export type { RunExecutionDispatcher } from "./run-execution-dispatcher";
 
@@ -54,27 +51,24 @@ export interface ProjectSandboxController {
 }
 
 export type ServerServices = {
-  agentRuns: AgentRunRepository;
   createAgentRuns: CreateAgentRunService;
   diagnostics: DiagnosticReporter;
   enabledAgentRuntimeIds: readonly AgentRuntimeId[];
-  messages: MessageRepository;
   projectChanges: ProjectChangesService;
   projectFiles: ProjectFilesService;
   projectManagement: ProjectManagementService;
   projectPreviews: ProjectPreviewService;
+  projectReads: ProjectReadService;
   projectSandboxes: ProjectSandboxController;
   projectTerminals: ProjectTerminalService;
-  projects: ProjectRepository;
   runExecutions: RunExecutionDispatcher;
-  sandboxLeases: SandboxLeaseRepository;
 };
 
 export function createServerServices(
   env: AppBindings,
   diagnosticContext: DiagnosticContext = {},
 ): ServerServices {
-  const diagnostics = createStructuredDiagnosticReporter(diagnosticContext);
+  const diagnostics = createDiagnosticReporter(diagnosticContext);
   const agentRuns = new D1AgentRunRepository(env.DB);
   const messages = new D1MessageRepository(env.DB);
   const projects = new D1ProjectRepository(env.DB);
@@ -124,17 +118,22 @@ export function createServerServices(
           diagnostics,
         )
       : createWorkflowDispatcher(env, diagnosticContext);
+  const sandboxReclaimer = new SandboxReclaimer({
+    agentRuns,
+    clock: { now: () => new Date() },
+    diagnostics,
+    getSandboxRuntime,
+    sandboxLeases,
+  });
   const projectSandboxes = new ProjectSandboxService({
     agentRuns,
-    getSandboxRuntime,
-    now: () => new Date(),
     previewSessions,
+    sandboxReclaimer,
     sandboxLeases,
     terminalSessions,
   });
 
   return {
-    agentRuns,
     createAgentRuns: new CreateAgentRunService({
       agentRuns,
       clock: { now: () => new Date() },
@@ -148,7 +147,6 @@ export function createServerServices(
     }),
     diagnostics,
     enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
-    messages,
     projectChanges: new ProjectChangesService({
       agentRuns,
       getSandboxRuntime: getChangesRuntime,
@@ -164,6 +162,8 @@ export function createServerServices(
       workingDirectory: defaultWorkingDirectory,
     }),
     projectManagement: new ProjectManagementService({
+      createId: () => crypto.randomUUID(),
+      defaultAgentRuntimeId,
       now: () => new Date(),
       projects,
       projectSandboxes,
@@ -195,6 +195,12 @@ export function createServerServices(
           : async () => undefined,
       terminalSessions,
     }),
+    projectReads: new ProjectReadService({
+      agentRuns,
+      messages,
+      projects,
+      sandboxLeases,
+    }),
     projectSandboxes,
     projectTerminals: new ProjectTerminalService({
       agentRuns,
@@ -214,9 +220,7 @@ export function createServerServices(
       terminalSessions,
       workingDirectory: defaultWorkingDirectory,
     }),
-    projects,
     runExecutions,
-    sandboxLeases,
   };
 }
 

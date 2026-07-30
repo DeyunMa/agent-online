@@ -16,22 +16,19 @@ import type {
   SandboxLeaseRepository,
 } from "./ports";
 import { RunCoordinator, type Clock, type CoordinatedAgentRun } from "./run-coordinator";
+import type {
+  ActivityIdleCleanupInput,
+  IdleSandboxStopResult,
+  SandboxReclaimer,
+} from "./sandbox-reclaimer";
+
+export type { ActivityIdleCleanupInput, IdleSandboxStopResult } from "./sandbox-reclaimer";
 
 type ModelAccess = NonNullable<AgentRunInput["modelAccess"]>;
 
 export type AgentRunExecutionInput = {
   projectId: string;
   runId: string;
-};
-
-export type ActivityIdleCleanupInput = {
-  expectedLeaseUpdatedAt: string;
-  projectId: string;
-};
-
-export type IdleSandboxStopResult = {
-  detached: boolean;
-  stopped: boolean;
 };
 
 export type RunExecutionServiceDependencies = {
@@ -48,6 +45,7 @@ export type RunExecutionServiceDependencies = {
   }): Promise<ModelAccess>;
   messages: MessageRepository;
   runTimeoutMs: number;
+  sandboxReclaimer: Pick<SandboxReclaimer, "stopAfterActivityIdle" | "stopAfterRunIdle">;
   sandboxLeases: SandboxLeaseRepository;
   workingDirectory: string;
 };
@@ -213,108 +211,13 @@ export class RunExecutionService {
   }
 
   async stopSandboxIfIdle(input: AgentRunExecutionInput): Promise<IdleSandboxStopResult> {
-    if (!input.projectId || !input.runId) {
-      throw new Error("AgentRun execution identifiers are required");
-    }
-    const run = await this.dependencies.agentRuns.findById(input.runId);
-    if (!run || run.projectId !== input.projectId) {
-      // A hard-deleted Project removes its Run while the durable idle-cleanup
-      // Workflow may still be sleeping. Missing state is already fully clean.
-      return { detached: false, stopped: false };
-    }
-    if (!isTerminalAgentRun(run.status)) {
-      return { detached: false, stopped: false };
-    }
-
-    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(run.projectId);
-    if (activeRun) {
-      return { detached: false, stopped: false };
-    }
-
-    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
-    if (
-      !sandboxLease ||
-      sandboxLease.id !== run.sandboxLeaseId ||
-      sandboxLease.status !== "idle" ||
-      !sandboxLease.providerRef
-    ) {
-      return { detached: false, stopped: false };
-    }
-
-    const runtime = this.dependencies.getSandboxRuntime(sandboxLease.runtimeId);
-    const providerRef = sandboxLease.providerRef;
-    const claimed = await this.dependencies.sandboxLeases.claimIdleForStop({
-      expectedProviderRef: providerRef,
-      expectedRunId: run.id,
-      expectedUpdatedAt: sandboxLease.updatedAt,
-      leaseId: sandboxLease.id,
-      updatedAt: this.timestamp(),
-    });
-    if (!claimed) {
-      return { detached: false, stopped: false };
-    }
-
-    try {
-      await runtime.stop(toRuntimeHandle(sandboxLease, providerRef), "idle");
-      this.report({
-        detached: true,
-        event: "sandbox.idle_cleanup_finished",
-        outcome: "succeeded",
-        runId: run.id,
-        stage: "idle_cleanup",
-        stopped: true,
-      });
-      return { detached: true, stopped: true };
-    } catch {
-      this.report({
-        detached: true,
-        errorCode: "SANDBOX_PROCESS_FAILED",
-        event: "sandbox.idle_cleanup_failed",
-        outcome: "failed",
-        runId: run.id,
-        stage: "idle_cleanup",
-        stopped: false,
-      });
-      // The Lease was atomically detached first. Provider timeout bounds any orphan.
-      return { detached: true, stopped: false };
-    }
+    return this.dependencies.sandboxReclaimer.stopAfterRunIdle(input);
   }
 
   async stopSandboxAfterActivityIdle(
     input: ActivityIdleCleanupInput,
   ): Promise<IdleSandboxStopResult> {
-    const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(input.projectId);
-    if (activeRun) {
-      return { detached: false, stopped: false };
-    }
-
-    const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(input.projectId);
-    if (
-      !sandboxLease?.providerRef ||
-      sandboxLease.status !== "idle" ||
-      sandboxLease.updatedAt !== input.expectedLeaseUpdatedAt
-    ) {
-      return { detached: false, stopped: false };
-    }
-
-    const runtime = this.dependencies.getSandboxRuntime(sandboxLease.runtimeId);
-    const providerRef = sandboxLease.providerRef;
-    const claimed = await this.dependencies.sandboxLeases.claimIdleAfterActivityForStop({
-      expectedProviderRef: providerRef,
-      expectedUpdatedAt: input.expectedLeaseUpdatedAt,
-      leaseId: sandboxLease.id,
-      updatedAt: this.timestamp(),
-    });
-    if (!claimed) {
-      return { detached: false, stopped: false };
-    }
-
-    try {
-      await runtime.stop(toRuntimeHandle(sandboxLease, providerRef), "idle");
-      return { detached: true, stopped: true };
-    } catch {
-      return { detached: true, stopped: false };
-    }
+    return this.dependencies.sandboxReclaimer.stopAfterActivityIdle(input);
   }
 
   private async convergeExecutionFailure(

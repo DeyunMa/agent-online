@@ -40,14 +40,9 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const projects = await services.projects.listOwned(user.id);
-    const responses = await Promise.all(
-      projects.map(async (project) =>
-        toProjectResponse(project, await services.sandboxLeases.findByProjectId(project.id)),
-      ),
-    );
+    const projects = await services.projectReads.listOwnedProjects(user.id);
 
-    return c.json(responses);
+    return c.json(projects.map(({ lease, project }) => toProjectResponse(project, lease)));
   });
 
   api.post("/projects", async (c) => {
@@ -61,13 +56,9 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return validationError(c);
     }
 
-    const now = dependencies.now().toISOString();
     const project = await dependencies
       .createServices(c.env, requestDiagnosticContext(c))
-      .projects.create({
-        defaultAgentRuntimeId: "pi",
-        id: dependencies.createId(),
-        now,
+      .projectManagement.create({
         title: input.title,
         userId: user.id,
       });
@@ -82,14 +73,15 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProjectWithLease(
+      c.req.param("projectId"),
+      user.id,
+    );
     if (!project) {
       return notFound(c);
     }
 
-    return c.json(
-      toProjectResponse(project, await services.sandboxLeases.findByProjectId(project.id)),
-    );
+    return c.json(toProjectResponse(project.project, project.lease));
   });
 
   api.patch("/projects/:projectId", async (c) => {
@@ -113,12 +105,11 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
       return notFound(c);
     }
 
-    return c.json(
-      toProjectResponse(
-        renamed.project,
-        await services.sandboxLeases.findByProjectId(renamed.project.id),
-      ),
+    const project = await services.projectReads.findOwnedProjectWithLease(
+      renamed.project.id,
+      user.id,
     );
+    return c.json(toProjectResponse(renamed.project, project?.lease ?? null));
   });
 
   api.delete("/projects/:projectId", async (c) => {
@@ -156,7 +147,7 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
     }
@@ -182,12 +173,14 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
-    if (!project) {
+    const messages = await services.projectReads.listOwnedMessages(
+      c.req.param("projectId"),
+      user.id,
+    );
+    if (!messages) {
       return notFound(c);
     }
 
-    const messages = await services.messages.listByProjectId(project.id);
     return c.json(messages.map(toMessageResponse));
   });
 

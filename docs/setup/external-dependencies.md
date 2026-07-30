@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置并验证。Goose 仍保持私有 `spike`。
+> 状态：Preview Worker、D1、Workflow、Secret、Sentry Error Monitoring、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置。Goose 仍保持私有 `spike`。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -12,10 +12,12 @@
 | Gemini API | `GEMINI_API_KEY` | 真实 Worker ModelGateway 和显式 E2E；fake 开发不读取。 | 本地真实链路已配置。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱；fake 开发不读取。 | 本地真实链路已配置。 |
 | E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node、Pi、Goose、Git、Bash、coreutils 和 `/workspace` 的组合模板。 | 精确 build 已构建，并完成 adapter、Preview 和 Changes 产品链路 E2E。 |
+| Sentry | `SENTRY_DSN`、`VITE_SENTRY_DSN` | 服务端与浏览器的脱敏 Error Monitoring；核心功能不依赖。 | 本地构建配置已准备，Preview 项目、Worker Secret 和源码映射已配置。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
 
-本地功能开发不需要 R2、支付平台、OAuth、SMTP、邮件服务或 Sentry。
+本地功能开发不需要 R2、支付平台、OAuth、SMTP 或邮件服务。Sentry 也可以完全省略；
+省略只会关闭错误上报，不影响 fake/真实产品链路。
 
 ## 2. 当前 Cloudflare Preview
 
@@ -30,6 +32,7 @@
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
 | 私有访问 | owner 邮箱。 | 已以 `ACCESS_ALLOWED_EMAILS` Secret 写入；`ACCESS_MODE=allowlist`。 |
 | Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline、Run/Terminal/Preview expiry 与空闲回收已成功，复杂任务限额仍需观察。 |
+| Sentry | `dylandeyunma/agent-online`。 | Error Monitoring、服务端/浏览器 DSN 和 Worker/React 源码映射已配置；Logs、Tracing、Metrics 与 Replay 关闭。 |
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
 
@@ -51,6 +54,7 @@ Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用
 | Better Auth | 当前使用自托管开源框架。 | 未使用 Better Auth 托管基础设施。 |
 | Gemini API | Gemini 3.6 Flash 当前有 Free Tier；本项目按 owner 的模型额度不计成本。 | 实际是否计费取决于 Key 所属 Google 项目的 tier。 |
 | E2B | Hobby 无基础月费，但计算按秒计费，仅提供一次性 $100 credits。 | credits 耗尽后不再是免费算力；空闲 TTL 是主要成本护栏。 |
+| Sentry | 当前组织计划已可承载私有 Preview 的低量 Error Monitoring。 | 配额和保留由 Sentry 当前计划决定；超出时不影响产品执行，但可能丢失观测事件。 |
 
 因此，当前个人开发期通常可以保持账单为 $0，但不能描述为“所有外部依赖永久免费”。当前没有使用 Cloudflare Sandbox/Containers；若未来切换，Sandbox SDK 需要 Workers Paid。
 
@@ -62,7 +66,6 @@ Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用
 
 | 能力 | 可能需要的外部项 | 当前结论 |
 | --- | --- | --- |
-| 基础错误监控 | Sentry 项目与 `SENTRY_DSN`。 | 未集成；当前代码不读取此变量。 |
 | 管理用量视图 | 独立管理员授权设计。 | 未实现 `/api/admin/usage`，也不存在 `ADMIN_EMAILS` 配置。 |
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |

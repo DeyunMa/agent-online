@@ -128,6 +128,8 @@ function createFixture(options: { owned?: boolean; stopResult?: StopProjectSandb
     projectSandboxes,
     projects,
     service: new ProjectManagementService({
+      createId: () => "project_new",
+      defaultAgentRuntimeId: "pi",
       now: () => new Date("2026-07-28T01:00:00.000Z"),
       projects,
       projectSandboxes,

@@ -11,7 +11,7 @@ import type { SandboxRuntime } from "../runtime/contract";
 import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
-import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
+import { createDiagnosticReporter } from "./observability/reporter";
 import { getE2BExecutionConfig } from "./runtime-config";
 
 export interface RunExecutionDispatcher extends AgentRunExecutionStarter {
@@ -66,7 +66,7 @@ export function createWorkflowDispatcher(
   env: AppBindings,
   diagnosticContext: DiagnosticContext = {},
 ): RunExecutionDispatcher {
-  const diagnostics = createStructuredDiagnosticReporter(diagnosticContext);
+  const diagnostics = createDiagnosticReporter(diagnosticContext);
   return {
     async cancel(run) {
       const cancelled = await createE2BRunExecution(env, {

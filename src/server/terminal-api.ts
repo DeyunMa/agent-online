@@ -68,7 +68,7 @@ export function createTerminalApi(overrides: Partial<TerminalApiDependencies> = 
     const services = dependencies.createServices(c.env, {
       requestId: c.get("requestId"),
     });
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
     if (!project) {
       return renderApiError(c, "resource.not_found");
     }

@@ -4,6 +4,7 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
+  fullyParallel: false,
   outputDir: "output/playwright/test-results",
   projects: [
     {
@@ -27,4 +28,5 @@ export default defineConfig({
     timeout: 120_000,
     url: "http://127.0.0.1:4173/api/health",
   },
+  workers: 1,
 });

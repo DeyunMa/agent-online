@@ -213,7 +213,7 @@ async function getOwnedProject(c: AppContext, dependencies: PreviewApiDependenci
   if (!projectId) {
     return { kind: "not_found" as const };
   }
-  const project = await services.projects.findOwnedById(projectId, user.id);
+  const project = await services.projectReads.findOwnedProject(projectId, user.id);
   return project
     ? { kind: "ok" as const, projectId: project.id, services }
     : { kind: "not_found" as const };

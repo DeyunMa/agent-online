@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2、D3 与 D4 Goose 私有 spike 已完成既定验收；2026-07-27 完成 D1 完整性、资源上限、模块边界和统一质量门禁加固。公开能力仍受门控。
+> 状态：D2、D3 与 D4 Goose 私有 spike 已完成既定验收；2026-07-30 完成 Sentry Error Monitoring、应用层/回收模块、前端活动状态、E2B 工作区所有权和低成本 Hosted E2E 加固。公开能力仍受门控。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -38,12 +38,12 @@ flowchart LR
 
 当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、部署邮箱 allowlist 和全局 Run 开关。D3 只读 Files、当前用户全量 Usage API/UI、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成授权边界、代码、测试、部署和远端真实浏览器验收。Preview 已验证固定 Vite、同源 GET/HEAD 网关、Agent 修改后刷新、Run/Terminal 并行、Stop 互斥、显式停止和 Workflow expiry；Changes 已验证固定 Git、主配置与额外 config scope 拒绝、隐藏路径标记、有界 staged/unstaged diff、no-store、显式响应映射和移动端检查器抽屉。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Cloudflare spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。
 
-D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进，五项均已完成远端验收。D3H 已加入 import boundary、源码/产物凭据扫描、Biome、真实 Workers/D1 migration 测试、Chromium 核心 smoke 和 GitHub Actions 统一门禁。本轮不继续扩展维护者后台、配额、公共注册或 Goose UI。
+D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进，五项均已完成远端验收。D3H 已加入 import boundary、源码/产物凭据扫描、Biome、真实 Workers/D1 migration 测试、Chromium 核心 smoke 和 GitHub Actions 统一门禁。2026-07-30 的非功能加固又加入严格脱敏的 Sentry Error Monitoring、Project owner-scoped 读取门面、统一沙箱回收器、前端双轴活动状态和 tab 键盘导航；没有新增产品领域、D1 表或第二个服务。
 
 ## 3. 当前与未来 Runtime 的边界
 
 - `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟真实 wall-clock timeout，内存文件也不具备跨请求连续性，因此公共 Files 和 Terminal 不可用。
-- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。
+- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。当前组合模板以非 root 用户运行并由该用户拥有 `/workspace`，模板探针必须实际完成 Git init/status。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：默认且已验收的 AgentRuntime，也是当前公开执行路径。
 - Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛已通过，但 capability 输出脱敏和浏览器选择验收前仍不可出现在 UI 中。
@@ -64,6 +64,7 @@ D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Ch
 9. Terminal 最长 30 分钟，关闭后复用 10 分钟 idle TTL；不保存 transcript，也不允许关闭浏览器后继续占用交互 PTY。
 10. Preview 最长 30 分钟，只能运行固定 Vite preset 和端口；活动时阻止整沙箱回收，停止后复用 10 分钟 idle TTL，不保存页面、日志、截图或访问历史。
 11. Changes 不创建沙箱、不延长 Lease、不保存 diff，也不增加外部资源；status/diff 在 Worker 与沙箱两侧都有固定大小边界。
+12. Sentry 只接收严格脱敏的错误事件；Tracing、Logs、Replay 和 Metrics 关闭。Sentry 故障不能阻止 Run、API 或 UI，源码映射只在显式 Preview 发布时上传。
 
 截至 2026-07-27，当前 Cloudflare Worker、Static Assets、D1、Workflows 和 Workers Logs 均可使用 Workers Free 额度。E2B Hobby 虽无基础月费，但沙箱计算按秒计费，只有一次性 $100 credits；因此当前系统不是“所有外部算力永久免费”。未来切换 Cloudflare Sandbox/Containers 需要重新核对当时计划和价格，不能沿用本文结论。完整历史口径见 [D2 阶段基线](../status/2026-07-26-d2-baseline.md)。
 

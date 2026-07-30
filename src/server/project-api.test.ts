@@ -18,8 +18,10 @@ import type {
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
 import { ProjectManagementService } from "../application/project-management";
+import { ProjectReadService } from "../application/project-read";
 import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
+import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import { ProjectTerminalService } from "../application/project-terminal";
 import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
 import { noopDiagnosticReporter } from "../observability/contract";
@@ -615,18 +617,20 @@ function createFixture(
   };
   const projectSandboxes = new ProjectSandboxService({
     agentRuns,
-    getSandboxRuntime: () => sandboxRuntime,
-    now: () => new Date(now),
     previewSessions,
+    sandboxReclaimer: new SandboxReclaimer({
+      agentRuns,
+      clock: { now: () => new Date(now) },
+      getSandboxRuntime: () => sandboxRuntime,
+      sandboxLeases,
+    }),
     sandboxLeases,
     terminalSessions,
   });
   const services: ServerServices = {
-    agentRuns,
     createAgentRuns,
     diagnostics: noopDiagnosticReporter,
     enabledAgentRuntimeIds: options.enabledAgentRuntimeIds ?? ["pi"],
-    messages,
     projectChanges: {} as ServerServices["projectChanges"],
     projectFiles: new ProjectFilesService({
       agentRuns,
@@ -637,11 +641,19 @@ function createFixture(
       workingDirectory: "/workspace",
     }),
     projectManagement: new ProjectManagementService({
+      createId,
+      defaultAgentRuntimeId: "pi",
       now: () => new Date(now),
       projects,
       projectSandboxes,
     }),
     projectPreviews: {} as ServerServices["projectPreviews"],
+    projectReads: new ProjectReadService({
+      agentRuns,
+      messages,
+      projects,
+      sandboxLeases,
+    }),
     projectSandboxes,
     projectTerminals: new ProjectTerminalService({
       agentRuns,
@@ -655,9 +667,7 @@ function createFixture(
       terminalSessions,
       workingDirectory: "/workspace",
     }),
-    projects,
     runExecutions: coordinator,
-    sandboxLeases,
   };
   const app = new Hono<AppEnv>();
 
@@ -668,7 +678,6 @@ function createFixture(
   app.route(
     "/api",
     createProjectApi({
-      createId,
       createServices: () => services,
       getDeploymentPolicy: () => ({
         accessMode: "open",
@@ -830,6 +839,11 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
 
   async findByProjectId(projectId: string) {
     return [...this.records.values()].find((lease) => lease.projectId === projectId) ?? null;
+  }
+
+  async findByProjectIds(projectIds: readonly string[]) {
+    const projectIdSet = new Set(projectIds);
+    return [...this.records.values()].filter((lease) => projectIdSet.has(lease.projectId));
   }
 
   async getOrCreate(input: {

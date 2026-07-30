@@ -138,7 +138,9 @@ Cloudflare Preview 已使用组合模板和 `GOOSE_RUNTIME_MODE=spike` 完成真
 `Pi -> Goose -> Pi`、D1 最终事实、usage、取消、deadline、恢复和空闲 TTL
 验收；手动停止与 Files 停止状态也通过。公开 capabilities 仍只返回 Pi。
 随后受控 Changes 使用保留相同 Node/Pi/Goose 版本、并显式加入 Git/Bash/coreutils
-探针的第二版组合模板；Runtime 切换仍不重建当前沙箱。
+探针的组合模板。2026-07-30 的第三版又保证 E2B 默认用户拥有 `/workspace`，并在
+模板探针中实际完成 Git init/status；`Pi -> Goose -> Pi -> Goose cancel` 真实 E2E
+再次通过。Runtime 切换仍不重建当前沙箱。
 
 因此本 ADR 的“实现 spike”和“私有 Preview 执行验证”均成立；短时 capability
 的工具继承与精确输出/日志脱敏、浏览器选择、刷新恢复和移动端验收尚未完成，

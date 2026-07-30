@@ -1,4 +1,3 @@
-import type { RuntimeHandle, RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import type {
   AgentRunRepository,
   PreviewSessionRepository,
@@ -6,6 +5,7 @@ import type {
   SandboxLeaseRepository,
   TerminalSessionRepository,
 } from "./ports";
+import type { SandboxReclaimer } from "./sandbox-reclaimer";
 
 export type StopProjectSandboxResult =
   | { kind: "already_stopped"; lease: SandboxLeaseRecord | null }
@@ -16,9 +16,8 @@ export type StopProjectSandboxResult =
 
 export type ProjectSandboxServiceDependencies = {
   agentRuns: AgentRunRepository;
-  getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
-  now(): Date;
   previewSessions: Pick<PreviewSessionRepository, "findByProjectId">;
+  sandboxReclaimer: Pick<SandboxReclaimer, "stopManually">;
   sandboxLeases: SandboxLeaseRepository;
   terminalSessions: Pick<TerminalSessionRepository, "findByProjectId">;
 };
@@ -31,7 +30,6 @@ export class ProjectSandboxService {
   constructor(private readonly dependencies: ProjectSandboxServiceDependencies) {}
 
   async stop(projectId: string): Promise<StopProjectSandboxResult> {
-    const now = this.dependencies.now().toISOString();
     const lease = await this.dependencies.sandboxLeases.findByProjectId(projectId);
     const activeRun = await this.dependencies.agentRuns.findActiveByProjectId(projectId);
     if (activeRun) {
@@ -47,34 +45,11 @@ export class ProjectSandboxService {
       return { kind: "already_stopped", lease };
     }
 
-    const providerRef = lease.providerRef;
-    const updatedAt = now;
-    const claimed = await this.dependencies.sandboxLeases.claimForManualStop({
-      expectedProviderRef: providerRef,
-      expectedUpdatedAt: lease.updatedAt,
-      leaseId: lease.id,
-      updatedAt,
-    });
-    if (!claimed) {
+    const stopped = await this.dependencies.sandboxReclaimer.stopManually(lease);
+    if (stopped.kind === "conflict") {
       return this.resolveClaimConflict(projectId);
     }
-
-    const stoppedLease: SandboxLeaseRecord = {
-      ...lease,
-      providerRef: null,
-      status: "stopped",
-      updatedAt,
-    };
-
-    try {
-      const runtime = this.dependencies.getSandboxRuntime(lease.runtimeId);
-      await runtime.stop(toRuntimeHandle(lease, providerRef), "manual");
-      return { kind: "stopped", lease: stoppedLease };
-    } catch (_error) {
-      // The provider reference stays detached. Provider-side timeout remains
-      // the cleanup bound if the stop request itself fails.
-      return { kind: "provider_error", lease: stoppedLease };
-    }
+    return stopped;
   }
 
   private async resolveClaimConflict(projectId: string): Promise<StopProjectSandboxResult> {
@@ -96,12 +71,4 @@ export class ProjectSandboxService {
 
     return { kind: "conflict" };
   }
-}
-
-function toRuntimeHandle(lease: SandboxLeaseRecord, providerRef: string): RuntimeHandle {
-  return {
-    id: providerRef,
-    kind: lease.runtimeId,
-    sandboxLeaseId: lease.id,
-  };
 }

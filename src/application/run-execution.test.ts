@@ -22,6 +22,7 @@ import type {
   SandboxLeaseRepository,
 } from "./ports";
 import { RunExecutionService } from "./run-execution";
+import { SandboxReclaimer } from "./sandbox-reclaimer";
 
 const capabilities = {
   modelGateway: true,
@@ -264,15 +265,16 @@ function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRe
   return {
     agentRuns,
     createService(agentRuntime: AgentRuntime, runTimeoutMs = 1_000) {
+      const diagnostics = {
+        report(event: DiagnosticEvent) {
+          diagnosticEvents.push(event);
+        },
+      };
       return new RunExecutionService({
         agentRuns,
         clock,
         createId: () => "assistant_message_1",
-        diagnostics: {
-          report(event) {
-            diagnosticEvents.push(event);
-          },
-        },
+        diagnostics,
         getAgentRuntime: () => agentRuntime,
         getSandboxRuntime: () => runtime,
         async issueModelAccess({ run: currentRun }) {
@@ -285,6 +287,13 @@ function createFixture(overrides: { lease?: SandboxLeaseRecord; run?: AgentRunRe
         },
         messages,
         runTimeoutMs,
+        sandboxReclaimer: new SandboxReclaimer({
+          agentRuns,
+          clock,
+          diagnostics,
+          getSandboxRuntime: () => runtime,
+          sandboxLeases,
+        }),
         sandboxLeases,
         workingDirectory: "/workspace",
       });
@@ -528,6 +537,10 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
 
   async findByProjectId(projectId: string) {
     return this.lease.projectId === projectId ? this.lease : null;
+  }
+
+  async findByProjectIds(projectIds: readonly string[]) {
+    return projectIds.includes(this.lease.projectId) ? [this.lease] : [];
   }
 
   async getOrCreate() {

@@ -4,7 +4,7 @@ import { createOpenAiCompatibleModelGateway, type ModelGatewayUsage } from "./mo
 import type { AppBindings } from "./env";
 import { D1AgentRunRepository } from "./persistence/d1-repositories";
 import { createRunCapabilityCodec } from "./run-capability";
-import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
+import { createDiagnosticReporter } from "./observability/reporter";
 
 export const modelGatewayEndpointPath = "/api/model-gateway/v1/chat/completions";
 
@@ -79,7 +79,7 @@ export function createWorkerModelGateway(
   return createRunAuthorizedModelGateway({
     agentRuns: new D1AgentRunRepository(env.DB),
     capabilitySecret: env.BETTER_AUTH_SECRET,
-    diagnostics: createStructuredDiagnosticReporter(diagnosticContext),
+    diagnostics: createDiagnosticReporter(diagnosticContext),
     geminiApiKey: env.GEMINI_API_KEY,
   });
 }

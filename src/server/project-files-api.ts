@@ -22,7 +22,7 @@ export function registerProjectFilesRoutes(
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
     }
@@ -41,7 +41,7 @@ export function registerProjectFilesRoutes(
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
     }

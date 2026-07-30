@@ -4,6 +4,33 @@ import { D1SandboxLeaseRepository } from "./d1-repositories";
 import { TestD1Database, result } from "./d1-test-database";
 
 describe("D1 SandboxLease repository", () => {
+  it("loads Project leases in bounded batch queries", async () => {
+    const db = new TestD1Database();
+    db.batchResults.push([
+      result([
+        {
+          created_at: "2026-07-25T00:00:00.000Z",
+          id: "lease-1",
+          project_id: "project-1",
+          provider_ref: null,
+          sandbox_runtime_id: "e2b",
+          status: "stopped",
+          updated_at: "2026-07-25T00:00:00.000Z",
+        },
+      ]),
+      result(),
+    ]);
+    const projectIds = Array.from({ length: 91 }, (_, index) => `project-${index + 1}`);
+
+    const leases = await new D1SandboxLeaseRepository(db.asBinding()).findByProjectIds(projectIds);
+
+    expect(db.batches).toHaveLength(1);
+    expect(db.batches[0]).toHaveLength(2);
+    expect(db.batches[0]?.[0]?.bindings).toHaveLength(90);
+    expect(db.batches[0]?.[1]?.bindings).toEqual(["project-91"]);
+    expect(leases).toMatchObject([{ id: "lease-1", projectId: "project-1" }]);
+  });
+
   it("gets or creates one logical sandbox lease in one batch", async () => {
     const db = new TestD1Database();
     db.batchResults.push([

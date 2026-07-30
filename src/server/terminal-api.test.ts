@@ -203,8 +203,8 @@ function createFixture(options: {
   });
   const services = {
     projectTerminals: { open },
-    projects: {
-      findOwnedById: vi.fn(async () => project),
+    projectReads: {
+      findOwnedProject: vi.fn(async () => project),
     },
   } as unknown as ServerServices;
   const app = new Hono<AppEnv>();

@@ -146,10 +146,10 @@ function createFixture(
     createServices: () =>
       ({
         projectChanges: { list, read },
-        projects: {
-          findOwnedById: async () => (options.projectFound === false ? null : project),
+        projectReads: {
+          findOwnedProject: async () => (options.projectFound === false ? null : project),
         },
-      }) as unknown as Pick<ServerServices, "projectChanges" | "projects">,
+      }) as unknown as Pick<ServerServices, "projectChanges" | "projectReads">,
     getAuthenticatedUser: async () => (options.authenticated === false ? null : user),
   });
 

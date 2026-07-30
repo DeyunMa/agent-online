@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { streamSSE, type SSEStreamingApi } from "hono/streaming";
 import { z } from "zod";
 
-import type { AgentRunRecord, ProjectRecord } from "../application/ports";
+import type { AgentRunRecord } from "../application/ports";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { AgentRunStreamEvent } from "../shared/api";
 import type { AppEnv } from "./env";
@@ -21,7 +21,6 @@ import {
   unauthorized,
   validationError,
 } from "./project-api-support";
-import type { ServerServices } from "./services";
 
 const createAgentRunSchema = z.object({
   agentRuntimeId: z.enum(["pi", "goose"]).optional(),
@@ -43,7 +42,7 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projects.findOwnedById(c.req.param("projectId"), user.id);
+    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
     if (!project) {
       return notFound(c);
     }
@@ -76,28 +75,32 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
   });
 
   api.get("/projects/:projectId/agent-runs", async (c) => {
-    const access = await getOwnedProject(c, dependencies);
-    if (!access) {
-      return access === null ? unauthorized(c) : notFound(c);
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
     }
 
-    const runs = await access.services.agentRuns.listRecentOwnedByProjectId(
-      access.project.id,
-      access.userId,
-    );
+    const runs = await dependencies
+      .createServices(c.env, requestDiagnosticContext(c))
+      .projectReads.listRecentOwnedRuns(c.req.param("projectId"), user.id);
+    if (!runs) {
+      return notFound(c);
+    }
     return c.json(runs.map(toAgentRunResponse));
   });
 
   api.get("/projects/:projectId/agent-runs/active", async (c) => {
-    const access = await getOwnedProject(c, dependencies);
-    if (!access) {
-      return access === null ? unauthorized(c) : notFound(c);
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
     }
 
-    const run = await access.services.agentRuns.findActiveOwnedByProjectId(
-      access.project.id,
-      access.userId,
-    );
+    const run = await dependencies
+      .createServices(c.env, requestDiagnosticContext(c))
+      .projectReads.findActiveOwnedRun(c.req.param("projectId"), user.id);
+    if (run === undefined) {
+      return notFound(c);
+    }
     return c.json(run ? toAgentRunResponse(run) : null);
   });
 
@@ -107,9 +110,8 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await findOwnedProjectRun(
-      access.services,
-      access.project,
+    const run = await access.services.projectReads.findOwnedRun(
+      access.project.id,
       c.req.param("runId"),
       access.userId,
     );
@@ -122,9 +124,8 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await findOwnedProjectRun(
-      access.services,
-      access.project,
+    const run = await access.services.projectReads.findOwnedRun(
+      access.project.id,
       c.req.param("runId"),
       access.userId,
     );
@@ -152,9 +153,8 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await findOwnedProjectRun(
-      access.services,
-      access.project,
+    const run = await access.services.projectReads.findOwnedRun(
+      access.project.id,
       c.req.param("runId"),
       access.userId,
     );
@@ -163,7 +163,7 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
     }
 
     return streamRunLifecycle(c, run, () =>
-      access.services.agentRuns.findOwnedById(run.id, access.userId),
+      access.services.projectReads.findOwnedRun(access.project.id, run.id, access.userId),
     );
   });
 }
@@ -179,7 +179,7 @@ async function getOwnedProject(c: AppContext, dependencies: ProjectApiDependenci
   if (!projectId) {
     return false;
   }
-  const project = await services.projects.findOwnedById(projectId, user.id);
+  const project = await services.projectReads.findOwnedProject(projectId, user.id);
   return project
     ? {
         project,
@@ -187,16 +187,6 @@ async function getOwnedProject(c: AppContext, dependencies: ProjectApiDependenci
         userId: user.id,
       }
     : false;
-}
-
-async function findOwnedProjectRun(
-  services: ServerServices,
-  project: ProjectRecord,
-  runId: string,
-  userId: string,
-) {
-  const run = await services.agentRuns.findOwnedById(runId, userId);
-  return run?.projectId === project.id ? run : null;
 }
 
 function keepRunAlive(c: AppContext, completion: Promise<unknown>) {

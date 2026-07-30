@@ -7,6 +7,7 @@ import type {
   SandboxLeaseRepository,
 } from "./ports";
 import { ProjectSandboxService } from "./project-sandbox";
+import { SandboxReclaimer } from "./sandbox-reclaimer";
 import type { SandboxRuntime } from "../runtime/contract";
 
 const now = new Date("2026-07-26T00:10:00.000Z");
@@ -140,11 +141,15 @@ function createService(input: {
 
   return new ProjectSandboxService({
     agentRuns,
-    getSandboxRuntime: () => runtime,
-    now: () => now,
     previewSessions: {
       findByProjectId: vi.fn(async () => (input.previewActive ? ({} as never) : null)),
     },
+    sandboxReclaimer: new SandboxReclaimer({
+      agentRuns,
+      clock: { now: () => now },
+      getSandboxRuntime: () => runtime,
+      sandboxLeases: input.sandboxLeases,
+    }),
     sandboxLeases: input.sandboxLeases,
     terminalSessions: {
       findByProjectId: vi.fn(async () => (input.terminalActive ? ({} as never) : null)),

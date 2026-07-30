@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse } from "../../shared/api";
 import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
+import { deriveProjectActivity } from "../project-activity";
 import {
   activeAgentRunQueryKey,
   agentRunQueryKey,
@@ -121,6 +122,13 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     platformCapabilities.isPending ||
     platformCapabilities.isError ||
     !platformCapabilities.data.runCreationEnabled;
+  const activity = deriveProjectActivity({
+    previewActive,
+    previewStarting,
+    runActive: activeRunIsBlocking,
+    terminalActive,
+  });
+  const exclusiveActivityActive = activity.exclusive !== "idle";
   const closeInspector = useCallback(() => {
     setInspectorOpen(false);
     window.requestAnimationFrame(() => {
@@ -282,9 +290,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             </button>
             <button
               className="new-run-action"
-              disabled={
-                activeRunIsBlocking || runCreationUnavailable || previewStarting || terminalActive
-              }
+              disabled={exclusiveActivityActive || runCreationUnavailable}
               onClick={() => composerRef.current?.focus()}
               type="button"
             >
@@ -365,13 +371,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             </div>
           )}
           <AgentComposer
-            disabled={
-              createRun.isPending ||
-              activeRunIsBlocking ||
-              runCreationUnavailable ||
-              previewStarting ||
-              terminalActive
-            }
+            disabled={createRun.isPending || runCreationUnavailable || exclusiveActivityActive}
             error={createRun.error}
             isSubmitting={createRun.isPending}
             onSubmit={(content) => createRun.mutateAsync(content)}
@@ -388,8 +388,8 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           />
         ) : null}
         <ProjectInspector
+          activity={activity}
           changesEnabled={platformCapabilities.data?.changesEnabled === true}
-          hasActiveRun={activeRunIsBlocking}
           isStopping={stopSandbox.isPending}
           onStopSandbox={() => stopSandbox.mutate()}
           onMobileClose={closeInspector}
@@ -408,12 +408,9 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           }}
           project={project.data}
           mobileOpen={mobileInspectorOpen}
-          previewActive={previewActive}
           previewEnabled={platformCapabilities.data?.previewEnabled === true}
-          previewStarting={previewStarting}
           run={currentRun}
           stopError={stopSandbox.error}
-          terminalActive={terminalActive}
           terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
         />
       </section>

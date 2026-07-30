@@ -1,6 +1,6 @@
 # ADR-0008：分层错误语义并以 requestId/runId 关联执行
 
-- 状态：Accepted；P0 代码与本地迁移已实现
+- 状态：Accepted；P0 与 2026-07-30 Sentry 外层 adapter 修订已实现
 - 日期：2026-07-27
 - 关联：[ADR-0003](./0003-agent-run-workflow.md) · [数据与模型](../architecture/03-data-auth-and-models.md) · [原始路线提案](../proposals/observability-errors-and-optimization-roadmap.md)
 
@@ -152,3 +152,22 @@ Reporter 自身失败不得改变产品执行。D1 不保存 diagnostic event、
 5. 诊断事件和响应不包含用户内容、Provider reference、Key 或原始异常。
 6. import boundary、typecheck、单元/D1/browser 测试和 production build 全部通过。
 7. 远程迁移、trace 配置和部署仍需单独批准。
+
+## 2026-07-30 修订：接入 Sentry Error Monitoring
+
+用户在稳定错误合同、结构化日志和脱敏测试已经成立后批准接入 Sentry。该变更修订
+“立即接入 Sentry/OTel”这一历史未采用项，但不改变本 ADR 的分层和关联决策：
+
+1. Sentry 是 `DiagnosticReporter` 的可选外层 adapter，结构化 console 继续保留。
+2. Hono 未捕获异常、Cloudflare Workflow 和 React Error Boundary 使用官方 SDK；
+   `requestId` 与 `runId` 仍是应用关联根，不伪造跨 invocation span tree。
+3. 两端 `beforeSend` 以 allowlist 重建事件，只允许 stack/debug metadata、固定环境和
+   release、受控诊断标签、应用关联 ID 与数值上下文。
+4. Logs、Tracing、Metrics、Replay、breadcrumbs、自动 user/request context 和原始异常
+   正文关闭；prompt、消息、文件、终端流、Provider 引用和 Key 仍禁止进入事件。
+5. DSN 缺失、SDK 网络失败或 Reporter 抛错不能改变产品结果。
+6. Preview 发布上传 Worker/React 隐藏源码映射，上传凭据只在本地构建环境中存在，
+   上传后删除部署产物中的 `.map`。
+
+本修订只增加错误可观测性，不新增 D1 事件表、R2、第二个 Worker、持久 `trace_id` 或
+完整分布式 tracing。

@@ -1,8 +1,8 @@
+import { sentry } from "@sentry/hono/cloudflare";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 
 import { defaultAgentRuntimeId } from "../agent/registry";
-import { createStructuredDiagnosticReporter } from "./observability/structured-reporter";
 import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import { createAuth } from "./auth";
 import { createChangesApi } from "./changes-api";
@@ -14,11 +14,19 @@ import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gate
 import { createProjectApi } from "./project-api";
 import { createPreviewApi } from "./preview-api";
 import { getInstalledSandboxRuntimeId } from "./runtime-config";
-import { createUsageApi } from "./usage-api";
 import { createTerminalApi } from "./terminal-api";
+import { createUsageApi } from "./usage-api";
+import { createDiagnosticReporter } from "./observability/reporter";
+import { captureServerException, createServerSentryOptions } from "./observability/sentry";
 
 export const app = new Hono<AppEnv>();
 
+app.use(
+  sentry(app, (env) => ({
+    ...createServerSentryOptions(env),
+    shouldHandleError: () => false,
+  })),
+);
 app.use("*", async (c, next) => {
   c.set("requestId", crypto.randomUUID());
   c.header("x-request-id", c.get("requestId"));
@@ -68,13 +76,14 @@ app.route("/api", createPreviewApi());
 app.notFound((c) => renderApiError(c, "resource.not_found"));
 
 app.onError((error, c) => {
-  void error;
-  createStructuredDiagnosticReporter({ requestId: c.get("requestId") }).report({
+  const requestId = c.get("requestId");
+  createDiagnosticReporter({ requestId }).report({
     errorCode: "UNEXPECTED",
     event: "request.unhandled",
     outcome: "failed",
     stage: "request",
   });
+  captureServerException(error, { requestId });
 
   return renderApiError(c, "internal.unexpected");
 });

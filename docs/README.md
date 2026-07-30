@@ -35,3 +35,4 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [2026-07-27 Preview 发布与 Hosted E2E](./status/2026-07-27-preview-release.md)
 - [2026-07-28 交付加固](./status/2026-07-28-delivery-hardening.md)
 - [2026-07-28 Project 生命周期](./status/2026-07-28-project-lifecycle.md)
+- [2026-07-30 Sentry 与交付优化](./status/2026-07-30-sentry-and-delivery-optimization.md)

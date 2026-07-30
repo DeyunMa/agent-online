@@ -5,7 +5,6 @@ import type { AppBindings } from "./env";
 import { createServerServices, type ServerServices } from "./services";
 
 export type ProjectApiDependencies = {
-  createId(): string;
   createServices(env: AppBindings, diagnosticContext?: DiagnosticContext): ServerServices;
   getAuthenticatedUser(env: AppBindings, headers: Headers): Promise<AuthenticatedUser | null>;
   getDeploymentPolicy(env: AppBindings): DeploymentPolicy;
@@ -13,7 +12,6 @@ export type ProjectApiDependencies = {
 };
 
 const defaultDependencies: ProjectApiDependencies = {
-  createId: () => crypto.randomUUID(),
   createServices: createServerServices,
   getAuthenticatedUser,
   getDeploymentPolicy,

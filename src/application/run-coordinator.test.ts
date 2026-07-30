@@ -607,6 +607,10 @@ class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
     return this.lease.projectId === projectId ? this.lease : null;
   }
 
+  async findByProjectIds(projectIds: readonly string[]) {
+    return projectIds.includes(this.lease.projectId) ? [this.lease] : [];
+  }
+
   async getOrCreate() {
     return this.lease;
   }

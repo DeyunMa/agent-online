@@ -27,5 +27,9 @@ GEMINI_API_KEY=
 # RUNTIME_IDLE_TTL_SECONDS=600
 # MAX_RUN_WALL_SECONDS=1800
 
+# Optional server-side error monitoring. The application remains functional when omitted.
+# SENTRY_DSN=
+# SENTRY_ENVIRONMENT=development
+
 # Public HTTPS origin used only when a local E2B sandbox cannot reach localhost.
 # MODEL_GATEWAY_BASE_URL=

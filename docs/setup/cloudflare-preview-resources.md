@@ -1,7 +1,7 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-07-28 的私有 Cloudflare 环境。Project 生命周期代码已部署
-> 并通过基线、Project 生命周期与全能力 Hosted E2E；`0006_integrity_guards.sql` 和
+> 状态：本文记录截至 2026-07-30 的私有 Cloudflare 环境。Sentry 与交付加固代码、
+> 第三版 Pi/Goose 组合模板已部署；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql` 继续保持已应用状态。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
@@ -30,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `0c374d75-5f52-484a-9f7e-b0d0bfabd24e` |
+| 当前部署版本 | `50a111c7-1c22-4f80-8bca-0810fb772e84` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -85,17 +85,19 @@ D1 只保存 Better Auth、Project、Message、SandboxLease、AgentRun、聚合 
 | `ACCESS_MODE` | `allowlist` |
 | `BETTER_AUTH_URL` | `https://agent-online-preview.mdy1145141.workers.dev` |
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` |
-| `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:8916fff0-6236-43ba-a397-b0e2b8f97c47` |
+| `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:a57d8d0d-5b9b-4d1e-8cca-06a9c94752a4` |
 | `GOOSE_RUNTIME_MODE` | `spike` |
 | `MAX_RUN_WALL_SECONDS` | `1800` |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` |
 | `RUNTIME_PROVIDER` | `e2b` |
 | `RUNS_ENABLED` | `true` |
+| `SENTRY_ENVIRONMENT` | `preview` |
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-07-28，本表记录的是当前已部署 Preview。第二版组合模板显式安装并探测
-Node、Pi、Goose、Git、Bash 与 coreutils；`GOOSE_RUNTIME_MODE=spike` 已上线，
+截至 2026-07-30，本表记录的是当前已部署 Preview。第三版组合模板显式安装并探测
+Node、Pi、Goose、Git、Bash 与 coreutils，并确保 E2B 默认非 root 用户拥有
+`/workspace`、可直接初始化 Git；`GOOSE_RUNTIME_MODE=spike` 已上线，
 该模式允许受邀测试者显式调用 Goose，
 但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
 随 Worker 配置原地升级；本次验收使用新 Project，让首个 Run 按组合模板创建沙箱。
@@ -108,6 +110,7 @@ Node、Pi、Goose、Git、Bash 与 coreutils；`GOOSE_RUNTIME_MODE=spike` 已上
 - `BETTER_AUTH_SECRET`
 - `E2B_API_KEY`
 - `GEMINI_API_KEY`
+- `SENTRY_DSN`
 
 `ACCESS_ALLOWED_EMAILS` 当前只包含 owner 邮箱，但本文不记录具体地址。`BETTER_AUTH_SECRET` 为 Preview 独立生成，没有复用本地开发 Secret。
 
@@ -117,7 +120,8 @@ Preview 在 `wrangler.jsonc` 中启用：
 
 - Workers Logs：启用，100% head sampling，持久化 invocation logs。
 - Workers Traces：关闭。
-- 外部日志导出、Tail Worker 和 Sentry：未配置。
+- Sentry：只启用 Error Monitoring，服务端和 React 都使用严格 allowlist 清洗。
+- 外部日志导出和 Tail Worker：未配置。
 
 当前应用以结构化 console 事件记录固定 event、stage、diagnostic code、`requestId`、
 `runId`、受控 Runtime/Model ID、Run 终态和聚合 usage。事件不包含 prompt、消息/Agent
@@ -127,6 +131,21 @@ message/stack 或 Secret。Cloudflare tail 已实际验证
 Workflow 重试可能产生重复事件；日志不是计费或审计账本，业务终态以 D1 为准。
 
 Cloudflare Workers Free 当前包含每天 200,000 条日志事件并保留 3 天；该额度和保留期可能变化，见 [Workers Logs 官方说明](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)。
+
+Sentry 组织和项目：
+
+| 项目 | 值 |
+| --- | --- |
+| Organization | `dylandeyunma` |
+| Project | `agent-online` |
+| Issues | [Sentry Issues](https://dylandeyunma.sentry.io/issues/?project=agent-online) |
+| Source Maps | [Sentry Source Maps](https://dylandeyunma.sentry.io/settings/projects/agent-online/source-maps/) |
+
+源码映射上传使用仅 `org:ci` 的组织 token。token 只保存在本机忽略且权限为 `0600` 的
+`.env.sentry-build-plugin`，不在 Cloudflare、Git 或本文中保存。浏览器 DSN 与环境只在
+忽略的 `.env.preview.local` 中供 Vite 构建读取；Worker DSN 作为 Cloudflare Secret
+保存。2026-07-30 已在 Sentry Source Maps 页面核对 Worker 与 React 两组 artifact
+bundle；部署产物中不保留 `.map`。
 
 ## 8. 已完成 Smoke
 
@@ -191,6 +210,15 @@ Preview 已验证：
   重命名和安全硬删除。基线、Project 生命周期和全能力 Hosted E2E 均通过；生命周期
   用例在最终版本再次通过，确认空闲 E2B sandbox 先停止、旧 Project API 返回 `404`，
   结束后九项远程预检再次全部为零。
+- 第三版组合模板通过 Node/Pi/Goose/Git/Bash 探针，并新增 `/workspace` 默认用户所有权、
+  可写与 Git init/status 验证。真实 adapter E2E 在同一沙箱完成
+  `Pi -> Goose -> Pi -> Goose cancel`，确认文件连续性、usage、取消和密钥隔离未回归。
+- Sentry 与交付加固版本 `50a111c7-1c22-4f80-8bca-0810fb772e84` 已部署。
+  Sentry Worker/React 源码映射 bundle 已在 Dashboard 核对；新模板上的 Terminal、
+  Changes、Files、Preview 和停止能力路径已通过 Hosted E2E。
+- 最终三条 Hosted Preview E2E 全部通过：真实 Pi 产品路径 27.0 秒、Project
+  生命周期 11.1 秒、Terminal/Changes/Files/Preview 34.6 秒，总计约 1.2 分钟。
+  完成后九项远程协调预检全部通过。
 
 尚未验证：
 

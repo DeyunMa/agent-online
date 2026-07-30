@@ -141,7 +141,6 @@ test("renames and hard-deletes a Project with an idle hosted sandbox", async ({ 
   const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const projectName = `lifecycle-e2e-${suffix}`;
   const renamedProject = `${projectName}-renamed`;
-  const marker = `lifecycle-marker-${suffix}`;
   const apiResponseAuditErrors: unknown[] = [];
 
   const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
@@ -161,13 +160,15 @@ test("renames and hard-deletes a Project with an idle hosted sandbox", async ({ 
     throw new Error("Created Project URL did not contain a Project ID");
   }
 
-  await page
-    .getByLabel("Agent task")
-    .fill(`Reply with the exact marker ${marker}. Do not create or modify any files.`);
-  await page.getByRole("button", { name: "Start run" }).click();
-  const currentRunStatus = page.getByRole("region", { name: "Current run status" });
-  await expect(currentRunStatus.getByText("执行完成", { exact: true })).toBeVisible({
-    timeout: 180_000,
+  const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
+  await page.getByRole("tab", { name: "Terminal" }).click();
+  await projectInspector.getByRole("button", { exact: true, name: "Connect" }).click();
+  await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
+    timeout: 30_000,
   });
 
   const projectHeaderActions = page.locator(".project-console-header-actions");
@@ -210,6 +211,8 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   const previewMarker = `preview-marker-${suffix}`;
   const terminalMarker = `terminal-marker-${suffix}`;
   const terminalFile = `terminal-${suffix}.txt`;
+  const fixtureReady = `fixture-ready-${suffix}`;
+  const fixtureReadyBase64 = Buffer.from(fixtureReady).toString("base64");
   const apiResponseAuditErrors: unknown[] = [];
 
   const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
@@ -226,28 +229,37 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await page.getByLabel("Project name").fill(projectName);
   await page.getByRole("button", { name: "Create project" }).click();
 
-  await page
-    .getByLabel("Agent task")
-    .fill(
-      `Build a minimal Vite app in /workspace that renders the exact text ${previewMarker}. ` +
-        "Install vite@8.1.5 locally, add a node_modules entry to .gitignore, and initialize Git. " +
-        "Commit a working baseline, then leave src/main.js modified with the exact marker and " +
-        "create E2E-NOTES.txt as an untracked text file. Do not start a server. " +
-        `Finish by replying with the exact marker ${previewMarker}.`,
-    );
-  await page.getByRole("button", { name: "Start run" }).click();
-
-  const currentRunStatus = page.getByRole("region", { name: "Current run status" });
-  await expect(currentRunStatus.getByText("执行完成", { exact: true })).toBeVisible({
-    timeout: 240_000,
-  });
-  await expect(
-    page
-      .getByRole("list", { name: "Project conversation" })
-      .getByText(previewMarker, { exact: false }),
-  ).toBeVisible();
-
   const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
+  await page.getByRole("tab", { name: "Terminal" }).click();
+  await projectInspector.getByRole("button", { exact: true, name: "Connect" }).click();
+  await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  const fixtureCommand = [
+    "mkdir -p src",
+    `printf %s ${shellQuote('<div id="app"></div><script type="module" src="/src/main.js"></script>')} > index.html`,
+    `printf %s ${shellQuote("document.querySelector('#app').textContent = 'baseline';")} > src/main.js`,
+    `printf %s ${shellQuote('{"private":true,"devDependencies":{"vite":"8.1.5"}}')} > package.json`,
+    `printf %s ${shellQuote("node_modules/")} > .gitignore`,
+    "npm install --no-audit --no-fund",
+    "git init -q /workspace",
+    "git -C /workspace add .gitignore index.html package.json package-lock.json src/main.js",
+    "git -C /workspace -c user.email=e2e@agent-online.test -c user.name=Agent-Online-E2E commit -qm baseline",
+    `printf %s ${shellQuote(`document.querySelector('#app').textContent = '${previewMarker}';`)} > src/main.js`,
+    `printf %s ${shellQuote("hosted capability fixture")} > E2E-NOTES.txt`,
+    `printf %s ${shellQuote(fixtureReadyBase64)} | base64 -d`,
+  ].join(" && ");
+  await projectInspector.locator(".project-terminal-canvas").click();
+  await page.keyboard.type(fixtureCommand);
+  await page.keyboard.press("Enter");
+  await expect(projectInspector.locator(".xterm-rows")).toContainText(fixtureReady, {
+    timeout: 120_000,
+  });
+  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+
   await page.getByRole("tab", { name: "Changes" }).click();
   await expect(
     projectInspector.locator(".project-change-row").filter({ hasText: "src/main.js" }),
@@ -348,4 +360,8 @@ async function auditPrivateJsonResponse(response: Response, errors: unknown[]) {
       // A navigation may cancel an in-flight response after headers arrive.
     }
   }
+}
+
+function shellQuote(value: string) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }

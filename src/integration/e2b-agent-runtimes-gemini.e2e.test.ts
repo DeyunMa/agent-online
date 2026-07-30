@@ -93,7 +93,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
         sandbox,
         "sandbox template and isolation probe",
         // biome-ignore lint/suspicious/noTemplateCurlyInString: The remote shell expands these variables.
-        'test -z "${E2B_API_KEY:-}" && test -z "${GEMINI_API_KEY:-}" && test -z "${AGENT_ONLINE_GATEWAY_TOKEN:-}" && test -w /workspace && node --version && pi --version && goose --version',
+        'test -z "${E2B_API_KEY:-}" && test -z "${GEMINI_API_KEY:-}" && test -z "${AGENT_ONLINE_GATEWAY_TOKEN:-}" && test -w /workspace && test "$(stat -c %U /workspace)" = "$(id -un)" && git init -q /workspace && git -C /workspace status --porcelain && rm -rf /workspace/.git && node --version && pi --version && goose --version',
         { timeoutMs: 30_000 },
         redactOutput,
       );
