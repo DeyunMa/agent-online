@@ -30,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `50a111c7-1c22-4f80-8bca-0810fb772e84` |
+| 当前部署版本 | `d9808939-2c9b-4f56-a0ba-62d65b2d6109` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -219,6 +219,10 @@ Preview 已验证：
 - 最终三条 Hosted Preview E2E 全部通过：真实 Pi 产品路径 27.0 秒、Project
   生命周期 11.1 秒、Terminal/Changes/Files/Preview 34.6 秒，总计约 1.2 分钟。
   完成后九项远程协调预检全部通过。
+- 提交 `7c54f26` 推送后重新部署为版本
+  `d9808939-2c9b-4f56-a0ba-62d65b2d6109`；健康检查、Pi-only 公开 capability 和九项
+  远程协调预检通过。Sentry 两组源码映射以完整 Git SHA
+  `7c54f26ab07cb17b711c5587c09f06977f131803` 上传，release 与实际部署源码一致。
 
 尚未验证：
 

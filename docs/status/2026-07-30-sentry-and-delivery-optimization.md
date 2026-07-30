@@ -153,8 +153,10 @@ Project 删除。Terminal ready marker 改为仅在命令真正完成后输出�
 | 最终部署三条 Hosted Preview E2E | 3 passed，约 1.2 分钟 |
 | E2E 后远程协调预检 | 9 checks passed |
 
-Cloudflare Preview 当前部署版本：
-`50a111c7-1c22-4f80-8bca-0810fb772e84`。
+阶段 E2E 使用的 Cloudflare Preview 版本为
+`50a111c7-1c22-4f80-8bca-0810fb772e84`。提交并推送后，同一代码以可追溯提交
+`7c54f26` 重新部署为 `d9808939-2c9b-4f56-a0ba-62d65b2d6109`；健康检查、公开
+capability 和九项远程协调预检通过。
 
 最终 Hosted E2E 分别用时约 27.0、11.1 和 34.6 秒，验证真实 Pi 产品路径、
 Project 重命名/硬删除与空闲 sandbox 停止，以及 Terminal/Changes/Files/Preview
@@ -170,9 +172,9 @@ preflight 九项全部通过。
 2. Cloudflare Vite 的 Worker/React 双环境构建会让第二个源码映射上传阶段重新扫描已
    处理的 Worker 文件并输出缺少 `.map` 的 warning；两组 artifact bundle 均已成功
    上传，warning 不影响部署产物。
-3. 当前 Sentry release 由构建时 Git HEAD 自动识别。本轮工作树尚未提交，因此 release
-   标签不能单独证明部署包含全部未提交变更；debug ID 仍可匹配已上传源码映射。正式
-   发布应先创建可追溯提交再部署。
+3. 阶段首次部署发生在提交前，release 标签当时不能单独证明全部工作树内容。提交
+   `7c54f26` 后已重新部署并重新上传源码映射，当前 release 使用完整 Git SHA；该
+   可追溯性问题已经收敛。
 4. React 主 bundle 仍有 Vite 大小 warning；Terminal 已单独分块，该 warning 当前不
    是正确性问题。
 
