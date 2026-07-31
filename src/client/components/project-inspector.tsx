@@ -1,5 +1,5 @@
 import { LoaderCircle, Square, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
 import { isActiveSandboxLease } from "../../domain/sandbox-lease";
@@ -21,14 +21,16 @@ import { ProjectFiles } from "./project-files";
 import { ProjectPreview } from "./project-preview";
 import { ProjectTerminal } from "./project-terminal";
 
-type InspectorView = "changes" | "files" | "overview" | "preview" | "terminal";
+export type InspectorView = "changes" | "files" | "overview" | "preview" | "terminal";
 
 export function ProjectInspector({
   activity,
   changesEnabled,
+  filesRevision,
   isStopping,
   mobileOpen,
-  onMobileClose,
+  onClose,
+  onViewChange,
   onStopSandbox,
   onPreviewActivityChange,
   onPreviewStartingChange,
@@ -38,40 +40,45 @@ export function ProjectInspector({
   run,
   stopError,
   terminalEnabled,
+  view,
+  open,
 }: {
   activity: ProjectActivity;
   changesEnabled: boolean;
+  filesRevision: number;
   isStopping: boolean;
   mobileOpen: boolean;
-  onMobileClose(): void;
+  onClose(): void;
   onStopSandbox: () => void;
   onPreviewActivityChange(active: boolean): void;
   onPreviewStartingChange(starting: boolean): void;
   onTerminalActivityChange(active: boolean): void;
+  onViewChange(view: InspectorView): void;
   previewEnabled: boolean;
   project: ProjectResponse;
   run: AgentRunResponse | undefined;
   stopError: Error | null;
   terminalEnabled: boolean;
+  view: InspectorView;
+  open: boolean;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
-  const [view, setView] = useState<InspectorView>("overview");
   useEffect(() => {
     if (!changesEnabled && view === "changes") {
-      setView("overview");
+      onViewChange("overview");
     }
-  }, [changesEnabled, view]);
+  }, [changesEnabled, onViewChange, view]);
   useEffect(() => {
     if (!terminalEnabled && view === "terminal") {
-      setView("overview");
+      onViewChange("overview");
     }
-  }, [terminalEnabled, view]);
+  }, [onViewChange, terminalEnabled, view]);
   useEffect(() => {
     if (!previewEnabled && view === "preview") {
-      setView("overview");
+      onViewChange("overview");
     }
-  }, [previewEnabled, view]);
+  }, [onViewChange, previewEnabled, view]);
   useEffect(() => {
     if (!mobileOpen) {
       return;
@@ -108,18 +115,20 @@ export function ProjectInspector({
   return (
     <aside
       {...mobileDialogAttributes}
+      aria-hidden={!open}
       aria-labelledby="project-inspector-title"
-      className={`project-inspector ${mobileOpen ? "project-inspector-mobile-open" : ""}`}
+      className={`project-inspector ${open ? "project-inspector-open" : ""}`}
       id="project-inspector"
+      inert={!open}
       ref={inspectorRef}
     >
       <header className="project-inspector-header">
         <h2 id="project-inspector-title">Project inspector</h2>
-        {mobileOpen ? (
+        {open ? (
           <button
             aria-label="Close project inspector"
             className="icon-button project-inspector-close"
-            onClick={onMobileClose}
+            onClick={onClose}
             ref={closeButtonRef}
             title="Close project inspector"
             type="button"
@@ -138,7 +147,7 @@ export function ProjectInspector({
         <button
           aria-selected={view === "overview"}
           className={`inspector-tab ${view === "overview" ? "inspector-tab-active" : ""}`}
-          onClick={() => setView("overview")}
+          onClick={() => onViewChange("overview")}
           role="tab"
           tabIndex={view === "overview" ? 0 : -1}
           type="button"
@@ -148,7 +157,7 @@ export function ProjectInspector({
         <button
           aria-selected={view === "files"}
           className={`inspector-tab ${view === "files" ? "inspector-tab-active" : ""}`}
-          onClick={() => setView("files")}
+          onClick={() => onViewChange("files")}
           role="tab"
           tabIndex={view === "files" ? 0 : -1}
           type="button"
@@ -159,7 +168,7 @@ export function ProjectInspector({
           <button
             aria-selected={view === "changes"}
             className={`inspector-tab ${view === "changes" ? "inspector-tab-active" : ""}`}
-            onClick={() => setView("changes")}
+            onClick={() => onViewChange("changes")}
             role="tab"
             tabIndex={view === "changes" ? 0 : -1}
             type="button"
@@ -173,7 +182,7 @@ export function ProjectInspector({
           <button
             aria-selected={view === "terminal"}
             className={`inspector-tab ${view === "terminal" ? "inspector-tab-active" : ""}`}
-            onClick={() => setView("terminal")}
+            onClick={() => onViewChange("terminal")}
             role="tab"
             tabIndex={view === "terminal" ? 0 : -1}
             type="button"
@@ -187,7 +196,7 @@ export function ProjectInspector({
           <button
             aria-selected={view === "preview"}
             className={`inspector-tab ${view === "preview" ? "inspector-tab-active" : ""}`}
-            onClick={() => setView("preview")}
+            onClick={() => onViewChange("preview")}
             role="tab"
             tabIndex={view === "preview" ? 0 : -1}
             type="button"
@@ -241,6 +250,7 @@ export function ProjectInspector({
       ) : view === "files" ? (
         <ProjectFiles
           hasActiveRun={hasActiveRun || terminalActive}
+          key={`${project.id}:${filesRevision}`}
           projectId={project.id}
           sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
         />

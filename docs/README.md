@@ -30,6 +30,7 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 - [ADR-0008：错误语义与执行关联](./adr/0008-errors-and-execution-correlation.md)
 - [ADR-0009：Project 重命名与硬删除](./adr/0009-project-rename-and-hard-delete.md)
 - [ADR-0010：删除 Project 后保留 Run 用量事实](./adr/0010-deleted-project-usage-archive.md)
+- [ADR-0011：受控 Project 单文件上传](./adr/0011-controlled-project-file-upload.md)
 - [执行关联、错误语义与架构优化路线（P0 已实现，后续候选）](./proposals/observability-errors-and-optimization-roadmap.md)
 - [2026-07-27 错误语义与结构化日志](./status/2026-07-27-errors-and-observability.md)
 - [2026-07-27 架构与工程门禁加固](./status/2026-07-27-architecture-hardening.md)

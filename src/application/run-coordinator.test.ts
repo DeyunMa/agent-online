@@ -90,6 +90,28 @@ describe("RunCoordinator", () => {
     ]);
   });
 
+  it("redacts the Run capability from the persisted assistant reply", async () => {
+    const fixture = createFixture();
+    const capability = "run-private-capability";
+    const coordinator = fixture.createCoordinator(
+      completingRuntime(0, `The capability is ${capability}.`),
+    );
+
+    const managedRun = await coordinator.start({
+      ...startInput(fixture),
+      modelAccess: {
+        baseUrl: "https://agent-online.test/api/model-gateway",
+        bearerToken: capability,
+        maxOutputTokens: 4_096,
+        modelId: "gemini-3.6-flash",
+      },
+    });
+    await managedRun.completion;
+
+    expect(fixture.messageRepository.records[0]?.content).toBe("The capability is [REDACTED].");
+    expect(JSON.stringify(fixture.messageRepository.records)).not.toContain(capability);
+  });
+
   it("lets the execution owner terminate the current Run without a process registry", async () => {
     const fixture = createFixture();
     const runtime = blockingRuntime();

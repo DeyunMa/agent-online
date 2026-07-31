@@ -36,10 +36,6 @@ if (!preview) {
     errors.push("env.preview GOOSE_RUNTIME_MODE must be disabled, spike, or public");
   }
 
-  if (gooseRuntimeMode === "public") {
-    errors.push("env.preview GOOSE_RUNTIME_MODE=public is not approved by ADR-0004");
-  }
-
   if (
     gooseRuntimeMode !== "disabled" &&
     !vars.E2B_TEMPLATE_ID?.startsWith("agent-online-pi-goose-runtime:")

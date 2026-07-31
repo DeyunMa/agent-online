@@ -2,7 +2,7 @@
 
 > 文档状态：当前公开接口基准
 >
-> 校准日期：2026-07-28
+> 校准日期：2026-07-30
 >
 > 权威来源：`src/server/` 路由和 `src/shared/` 公开 DTO
 
@@ -19,7 +19,8 @@
 - ModelGateway 使用只绑定一个 Run、Project、Model 和期限的 Bearer capability，不接受浏览器会话替代。
 - 普通产品 mutation 必须携带精确同源 `Origin`，或由浏览器提供
   `Sec-Fetch-Site: same-origin`；在鉴权和 JSON 解析前统一限制请求体为 256 KiB。
-  Better Auth 与 ModelGateway 使用各自协议，不经过该产品 guard。
+  单文件上传使用独立的 4 MiB 文件上限和 64 KiB multipart 开销余量。Better Auth
+  与 ModelGateway 使用各自协议，不经过该产品 guard。
 
 ### 1.2 请求追踪
 
@@ -50,7 +51,7 @@ type ApiErrorResponse = {
 | --- | --- | --- | --- |
 | `auth.unauthorized` | `401` | false | 没有有效登录会话。 |
 | `request.forbidden` | `403` | false | 同源或权限检查失败。 |
-| `request.too_large` | `413` | false | 普通产品请求体超过 256 KiB。 |
+| `request.too_large` | `413` | false | 普通产品请求体或文件上传请求体超过对应上限。 |
 | `request.invalid` | `400` | false | JSON 或字段不合法。 |
 | `resource.not_found` | `404` | false | 路由或所有权过滤后的资源不存在。 |
 | `project.busy` | `409` | true | 当前 Run、Terminal 或 Preview 启动占用 Project。 |
@@ -61,6 +62,7 @@ type ApiErrorResponse = {
 | `project_path.not_found` | `404` | false | 文件或 Changes 路径不存在。 |
 | `project_path.unsupported` | `400` | false | 路径超出受控范围。 |
 | `file.too_large` | `413` | false | 文件超过读取上限。 |
+| `file.already_exists` | `409` | false | 上传目标已存在，不允许覆盖。 |
 | `file.content_unsupported` | `415` | false | 不是可公开的 UTF-8 文本。 |
 | `preview.entry_missing` | `409` | false | `/workspace` 没有可预览的根 `index.html`。 |
 | `preview.dependencies_missing` | `409` | false | 项目声明了依赖但根 `node_modules` 不存在。 |
@@ -148,7 +150,7 @@ type AgentRunResponse = {
 | 方法 | 路径 | 鉴权 | 成功响应 | 说明 |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/health` | 无 | `200 HealthResponse` | Worker 存活检查。 |
-| `GET` | `/api/capabilities` | 无 | `200 PlatformCapabilitiesResponse` | 返回当前公开 AgentRuntime 和 Changes/Terminal/Preview/Run 开关；Files 由现有 Lease/Runtime 状态决定。 |
+| `GET` | `/api/capabilities` | 无 | `200 PlatformCapabilitiesResponse` | 返回当前公开 AgentRuntime 和 Changes/Terminal/Preview/Run/File upload 开关；Files 读取还由现有 Lease/Runtime 状态决定。 |
 | `GET/POST` | `/api/auth/*` | Better Auth | Better Auth 标准响应 | 邮箱密码注册、登录、会话和退出。 |
 
 能力响应：
@@ -159,6 +161,7 @@ type PlatformCapabilitiesResponse = {
   defaultAgentRuntimeId: "pi" | "goose" | "claude-code" | "codex-cli";
   runCreationEnabled: boolean;
   changesEnabled: boolean;
+  fileUploadEnabled: boolean;
   previewEnabled: boolean;
   terminalEnabled: boolean;
 };
@@ -260,6 +263,7 @@ SSE 不是可重放事件日志：没有持久 event ID，也不保存 raw Agent
 | 方法 | 路径 | 查询参数 | 成功响应 | 主要错误 |
 | --- | --- | --- | --- | --- |
 | `GET` | `/api/projects/:projectId/files` | `path` 可选；空值表示 `/workspace` | `200 ProjectDirectoryResponse` | `400`、`401`、`404`、`409`、`503` |
+| `POST` | `/api/projects/:projectId/files` | `multipart/form-data`，唯一字段 `file` | `201 ProjectFileUploadResponse` | `400`、`401`、`404`、`409`、`413`、`503` |
 | `GET` | `/api/projects/:projectId/files/content` | `path` 必填 | `200 ProjectFileResponse` | `400`、`401`、`404`、`409`、`413`、`415`、`503` |
 
 ```ts
@@ -282,9 +286,18 @@ type ProjectFileResponse = {
   path: string;
   size: number;
 };
+
+type ProjectFileUploadResponse = {
+  name: string;
+  path: string;
+  size: number;
+};
 ```
 
-Files 只附着现有且可读取的 Lease，不会为了浏览文件创建新沙箱。路径、大小、文本类型和互斥限制见 [平台限制](./platform-limits.md)。
+Files 只附着现有且可读取的 Lease，不会为了浏览或上传创建新沙箱。上传只接受一个
+最大 4 MiB 的文件，写入 `/workspace` 根目录且不覆盖同名路径；它不创建 D1/R2
+副本、Message 或 AgentRun。路径、大小、文本类型和互斥限制见
+[平台限制](./platform-limits.md)。
 
 ## 7. Changes
 

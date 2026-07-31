@@ -1,6 +1,18 @@
 import { isTerminalAgentRun, type AgentRunStatus } from "../domain/agent-run";
 import type { AgentRunResponse, SandboxLeaseResponse } from "../shared/api";
 import type { AgentRunFailureCode } from "../shared/error-codes";
+import type { AgentRuntimeId } from "../shared/protocol";
+
+export function agentRuntimeLabel(agentRuntimeId: AgentRuntimeId) {
+  const labels: Record<AgentRuntimeId, string> = {
+    "claude-code": "Claude Code",
+    "codex-cli": "Codex CLI",
+    goose: "Goose",
+    pi: "Pi",
+  };
+
+  return labels[agentRuntimeId];
+}
 
 export function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {

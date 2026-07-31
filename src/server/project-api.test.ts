@@ -31,6 +31,7 @@ import type {
   MessageResponse,
   ProjectDirectoryResponse,
   ProjectFileResponse,
+  ProjectFileUploadResponse,
   ProjectResponse,
 } from "../shared/api";
 import type { AppEnv } from "./env";
@@ -345,6 +346,70 @@ describe("Project API", () => {
     });
     expect(JSON.stringify([list, file])).not.toContain(handle.id);
     expect(JSON.stringify([list, file])).not.toContain("providerRef");
+  });
+
+  it("uploads one binary file to an owned idle Project without exposing provider details", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      defaultAgentRuntimeId: "pi",
+      id: "project_1",
+      now,
+      title: "Demo",
+      userId: testUser.id,
+    });
+    const lease = await fixture.sandboxLeases.getOrCreate({
+      id: "lease_1",
+      now,
+      projectId: "project_1",
+      runtimeId: "fake",
+    });
+    const handle = await fixture.sandboxRuntime.ensureLease({
+      projectId: "project_1",
+      providerRef: "provider-private-sandbox",
+      sandboxLeaseId: lease.id,
+    });
+    await fixture.sandboxLeases.updateState({
+      leaseId: lease.id,
+      providerRef: handle.id,
+      status: "idle",
+      updatedAt: now,
+    });
+    const body = new FormData();
+    body.set("file", new File([new Uint8Array([0, 1, 255])], "asset.bin"));
+
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/files",
+      {
+        body,
+        method: "POST",
+      },
+    );
+    const uploaded = (await response.json()) as ProjectFileUploadResponse;
+    const duplicateBody = new FormData();
+    duplicateBody.set("file", new File(["duplicate"], "asset.bin"));
+    const duplicate = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/files",
+      {
+        body: duplicateBody,
+        method: "POST",
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(uploaded).toEqual({
+      name: "asset.bin",
+      path: "asset.bin",
+      size: 3,
+    });
+    await expect(fixture.sandboxRuntime.readFile(handle, "/workspace/asset.bin")).resolves.toEqual(
+      new Uint8Array([0, 1, 255]),
+    );
+    expect(JSON.stringify(uploaded)).not.toContain(handle.id);
+    expect(JSON.stringify(uploaded)).not.toContain("providerRef");
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toMatchObject({
+      error: { code: "file.already_exists", retryable: false },
+    });
   });
 
   it("creates one visible input message and one queued Run, without exposing private lease details", async () => {

@@ -4,7 +4,7 @@ import { ChartNoAxesColumn, ExternalLink, RefreshCw } from "lucide-react";
 
 import type { UsageMetricsResponse, UserUsageResponse } from "../../shared/api";
 import { browserApi } from "../api";
-import { formatDuration, formatTokenCount } from "../presentation";
+import { agentRuntimeLabel, formatDuration, formatTokenCount } from "../presentation";
 import { userUsageQueryKey } from "../query-keys";
 import { AppHeaderSlot } from "./app-header-slot";
 import { ErrorState, LoadingState } from "./ui-states";
@@ -207,15 +207,4 @@ function formatInteger(value: number) {
 
 function formatRunCount(value: number) {
   return `${formatInteger(value)} ${value === 1 ? "run" : "runs"}`;
-}
-
-function agentRuntimeLabel(agentRuntimeId: string) {
-  const labels: Record<string, string> = {
-    "claude-code": "Claude Code",
-    "codex-cli": "Codex CLI",
-    goose: "Goose",
-    pi: "Pi",
-  };
-
-  return labels[agentRuntimeId] ?? agentRuntimeId;
 }

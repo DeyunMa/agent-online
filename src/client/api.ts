@@ -11,6 +11,7 @@ import type {
   ProjectChangesResponse,
   ProjectDirectoryResponse,
   ProjectFileResponse,
+  ProjectFileUploadResponse,
   ProjectPreviewResponse,
   ProjectResponse,
   UpdateProjectRequest,
@@ -49,7 +50,7 @@ type RunStreamHandlers = {
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
 
-  if (init.body !== undefined && !headers.has("content-type")) {
+  if (init.body !== undefined && !headers.has("content-type") && !(init.body instanceof FormData)) {
     headers.set("content-type", "application/json");
   }
 
@@ -152,7 +153,9 @@ function messageForApiError(error: PublicErrorCode) {
     case "sandbox.provider_unavailable":
       return "沙箱服务暂时不可用，请稍后重试。";
     case "file.too_large":
-      return "该文件超过在线预览大小限制。";
+      return "该文件超过当前操作允许的大小限制。";
+    case "file.already_exists":
+      return "项目根目录中已存在同名文件，请先重命名本地文件。";
     case "file.content_unsupported":
       return "当前只支持预览 UTF-8 文本文件。";
     case "project_path.unsupported":
@@ -310,6 +313,18 @@ export const browserApi = {
       body: JSON.stringify(input),
       method: "PATCH",
     });
+  },
+
+  uploadProjectFile(projectId: string, file: File) {
+    const body = new FormData();
+    body.set("file", file);
+    return requestJson<ProjectFileUploadResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        body,
+        method: "POST",
+      },
+    );
   },
 };
 

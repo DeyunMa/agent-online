@@ -1,12 +1,12 @@
 # Agent Online 领域术语
 
-> 状态：D2、D3 和 Goose 私有 spike 已完成既定验收；2026-07-30 已补强应用层读取边界、统一沙箱回收、前端活动状态、E2B 工作区所有权和脱敏 Sentry Error Monitoring。Goose 浏览器选择仍未开放。
+> 状态：D2、D3 和 Goose 真实链路已完成既定验收；2026-07-30 已补强应用层读取边界、统一沙箱回收、前端活动状态、E2B 工作区所有权和脱敏 Sentry Error Monitoring，并批准在私有 Preview UI 中按 Run 选择 Pi/Goose。
 
 ## 产品定义
 
 Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Project、消息、文件、终端、preview 和当前 Git changes；Agent、shell、依赖安装和用户代码实际运行在远程 Linux 沙箱中。
 
-第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认且已验收的 AgentRuntime；Goose 按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 完成本地与私有 Preview spike，但在浏览器选择和剩余安全复核通过前不能当作公开产品能力。
+第一版是单用户项目模型：每个登录用户直接拥有 Project，不建立团队、组织或 Tenant 层。Pi 是默认 AgentRuntime；Pi 和 Goose 均按 [ADR-0004](./docs/adr/0004-goose-agent-runtime-spike.md) 完成真实链路验收，并由服务端能力接口决定是否出现在已登录用户的单次 Run 选择中。
 
 ## 核心术语
 
@@ -22,7 +22,7 @@ Agent Online 是浏览器可访问的 Coding Agent 产品。浏览器展示 Proj
 | `PreviewSession` | 一个 Project 当前临时 Preview 进程的 D1 所有权记录。 | 只保存固定端口、私有进程引用和 expiry；停止即删除，不保存页面、日志、截图或访问历史。 |
 | `ProjectChanges` | 当前 Project 沙箱中 Git working tree/index 的受控只读视图。 | 不持久化，不是 Run diff、版本历史或审计记录；不能归因到某一次 AgentRun。 |
 | `SandboxRuntime` | Linux 沙箱适配器的能力集合；调用方按生命周期、进程、文件、终端、Preview 和 Changes 等窄接口依赖。 | 不认识 Pi、消息、模型或 D1 业务。fake 文件只在单个 Runtime 实例内存在，也不提供真实 Terminal/Preview/Changes。 |
-| `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi 已验收，Goose 处于门控 spike。 |
+| `AgentRuntime` | 把某个 Agent 的输入、进程协议和原始输出映射为统一 Agent 事件的适配器端口。 | 通过受控进程接口运行；Pi/Goose 已验收，实际可选集合由部署门控。 |
 | `ModelGateway` | Worker 内的受控模型代理。 | 持有平台 Gemini Key、验证 Run capability、转发模型请求并累加实际 usage，不管理沙箱文件。 |
 | `UsageSummary` | 现存 `AgentRun` 与已删除 Project 的最小 Run usage 归档，以及由这些字段计算出的当前用户汇总。 | 真实 Runtime 写 token、模型请求数和沙箱时长；`GET /api/usage` 做 all-time 聚合，它不是账单流水或套餐。 |
 | `DiagnosticReporter` | application 与外层 adapter 之间的窄诊断端口。 | 结构化 console 和 Sentry 共享受控 schema；Reporter 失败不能改变产品结果，也不能接收用户内容、Provider 引用或原始异常正文。 |
@@ -84,6 +84,9 @@ erDiagram
     模板同时探测 Node/npm/pnpm、Python/pip、Git/Bash、rg/jq、C 编译器及 Pi/Goose。
     模板构建和真实 adapter E2E 必须验证这些前提，不能依赖全局 `safe.directory`
     绕过所有权错误。
+23. Project 文件上传只允许一个最大 4 MiB 的文件写入现有沙箱 `/workspace` 根目录；
+    文件名必须是安全单段路径，同名拒绝覆盖，活动 Run/Terminal 或无存活 Lease 时拒绝。
+    上传不创建沙箱、不写 D1/R2、不自动改变 Prompt。
 
 ## 有意不建模的内容
 
@@ -93,4 +96,4 @@ erDiagram
 - `UsageEvent`、`UsageReservation`、`ModelConnection`、`CredentialLease`、BYOK 密文和复杂配额账本。
 - 团队、组织、租户、成员角色和邀请。
 - 价格、订阅、信用余额、付款、订单和发票。
-- 未通过验收的 AgentRuntime UI 选择项。Goose 依 ADR-0004 实施并保持门控；Claude Code 或 Codex CLI 仍只有保留 ID，新增前必须有独立 ADR、适配器、能力声明、凭据流和端到端验收。
+- 未通过验收的 AgentRuntime UI 选择项。Pi/Goose 依 ADR-0004 实施并保持服务端门控；Claude Code 或 Codex CLI 仍只有保留 ID，新增前必须有独立 ADR、适配器、能力声明、凭据流和端到端验收。

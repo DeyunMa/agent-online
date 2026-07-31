@@ -83,6 +83,26 @@ describe("E2BSandboxRuntime", () => {
     expect(sandbox.timeoutValues).toEqual([1_000]);
   });
 
+  it("reconnects before writing binary files to an existing sandbox", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const client = new FakeE2BClient(sandbox);
+    const runtime = createRuntime(client);
+    const handle = {
+      id: "sandbox-existing",
+      kind: "e2b" as const,
+      sandboxLeaseId: "lease-1",
+    };
+
+    await runtime.writeFile(handle, "/workspace/asset.bin", new Uint8Array([0, 1, 255]));
+
+    expect(client.connected).toEqual(["sandbox-existing"]);
+    expect(sandbox.fileWrites).toHaveLength(1);
+    expect(sandbox.fileWrites[0]?.path).toBe("/workspace/asset.bin");
+    expect(new Uint8Array(sandbox.fileWrites[0]?.content as ArrayBuffer)).toEqual(
+      new Uint8Array([0, 1, 255]),
+    );
+  });
+
   it("terminates a persisted process reference without stopping the sandbox", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
     const runtime = createRuntime(new FakeE2BClient(sandbox));
@@ -196,7 +216,8 @@ describe("E2BSandboxRuntime", () => {
           path: "/tmp/agent-online-vite-preview.config.mjs",
         },
       ]);
-      expect(sandbox.fileWrites[0]?.content).not.toContain("watch: null");
+      expect(sandbox.fileWrites[0]?.content).toEqual(expect.any(String));
+      expect(sandbox.fileWrites[0]?.content as string).not.toContain("watch: null");
       expect(response.status).toBe(200);
       const proxyCall = fetchMock.mock.calls.at(-1);
       expect(proxyCall?.[0]).toBe(
@@ -671,7 +692,7 @@ class FakeE2BSandbox {
     size: { cols: number; rows: number };
   }> = [];
   readonly timeoutValues: number[] = [];
-  readonly fileWrites: Array<{ content: string; path: string }> = [];
+  readonly fileWrites: Array<{ content: ArrayBuffer | string; path: string }> = [];
   fileEntries: EntryInfo[] = [fileEntry("example.txt")];
   readonly fileContents = new Map<string, Uint8Array>([
     ["/workspace/example.txt", new TextEncoder().encode("example")],
@@ -680,7 +701,7 @@ class FakeE2BSandbox {
     list: async (_path: string) => this.fileEntries,
     read: async (path: string, _options: { format: "bytes" }) =>
       this.fileContents.get(path) ?? new TextEncoder().encode("example"),
-    write: async (path: string, content: string) => {
+    write: async (path: string, content: ArrayBuffer | string) => {
       if (this.fileWriteErrorsRemaining > 0) {
         this.fileWriteErrorsRemaining -= 1;
         throw new Error("Transient file write failure");

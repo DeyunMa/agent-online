@@ -17,6 +17,7 @@ export type PlatformCapabilitiesResponse = {
   agentRuntimeIds: AgentRuntimeId[];
   changesEnabled: boolean;
   defaultAgentRuntimeId: AgentRuntimeId;
+  fileUploadEnabled: boolean;
   runCreationEnabled: boolean;
   previewEnabled: boolean;
   terminalEnabled: boolean;
@@ -150,6 +151,12 @@ export type ProjectDirectoryResponse = {
 export type ProjectFileResponse = {
   content: string;
   modifiedAt: string | null;
+  name: string;
+  path: string;
+  size: number;
+};
+
+export type ProjectFileUploadResponse = {
   name: string;
   path: string;
   size: number;

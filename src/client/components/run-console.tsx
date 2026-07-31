@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  ChevronDown,
   CircleDashed,
   Folder,
   GitBranch,
@@ -11,12 +12,14 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, type RefObject, useState } from "react";
+import { type FormEvent, type ReactNode, type RefObject, useRef, useState } from "react";
 
 import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
+import type { AgentRuntimeId } from "../../shared/protocol";
 import type { BrowserApiError } from "../api";
 import {
+  agentRuntimeLabel,
   agentRunFailureLabel,
   agentRunStatusLabel,
   agentRunStatusTone,
@@ -267,20 +270,45 @@ export function RunHistory({
 }
 
 export function AgentComposer({
+  agentRuntimeIds,
+  changesEnabled,
   disabled,
   error,
+  fileUploadDisabled,
   isSubmitting,
+  isUploadingFile,
+  onAgentRuntimeChange,
+  onChangesOpen,
+  onFilesOpen,
   onSubmit,
+  onTerminalOpen,
+  onUploadFile,
+  selectedAgentRuntimeId,
+  terminalEnabled,
   textareaRef,
+  uploadError,
 }: {
+  agentRuntimeIds: readonly AgentRuntimeId[];
+  changesEnabled: boolean;
   disabled: boolean;
   error: Error | null;
+  fileUploadDisabled: boolean;
   isSubmitting: boolean;
-  onSubmit: (content: string) => Promise<unknown>;
+  isUploadingFile: boolean;
+  onAgentRuntimeChange: (agentRuntimeId: AgentRuntimeId) => void;
+  onChangesOpen: () => void;
+  onFilesOpen: () => void;
+  onSubmit: (content: string, agentRuntimeId: AgentRuntimeId) => Promise<unknown>;
+  onTerminalOpen: () => void;
+  onUploadFile: (file: File) => Promise<unknown>;
+  selectedAgentRuntimeId: AgentRuntimeId | null;
+  terminalEnabled: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  uploadError: Error | null;
 }) {
   const [content, setContent] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -290,14 +318,18 @@ export function AgentComposer({
       setValidationError("Enter a task for the agent.");
       return;
     }
+    if (!selectedAgentRuntimeId) {
+      setValidationError("Select an available Agent.");
+      return;
+    }
 
     setValidationError(null);
-    void submitRun(trimmed);
+    void submitRun(trimmed, selectedAgentRuntimeId);
   }
 
-  async function submitRun(contentToSubmit: string) {
+  async function submitRun(contentToSubmit: string, agentRuntimeId: AgentRuntimeId) {
     try {
-      await onSubmit(contentToSubmit);
+      await onSubmit(contentToSubmit, agentRuntimeId);
       setContent("");
     } catch {
       // React Query exposes the request failure below the editor.
@@ -320,17 +352,82 @@ export function AgentComposer({
       />
       {validationError ? <p className="field-error">{validationError}</p> : null}
       {error ? <ErrorState compact error={error} /> : null}
+      {uploadError ? <ErrorState compact error={uploadError} /> : null}
       <div className="agent-composer-toolbar">
         <div className="agent-composer-tools">
-          <DisabledTool icon={<Paperclip size={17} />} label="Attachments unavailable" />
-          <DisabledTool icon={<Folder size={17} />} label="Files unavailable" />
-          <DisabledTool icon={<Terminal size={17} />} label="Terminal unavailable" />
-          <DisabledTool icon={<GitBranch size={17} />} label="Changes unavailable" />
+          <input
+            aria-label="Choose file to upload"
+            hidden
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) {
+                void onUploadFile(file).catch(() => undefined);
+              }
+            }}
+            ref={fileInputRef}
+            type="file"
+          />
+          <ComposerTool
+            disabled={fileUploadDisabled || isUploadingFile}
+            icon={
+              isUploadingFile ? (
+                <LoaderCircle aria-hidden="true" className="spin" size={17} />
+              ) : (
+                <Paperclip aria-hidden="true" size={17} />
+              )
+            }
+            label="Upload file"
+            onClick={() => fileInputRef.current?.click()}
+            title={
+              fileUploadDisabled
+                ? "Upload requires an idle Project sandbox"
+                : "Upload file to workspace"
+            }
+          />
+          <ComposerTool
+            icon={<Folder aria-hidden="true" size={17} />}
+            label="Open files"
+            onClick={onFilesOpen}
+          />
+          <ComposerTool
+            disabled={!terminalEnabled}
+            icon={<Terminal aria-hidden="true" size={17} />}
+            label="Open terminal"
+            onClick={onTerminalOpen}
+            title={terminalEnabled ? "Open terminal" : "Terminal unavailable"}
+          />
+          <ComposerTool
+            disabled={!changesEnabled}
+            icon={<GitBranch aria-hidden="true" size={17} />}
+            label="Open changes"
+            onClick={onChangesOpen}
+            title={changesEnabled ? "Open changes" : "Changes unavailable"}
+          />
         </div>
         <div className="agent-composer-actions">
-          <button className="agent-runtime-select" disabled type="button">
-            Pi
-          </button>
+          <div className="agent-runtime-control">
+            <select
+              aria-label="Agent runtime"
+              className="agent-runtime-select"
+              disabled={disabled || agentRuntimeIds.length < 2}
+              onChange={(event) => {
+                const runtimeId = agentRuntimeIds.find((id) => id === event.target.value);
+                if (runtimeId) {
+                  onAgentRuntimeChange(runtimeId);
+                }
+              }}
+              value={selectedAgentRuntimeId ?? ""}
+            >
+              {selectedAgentRuntimeId === null ? <option value="">Unavailable</option> : null}
+              {agentRuntimeIds.map((runtimeId) => (
+                <option key={runtimeId} value={runtimeId}>
+                  {agentRuntimeLabel(runtimeId)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown aria-hidden="true" size={14} />
+          </div>
           <button
             aria-label="Start run"
             className="composer-submit"
@@ -350,9 +447,28 @@ export function AgentComposer({
   );
 }
 
-function DisabledTool({ icon, label }: { icon: ReactNode; label: string }) {
+function ComposerTool({
+  disabled = false,
+  icon,
+  label,
+  onClick,
+  title = label,
+}: {
+  disabled?: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  title?: string;
+}) {
   return (
-    <button aria-label={label} className="composer-tool" disabled title={label} type="button">
+    <button
+      aria-label={label}
+      className="composer-tool"
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      type="button"
+    >
       {icon}
     </button>
   );

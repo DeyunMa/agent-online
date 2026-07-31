@@ -110,8 +110,8 @@ Message、Run 和 Lease 随 D1 外键删除，归档 usage 保留，`/workspace`
 
 | 限制对象 | 当前值 | 说明 |
 | --- | --- | --- |
-| 默认公开 Runtime | `pi` | `/api/capabilities` 和 UI 只公开 policy 允许的 Runtime。 |
-| Goose | `disabled`、`spike`、`public` 三态 | 当前 Preview 为 `spike`：服务端可受控执行，但浏览器不公开。 |
+| 默认 Runtime | `pi` | 刷新或没有显式选择时使用 Pi；每个 Run 保存实际 Runtime。 |
+| Goose | `disabled`、`spike`、`public` 三态 | 私有 Preview 配置为 `public`：安全 capabilities 公布该 ID，只有已登录 allowlist 用户可创建 Run。 |
 | 保留 Runtime ID | `claude-code`、`codex-cli` | 仅类型预留，没有 adapter 或可执行能力。 |
 | 默认模型 | `gemini-3.6-flash` | Worker 平台模型；没有 BYOK。 |
 | 单次模型最大输出 | 当前签发 4,096 tokens | capability/gateway 技术上限 65,536。 |
@@ -139,7 +139,8 @@ ModelGateway 的 OpenAI 兼容请求限制：
 
 ## 6. Files 限制
 
-Files 限制的是浏览器对当前 `/workspace` 的只读观察面，不限制 Agent/Terminal 在沙箱内正常操作文件。
+Files 限制的是浏览器对当前 `/workspace` 的受控观察面和单文件上传入口，不限制
+Agent/Terminal 在沙箱内正常操作文件。
 
 | 限制对象 | 当前值 | 达到限制后的行为 |
 | --- | --- | --- |
@@ -150,12 +151,17 @@ Files 限制的是浏览器对当前 `/workspace` 的只读观察面，不限制
 | 符号链接 | 可以作为目录条目显示，但不能遍历或读取 | `project_path.unsupported` / `file.content_unsupported`。 |
 | 单目录返回 | 最多 500 个安全条目 | `truncated=true`。 |
 | 单文件读取 | 最多 256 KiB | `413 file.too_large`。 |
+| 单文件上传 | 最多 4 MiB；每请求一个文件 | 只写现有沙箱 `/workspace` 根目录。 |
+| 上传覆盖 | 不允许 | 同名路径返回 `409 file.already_exists`。 |
 | 文件编码 | 必须是严格 UTF-8 | `415 file.content_unsupported`。 |
 | 二进制启发式 | NUL 直接拒绝；其他控制字符超过 `max(4, 1%)` 时拒绝 | `415 file.content_unsupported`。 |
 | Lease | 必须已有 Provider ref，状态为 `ready` 或 `idle`，filesystem scope 为 `lease` | `409 sandbox.not_active`。 |
 | 并发 | 活动 Run 或 Terminal 时拒绝 | `409 project.busy`。 |
 
-Files 不支持写入、上传、下载二进制、删除、rename、搜索、压缩、版本或快照。`fake` Runtime 的文件只属于单个内存实例，不能跨请求冒充 Project 文件，因此 Files capability 明确不可用。
+Files 不支持任意写入、覆盖、子目录/多文件上传、下载二进制、删除、rename、搜索、
+压缩、版本或快照。上传的二进制文件可以留在沙箱供 Agent/Terminal 使用，但现有内容
+预览仍只接受受限 UTF-8 文本。`fake` Runtime 的文件只属于单个内存实例，不能跨请求
+冒充 Project 文件，因此 Files capability 和上传均明确不可用。
 
 逐层 symlink 检查与最终 read 之间存在 Provider 文件系统 TOCTOU；当前设计是个人项目的低风险、尽力防护，不是强隔离文件服务器。
 
@@ -287,9 +293,9 @@ Provider URL、日志、截图或部署。它用于手动刷新查看前端 Vite
 - Team、Tenant、Organization、Membership、Project 分享。
 - R2 快照、文件版本、回滚、分支沙箱或沙箱历史。
 - 持久 Agent Session、raw transcript、工具审计日志。
-- BYOK、第三方 OAuth、模型市场或公开 Goose 选择。
+- BYOK、第三方 OAuth、模型市场或 Pi/Goose 之外的 Runtime 选择。
 - 套餐、支付、订阅、余额、发票、税、退款或账单对账。
-- 文件写入 API、任意命令 API、任意端口代理。
+- 除 ADR-0011 单文件根目录上传外的文件写入 API、任意命令 API、任意端口代理。
 - SLA、跨区容灾、数据导出/删除工作流和合规承诺。
 
 代码迭代也不承诺兼容旧的本地数据库、R2 骨架或测试数据；可以清洗本地开发数据并重建 schema。该规则不允许未经确认删除远程 Cloudflare/E2B 资源或未知数据。

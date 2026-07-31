@@ -1,6 +1,6 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、Sentry Error Monitoring、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置。Goose 仍保持私有 `spike`。
+> 状态：Preview Worker、D1、Workflow、Secret、Sentry Error Monitoring、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置。Goose 已切换为受 allowlist 保护的 `public` capability。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发

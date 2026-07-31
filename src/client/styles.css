@@ -21,8 +21,8 @@
   --danger-bg: #fff1f1;
   --focus: #2f6feb;
   --header-height: 60px;
-  --sidebar-width: 280px;
-  --inspector-width: 320px;
+  --sidebar-width: 240px;
+  --inspector-width: 480px;
 }
 
 * {
@@ -173,9 +173,7 @@ textarea:disabled {
   z-index: 20;
   display: grid;
   grid-area: header;
-  grid-template-columns:
-    var(--sidebar-width) minmax(0, 1fr)
-    var(--inspector-width);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-width: 0;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 96%, transparent);
@@ -216,7 +214,7 @@ textarea:disabled {
 }
 
 .app-header-actions {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -544,7 +542,10 @@ textarea:disabled {
 }
 
 .project-inspector-toggle,
-.project-inspector-close,
+.project-inspector-close {
+  display: inline-grid;
+}
+
 .project-inspector-backdrop {
   display: none;
 }
@@ -796,8 +797,7 @@ textarea:disabled {
 }
 
 .project-console {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 8px var(--inspector-width);
+  position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -806,8 +806,11 @@ textarea:disabled {
 }
 
 .project-panel-resizer {
-  position: relative;
-  z-index: 4;
+  position: absolute;
+  z-index: 31;
+  top: 0;
+  right: var(--inspector-width);
+  bottom: 0;
   display: grid;
   width: 8px;
   min-width: 8px;
@@ -817,10 +820,14 @@ textarea:disabled {
   padding: 0;
   border: 0;
   outline: none;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-faint);
   cursor: col-resize;
   touch-action: none;
+}
+
+.project-panel-resizer[hidden] {
+  display: none;
 }
 
 .project-panel-resizer::before {
@@ -875,6 +882,7 @@ body.project-panels-resizing iframe {
 
 .project-console-main {
   display: flex;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -1294,10 +1302,44 @@ body.project-panels-resizing iframe {
   color: var(--text-faint);
 }
 
+.composer-tool:hover:not(:disabled) {
+  border-color: #a7a7a1;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.composer-tool:disabled {
+  color: #aaa9a4;
+}
+
 .agent-runtime-select {
-  min-width: 76px;
-  padding: 0 12px;
+  min-width: 88px;
+  appearance: none;
+  padding: 0 28px 0 12px;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.agent-runtime-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.agent-runtime-control > svg {
+  position: absolute;
+  right: 9px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.agent-runtime-select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.agent-runtime-select:disabled {
+  cursor: default;
 }
 
 .composer-submit {
@@ -1317,10 +1359,32 @@ body.project-panels-resizing iframe {
 }
 
 .project-inspector {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(var(--inspector-width), calc(100% - 160px));
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  visibility: hidden;
+  border-left: 1px solid var(--border);
   background: var(--surface-subtle);
+  box-shadow: -16px 0 40px rgb(0 0 0 / 14%);
+  pointer-events: none;
+  transform: translateX(100%);
+  transition:
+    transform 160ms ease,
+    visibility 0s linear;
+  transition-delay: 0s, 160ms;
+}
+
+.project-inspector-open {
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
+  transition-delay: 0s, 0s;
 }
 
 .project-inspector-header {
@@ -2655,8 +2719,8 @@ body.project-panels-resizing iframe {
 
 @media (max-width: 1120px) {
   :root {
-    --sidebar-width: 240px;
-    --inspector-width: 280px;
+    --sidebar-width: 220px;
+    --inspector-width: 420px;
   }
 
   .run-history-entry {
@@ -2714,6 +2778,7 @@ body.project-panels-resizing iframe {
   }
 
   .app-header-actions {
+    display: flex;
     gap: 2px;
     padding: 0 7px;
     border-left: 0;
@@ -2761,10 +2826,6 @@ body.project-panels-resizing iframe {
     gap: 4px;
   }
 
-  .project-inspector-toggle {
-    display: inline-grid;
-  }
-
   .project-breadcrumb,
   .app-header-breadcrumb {
     gap: 6px;
@@ -2804,6 +2865,7 @@ body.project-panels-resizing iframe {
   }
 
   .project-console-main {
+    height: auto;
     min-height: calc(100dvh - var(--header-height));
     overflow: visible;
   }
@@ -2885,10 +2947,6 @@ body.project-panels-resizing iframe {
     margin: 0 10px 10px;
   }
 
-  .agent-composer-tools .composer-tool:nth-child(n + 3) {
-    display: none;
-  }
-
   .project-inspector {
     position: fixed;
     z-index: 50;
@@ -2897,24 +2955,8 @@ body.project-panels-resizing iframe {
     bottom: 0;
     width: min(100%, 390px);
     overflow: auto;
-    visibility: hidden;
     border-top: 1px solid var(--border);
-    border-left: 1px solid var(--border);
-    background: var(--surface-subtle);
     box-shadow: -16px 0 40px rgb(0 0 0 / 16%);
-    pointer-events: none;
-    transform: translateX(100%);
-    transition:
-      transform 160ms ease,
-      visibility 0s linear;
-    transition-delay: 0s, 160ms;
-  }
-
-  .project-inspector-mobile-open {
-    visibility: visible;
-    pointer-events: auto;
-    transform: translateX(0);
-    transition-delay: 0s, 0s;
   }
 
   .project-inspector-backdrop {
@@ -3029,5 +3071,9 @@ body.project-panels-resizing iframe {
 @media (prefers-reduced-motion: reduce) {
   .spin {
     animation-duration: 2s;
+  }
+
+  .project-inspector {
+    transition: none;
   }
 }

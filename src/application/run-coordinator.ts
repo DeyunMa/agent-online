@@ -212,7 +212,10 @@ class ManagedRun implements CoordinatedAgentRun {
     const finishedAt = this.timestamp();
 
     if (status === "succeeded") {
-      const visibleReply = finalText?.trim();
+      const visibleReply = redactExactSecret(
+        finalText?.trim(),
+        this.input.modelAccess?.bearerToken,
+      );
       if (!visibleReply && this.currentRun.sandboxRuntimeId !== "fake") {
         return this.fail("run.no_visible_reply", "AGENT_PROTOCOL_INVALID", "persist_completion");
       }
@@ -529,6 +532,14 @@ class ManagedRun implements CoordinatedAgentRun {
       ...(stage ? { stage } : {}),
     });
   }
+}
+
+function redactExactSecret(value: string | undefined, secret: string | undefined) {
+  if (!value || !secret) {
+    return value;
+  }
+
+  return value.split(secret).join("[REDACTED]");
 }
 
 function assertStartInput(input: StartAgentRunInput) {

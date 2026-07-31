@@ -1,6 +1,6 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose 私有 spike、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-28 已把 E2B 会话、Changes、Preview 和 SDK 类型拆成内部能力模块。Goose 公开产品路径仍受门控。
+> 状态：E2B、Pi/Goose、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -17,7 +17,10 @@
 | `SandboxChangesRuntime` | 用固定 Git 命令读取当前 working tree/index 的有界 status 与 staged/unstaged diff。 | 任意 Git 命令/revision/pathspec、Run 归因、历史保存或 repository 修改。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
-Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和 Preview Workflow 真实 E2E，但在 ADR-0004 的剩余安全与浏览器验收通过前保持服务端门控。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是 Linux 沙箱，也不执行真实 Agent 二进制。
+Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和
+Preview Workflow 真实 E2E，并在受 allowlist 保护的 Preview 中由安全 capability
+公布。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是
+Linux 沙箱，也不执行真实 Agent 二进制。
 
 当前 E2B 实现仍只公开一个 `E2BSandboxRuntime` adapter；内部按变更原因拆为
 `e2b-sessions.ts`、`e2b-changes.ts`、`e2b-preview.ts`、`e2b-types.ts` 和 shell helper。
@@ -181,7 +184,7 @@ stateDiagram-v2
 
 当前仍不实现每用户活动沙箱上限；Project Preview 已实现，但只支持 ADR-0006 的固定 `vite-v1` preset。
 
-## 4. 只读 Files 边界
+## 4. 受控 Files 边界
 
 `ProjectFilesService` 只接受 Project ID 和相对 `/workspace` 的路径。它不会调用
 `ensureLease()`，因此浏览文件不会创建或替换沙箱。只有 `filesystemScope=lease`
@@ -202,6 +205,12 @@ application outcome `sandbox_unavailable`，HTTP adapter 映射为 `sandbox.not_
 读取也存在低概率 TOCTOU。个人项目阶段把 Files 定义为无活动 Run 下的尽力一致
 只读视图，不把它当作严格并发锁。Terminal 和 Preview 都使用自己的 D1 临时所有权
 与生命周期，不把 Files 检查当作安全锁。
+
+[ADR-0011](../adr/0011-controlled-project-file-upload.md) 在同一 application/runtime
+边界上额外开放一个窄上传命令：每次只向已有空闲 E2B 沙箱的 `/workspace` 根目录写入
+一个最大 4 MiB 的文件，不覆盖、不创建沙箱、不写 D1/R2，也不自动创建 Message 或
+AgentRun。它与读取能力共享 Project owner、Lease 和 Run/Terminal 互斥检查，但不把
+尽力一致的同名检查宣传成文件系统事务。
 
 ## 5. 受控 Terminal 边界
 

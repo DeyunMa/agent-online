@@ -111,6 +111,8 @@ export function projectFilesError(c: AppContext, error: ProjectFilesFailure["kin
   switch (error) {
     case "file_too_large":
       return renderApiError(c, "file.too_large");
+    case "path_conflict":
+      return renderApiError(c, "file.already_exists");
     case "path_not_found":
       return renderApiError(c, "project_path.not_found");
     case "project_busy":

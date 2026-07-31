@@ -78,7 +78,7 @@ export class FakeSandboxRuntime implements SandboxRuntime {
   readonly kind = "fake" as const;
 
   private readonly handles = new Set<string>();
-  private readonly files = new Map<string, string>();
+  private readonly files = new Map<string, string | Uint8Array>();
   private readonly processes = new Map<string, FakeSandboxProcessSession>();
 
   constructor(private readonly options: FakeSandboxRuntimeOptions = {}) {}
@@ -136,7 +136,7 @@ export class FakeSandboxRuntime implements SandboxRuntime {
         kind,
         modifiedAt: null,
         name,
-        size: kind === "file" ? new TextEncoder().encode(content).byteLength : 0,
+        size: kind === "file" ? toBytes(content).byteLength : 0,
       });
     }
 
@@ -153,7 +153,7 @@ export class FakeSandboxRuntime implements SandboxRuntime {
     if (content === undefined) {
       throw new SandboxPathNotFoundError(path);
     }
-    return new TextEncoder().encode(content);
+    return toBytes(content);
   }
 
   async terminateProcess(
@@ -179,9 +179,9 @@ export class FakeSandboxRuntime implements SandboxRuntime {
     }
   }
 
-  async writeFile(handle: RuntimeHandle, path: string, content: string) {
+  async writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array) {
     this.assertHandle(handle);
-    this.files.set(`${handle.id}:${path}`, content);
+    this.files.set(`${handle.id}:${path}`, typeof content === "string" ? content : content.slice());
   }
 
   private assertHandle(handle: RuntimeHandle) {
@@ -189,6 +189,10 @@ export class FakeSandboxRuntime implements SandboxRuntime {
       throw new Error(`Unknown fake runtime handle: ${handle.id}`);
     }
   }
+}
+
+function toBytes(content: string | Uint8Array) {
+  return typeof content === "string" ? new TextEncoder().encode(content) : content.slice();
 }
 
 function normalizeAbsolutePath(path: string) {

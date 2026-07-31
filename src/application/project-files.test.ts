@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentRunRecord, SandboxLeaseRecord } from "./ports";
-import { ProjectFilesService } from "./project-files";
+import { maxProjectFileUploadBytes, ProjectFilesService } from "./project-files";
 import type { RuntimeHandle, SandboxFileEntry } from "../runtime/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 
@@ -88,6 +88,82 @@ describe("ProjectFilesService", () => {
     });
     await expect(largeFixture.service.read("project-1", "large.txt")).resolves.toEqual({
       kind: "file_too_large",
+    });
+  });
+
+  it("uploads one binary file to the workspace root without overwriting existing paths", async () => {
+    const fixture = await createFixture();
+    const bytes = new Uint8Array([0, 1, 2, 255]);
+
+    await expect(
+      fixture.service.upload("project-1", {
+        bytes,
+        name: "asset.bin",
+      }),
+    ).resolves.toEqual({
+      file: {
+        name: "asset.bin",
+        path: "asset.bin",
+        size: bytes.byteLength,
+      },
+      kind: "ok",
+    });
+    await expect(fixture.runtime.readFile(fixture.handle, "/workspace/asset.bin")).resolves.toEqual(
+      bytes,
+    );
+    await expect(
+      fixture.service.upload("project-1", {
+        bytes,
+        name: "asset.bin",
+      }),
+    ).resolves.toEqual({
+      kind: "path_conflict",
+    });
+  });
+
+  it("rejects unsafe, nested, and oversized uploads before touching the sandbox", async () => {
+    const fixture = await createFixture();
+
+    await expect(
+      fixture.service.upload("project-1", {
+        bytes: new Uint8Array(),
+        name: "../secret.txt",
+      }),
+    ).resolves.toEqual({ kind: "unsupported_path" });
+    await expect(
+      fixture.service.upload("project-1", {
+        bytes: new Uint8Array(),
+        name: "nested/file.txt",
+      }),
+    ).resolves.toEqual({ kind: "unsupported_path" });
+    await expect(
+      fixture.service.upload("project-1", {
+        bytes: new Uint8Array(maxProjectFileUploadBytes + 1),
+        name: "large.bin",
+      }),
+    ).resolves.toEqual({ kind: "file_too_large" });
+    await expect(fixture.service.list("project-1", "")).resolves.toMatchObject({
+      directory: { entries: [] },
+      kind: "ok",
+    });
+  });
+
+  it("does not upload while a Run or Terminal is active or no live Lease exists", async () => {
+    const busy = await createFixture(undefined, { activeRun: true });
+    const terminalBusy = await createFixture(undefined, {
+      terminalActive: true,
+    });
+    const stopped = await createFixture(undefined, { leaseStatus: "stopped" });
+    const input = { bytes: new Uint8Array([1]), name: "asset.bin" };
+
+    await expect(busy.service.upload("project-1", input)).resolves.toEqual({
+      kind: "project_busy",
+    });
+    await expect(terminalBusy.service.upload("project-1", input)).resolves.toEqual({
+      kind: "project_busy",
+    });
+    await expect(stopped.service.upload("project-1", input)).resolves.toEqual({
+      kind: "sandbox_unavailable",
     });
   });
 

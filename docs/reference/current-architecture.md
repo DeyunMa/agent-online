@@ -4,7 +4,7 @@
 >
 > 校准日期：2026-07-30
 >
-> 适用范围：`main` 分支当前代码、Cloudflare Preview 部署和 E2B 组合模板
+> 适用范围：仓库当前代码、下一次 Cloudflare Preview 配置和 E2B 组合模板；远程已部署事实以资源台账为准
 
 本文描述 Agent Online **现在实际运行的架构**。ADR 负责记录决策原因，阶段文档负责保存验收证据；本文只回答当前系统由什么组成、各层负责什么以及数据如何流动。
 
@@ -21,7 +21,7 @@ Agent Online 是一个个人开发、开源导向的 Hosted Coding Agent SaaS �
 - Project 可重命名或由所有者硬删除。删除拒绝活动 Run、Terminal/Preview，先停止空闲
   Provider sandbox，再级联删除 D1 子记录；没有回收站。
 - Project 文件只存在于当前沙箱文件系统；D1 不保存文件内容，R2 不参与当前版本。
-- Pi 是当前公开 Runtime；Goose 已完成受控 spike，但未向普通浏览器能力和 UI 公开。
+- Pi 是默认 Runtime；私有 Preview 的安全能力接口公布 Pi/Goose，已登录 allowlist 用户可按 AgentRun 选择。
 - 计量只做真实用量观察，不包含套餐、账单、支付或配额扣减。
 
 ## 2. 部署拓扑
@@ -41,7 +41,7 @@ flowchart LR
 
   subgraph SB["E2B Project Sandbox"]
     FS[("/workspace")]
-    AR["AgentRuntime<br/>Pi; Goose gated"]
+    AR["AgentRuntime<br/>Pi; Goose capability-gated"]
     PTY["Controlled PTY"]
     PV["Fixed Vite Preview"]
     GIT["Read-only Git inspection"]
@@ -224,12 +224,15 @@ Provider reference、Key、capability、异常 message 或 stack。
 
 ### 5.7 浏览器布局
 
-- 桌面端左侧 Project 导航宽度固定；Project 主内容与右侧 Inspector 使用同一个
-  `--inspector-width` 合同保持页头和正文边界对齐。
-- 两栏之间的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
-  Inspector 宽度限制为 260 至 720 px，并尽量为主内容保留至少 420 px。
-- 用户宽度偏好只保存在当前浏览器 localStorage，不进入 D1，也不构成产品数据。
-- `760px` 以下隐藏桌面 separator，Inspector 继续使用带焦点恢复的移动端抽屉。
+- 桌面端左侧 Project 导航固定为 240 px，窄桌面为 220 px；Project 主内容始终占据
+  完整核心区。
+- Project Inspector 默认关闭，以右侧非模态覆盖 Drawer 展开，不改变核心区尺寸。
+  Drawer 的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
+  宽度通常为 360 至 720 px，受限视口可收敛到 280 px。
+- 用户 Drawer 宽度偏好只保存在当前浏览器 localStorage，不进入 D1，也不构成产品
+  数据。收起只使用 CSS 可见性和位移，不卸载当前 Inspector view。
+- `760px` 以下隐藏桌面 separator，Inspector 使用带遮罩、焦点约束和焦点恢复的移动端
+  Drawer。
 
 ## 6. 数据与信任边界
 
@@ -270,8 +273,9 @@ Provider reference、Key、capability、异常 message 或 stack。
 | 邮箱密码注册/登录 | 已实现；可配置 open/allowlist。 |
 | Project、Message、AgentRun | 已实现。 |
 | Pi + Gemini | 已公开并通过真实 E2E。 |
-| Goose | adapter、组合模板和远端 spike 已完成；浏览器仍不公开。 |
-| Files | E2B 下受控只读；fake 下明确 unavailable。 |
+| Goose | adapter、组合模板和远端真实链路已完成；私有 Preview UI 按服务端能力向已登录用户公开。 |
+| Files | E2B 下受控读取；fake 下明确 unavailable。 |
+| File upload | E2B 下向现有空闲沙箱根目录上传一个受控文件；不创建沙箱或持久副本。 |
 | Usage | 合并现存 Run 与删除归档的当前用户 all-time 聚合；无计费语义。 |
 | Terminal | E2B 下受控 PTY。 |
 | Preview | E2B v4 下平台固定 Vite、入口/依赖预检与同源内容网关。 |

@@ -8,9 +8,9 @@ import {
   useState,
 } from "react";
 
-const inspectorWidthStorageKey = "agent-online:project-inspector-width";
-const minimumInspectorWidth = 260;
-const narrowInspectorWidth = 220;
+const inspectorWidthStorageKey = "agent-online:project-inspector-drawer-width";
+const minimumInspectorWidth = 360;
+const narrowInspectorWidth = 280;
 const maximumInspectorWidth = 720;
 const minimumConsoleWidth = 420;
 const resizeHandleWidth = 8;
@@ -24,8 +24,10 @@ type InspectorLayout = {
 
 export function ProjectPanelResizer({
   containerRef,
+  open,
 }: {
   containerRef: RefObject<HTMLElement | null>;
+  open: boolean;
 }) {
   const preferredWidthRef = useRef<number | null>(null);
   const resizingRef = useRef(false);
@@ -130,6 +132,7 @@ export function ProjectPanelResizer({
       aria-valuemin={layout.min}
       aria-valuenow={layout.width}
       className="project-panel-resizer"
+      hidden={!open}
       onDoubleClick={() => {
         applyWidth(defaultInspectorWidth(), true);
       }}
@@ -175,7 +178,7 @@ export function clampInspectorWidth(
 }
 
 function defaultInspectorWidth() {
-  return window.matchMedia("(max-width: 1120px)").matches ? 280 : 320;
+  return window.matchMedia("(max-width: 1120px)").matches ? 420 : 480;
 }
 
 function readStoredInspectorWidth() {

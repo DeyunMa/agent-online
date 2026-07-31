@@ -1,6 +1,6 @@
 # 交付阶段、运行时选择与成本边界
 
-> 状态：D2、D3 与 D4 Goose 私有 spike 已完成既定验收；2026-07-30 完成 Sentry Error Monitoring、应用层/回收模块、前端活动状态、E2B 工作区所有权和低成本 Hosted E2E 加固。公开能力仍受门控。
+> 状态：D2、D3 与 D4 Goose 真实链路已完成既定验收；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 结论
@@ -36,7 +36,7 @@ flowchart LR
 | D4 | 第二个 Runtime 或 Provider | 一个独立适配器、能力矩阵、凭据流、取消和隔离 E2E。 | 同时接入多个 CLI。 | 不假定 Pi 特性；不支持的能力明确拒绝。 |
 | D5 | 公共部署候选 | 重新审阅注册滥用、限额、网络策略、成本上限和完整 E2E。 | 支付系统。 | 真实成本、异常路径和隔离演练通过。 |
 
-当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、部署邮箱 allowlist 和全局 Run 开关。D3 只读 Files、当前用户全量 Usage API/UI、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成授权边界、代码、测试、部署和远端真实浏览器验收。Preview 已验证固定 Vite、同源 GET/HEAD 网关、Agent 修改后刷新、Run/Terminal 并行、Stop 互斥、显式停止和 Workflow expiry；Changes 已验证固定 Git、主配置与额外 config scope 拒绝、隐藏路径标记、有界 staged/unstaged diff、no-store、显式响应映射和移动端检查器抽屉。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Cloudflare spike；Goose 因剩余安全和浏览器门槛仍不是公开产品能力。
+当前进度：D0/D1/D2 已完成。D2 已实现并远程验证 E2B、Pi RPC、ModelGateway、最终 assistant Message、真实 usage、私有进程取消、Run deadline、Workflow 重试恢复、原子空闲回收、部署邮箱 allowlist 和全局 Run 开关。D3 Files 读取、当前用户全量 Usage API/UI、受控 Terminal、受控 Project Preview 与只读 Changes 均已完成授权边界、代码、测试、部署和远端真实浏览器验收；Files 还增加了 ADR-0011 的单文件根目录上传，代码与本地浏览器回归已完成，真实 Hosted E2E 留待包含该版本的下一次部署。Preview 已验证固定 Vite、同源 GET/HEAD 网关、Agent 修改后刷新、Run/Terminal 并行、Stop 互斥、显式停止和 Workflow expiry；Changes 已验证固定 Git、主配置与额外 config scope 拒绝、隐藏路径标记、有界 staged/unstaged diff、no-store、显式响应映射和移动端检查器抽屉。D4 已完成 Goose adapter、服务端门控、组合模板，以及 D1/Workflow/usage/取消/deadline/TTL 的私有 Cloudflare spike；`public` capability 和浏览器选择已部署，真实 Hosted UI 切换仍按发布 E2E 验收。
 
 D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Changes”推进，五项均已完成远端验收。D3H 已加入 import boundary、源码/产物凭据扫描、Biome、真实 Workers/D1 migration 测试、Chromium 核心 smoke 和 GitHub Actions 统一门禁。2026-07-30 的非功能加固又加入严格脱敏的 Sentry Error Monitoring、Project owner-scoped 读取门面、统一沙箱回收器、前端双轴活动状态和 tab 键盘导航；没有新增产品领域、D1 表或第二个服务。
 
@@ -46,7 +46,7 @@ D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Ch
 - `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。当前组合模板以非 root 用户运行并由该用户拥有 `/workspace`，模板探针必须实际完成 Git init/status。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：默认且已验收的 AgentRuntime，也是当前公开执行路径。
-- Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛已通过，但 capability 输出脱敏和浏览器选择验收前仍不可出现在 UI 中。
+- Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛、capability 输出脱敏和本地浏览器选择均已通过，Preview 以 `public` 模式公布，发布后仍需执行 Hosted UI 切换 E2E。
 - Claude Code、Codex CLI：仍是后续候选，保留 ID 不表示已支持。
 
 ## 4. D2/D3 成本与滥用护栏

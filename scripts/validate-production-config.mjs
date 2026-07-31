@@ -35,8 +35,19 @@ if (vars.RUNS_ENABLED !== "true" && vars.RUNS_ENABLED !== "false") {
   errors.push("top-level RUNS_ENABLED must be true or false");
 }
 
-if (vars.GOOSE_RUNTIME_MODE === "public") {
-  errors.push("top-level GOOSE_RUNTIME_MODE=public is not approved by ADR-0004");
+if (
+  vars.GOOSE_RUNTIME_MODE !== undefined &&
+  !["disabled", "spike", "public"].includes(vars.GOOSE_RUNTIME_MODE)
+) {
+  errors.push("top-level GOOSE_RUNTIME_MODE must be disabled, spike, or public");
+}
+
+if (
+  vars.GOOSE_RUNTIME_MODE !== undefined &&
+  vars.GOOSE_RUNTIME_MODE !== "disabled" &&
+  !vars.E2B_TEMPLATE_ID?.startsWith("agent-online-pi-goose-runtime:")
+) {
+  errors.push("top-level deployment must use the combined Pi/Goose template when Goose is enabled");
 }
 
 if (!workflow?.name || workflow.name === "agent-online-preview-run") {

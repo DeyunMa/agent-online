@@ -6,10 +6,15 @@ import { modelGatewayEndpointPath } from "../model-gateway-service";
 import { renderApiError } from "./api-errors";
 
 export const maximumProductRequestBytes = 256 * 1_024;
+export const maximumProjectFileUploadRequestBytes = 4 * 1_024 * 1_024 + 64 * 1_024;
 
 const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
 const limitedBody = bodyLimit({
   maxSize: maximumProductRequestBytes,
+  onError: (c) => renderApiError(c as Context<AppEnv>, "request.too_large"),
+});
+const limitedFileUploadBody = bodyLimit({
+  maxSize: maximumProjectFileUploadRequestBytes,
   onError: (c) => renderApiError(c as Context<AppEnv>, "request.too_large"),
 });
 
@@ -28,8 +33,15 @@ export function productRequestGuard(): MiddlewareHandler<AppEnv> {
       return renderApiError(c, "request.forbidden");
     }
 
-    return limitedBody(c, next);
+    return isProjectFileUpload(c.req.raw) ? limitedFileUploadBody(c, next) : limitedBody(c, next);
   };
+}
+
+function isProjectFileUpload(request: Request) {
+  return (
+    request.method.toUpperCase() === "POST" &&
+    /^\/api\/projects\/[^/]+\/files$/u.test(new URL(request.url).pathname)
+  );
 }
 
 function isProductMutation(request: Request) {

@@ -14,6 +14,11 @@ test.afterEach(async ({ page }) => {
         .waitFor({ timeout: 30_000 });
     }
 
+    const openInspector = page.getByRole("button", { name: "Open project inspector" });
+    if (await openInspector.isVisible({ timeout: 1_000 })) {
+      await openInspector.click();
+    }
+
     const terminalTab = page.getByRole("tab", { name: "Terminal" });
     if (await terminalTab.isVisible({ timeout: 1_000 })) {
       await terminalTab.click();
@@ -54,11 +59,13 @@ test.afterEach(async ({ page }) => {
   }
 });
 
-test("runs the hosted Pi product path without exposing provider state", async ({ page }) => {
+test("runs the hosted Pi/Goose product path without exposing provider state", async ({ page }) => {
   const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const projectName = `release-smoke-${suffix}`;
   const fileName = `release-smoke-${suffix}.txt`;
+  const uploadedFileName = `uploaded-${suffix}.txt`;
   const marker = `agent-online-release-${suffix}`;
+  const uploadedMarker = `browser-upload-${suffix}`;
   const apiResponseAuditErrors: unknown[] = [];
 
   const finishPrivateStateAudit = installPrivateStateAudit(page, apiResponseAuditErrors);
@@ -76,6 +83,9 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   await page.getByRole("button", { name: "Create project" }).click();
 
   await expect(page.getByLabel("Agent task")).toBeVisible();
+  const agentRuntime = page.getByLabel("Agent runtime");
+  await expect(agentRuntime).toHaveValue("pi");
+  await expect(agentRuntime.locator("option")).toHaveText(["Pi", "Goose"]);
   await page
     .getByLabel("Agent task")
     .fill(
@@ -98,11 +108,22 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   await expect(modelRequests.locator("dd")).toHaveText(/^[1-9]\d*$/);
 
   const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
-  await page.getByRole("tab", { name: "Files" }).click();
+  await page.getByLabel("Choose file to upload").setInputFiles({
+    buffer: Buffer.from(uploadedMarker),
+    mimeType: "text/plain",
+    name: uploadedFileName,
+  });
+  await expect(
+    projectInspector.locator(".project-file-row").filter({ hasText: uploadedFileName }),
+  ).toBeVisible();
+  await projectInspector.locator(".project-file-row").filter({ hasText: uploadedFileName }).click();
+  await expect(projectInspector.locator(".project-file-content")).toHaveText(uploadedMarker);
+  await projectInspector.locator(".project-file-back").click();
   await projectInspector.locator(".project-file-row").filter({ hasText: fileName }).click();
   await expect(projectInspector.locator(".project-file-content")).toHaveText(marker);
 
   const assistantMessagesBeforeCancel = await page.locator(".timeline-message-assistant").count();
+  await agentRuntime.selectOption("goose");
   await page
     .getByLabel("Agent task")
     .fill("Run the shell command `sleep 120`, wait for it to finish, and only then reply.");
@@ -119,10 +140,12 @@ test("runs the hosted Pi product path without exposing provider state", async ({
   await expect(currentRunStatus.getByText("已取消", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
+  await expect(page.getByLabel("Agent runtime")).toHaveValue("pi");
   await expect(page.locator(".timeline-message-assistant")).toHaveCount(
     assistantMessagesBeforeCancel,
   );
 
+  await page.getByRole("button", { name: "Open project inspector" }).click();
   await page.getByRole("tab", { name: "Overview" }).click();
   await page.getByRole("button", { name: "Stop sandbox" }).click();
   await expect(page.locator(".project-inspector").getByText("已停止", { exact: true })).toBeVisible(
@@ -161,6 +184,7 @@ test("renames and hard-deletes a Project with an idle hosted sandbox", async ({ 
   }
 
   const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
+  await page.getByRole("button", { name: "Open project inspector" }).click();
   await page.getByRole("tab", { name: "Terminal" }).click();
   await projectInspector.getByRole("button", { exact: true, name: "Connect" }).click();
   await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
@@ -230,6 +254,7 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await page.getByRole("button", { name: "Create project" }).click();
 
   const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
+  await page.getByRole("button", { name: "Open project inspector" }).click();
   await page.getByRole("tab", { name: "Terminal" }).click();
   await projectInspector.getByRole("button", { exact: true, name: "Connect" }).click();
   await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({

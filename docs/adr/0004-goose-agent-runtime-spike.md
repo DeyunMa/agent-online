@@ -1,6 +1,6 @@
 # ADR-0004：以组合模板受控验证 Goose AgentRuntime
 
-- 状态：Accepted for spike；产品启用仍受验收门控
+- 状态：Accepted；已批准在受 allowlist 保护的产品 UI 中启用
 - 日期：2026-07-26
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](./0003-agent-run-workflow.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
@@ -10,7 +10,7 @@ Pi 已完成 E2B、Gemini ModelGateway、最终 Message、usage、取消、deadl
 
 本次选择 Goose 做第二个 Runtime spike。它必须复用现有 `Project -> AgentRun -> SandboxLease` 产品模型，并证明同一 Project 能在不同 Agent 之间切换而不丢失当前沙箱中的 `/workspace`。
 
-这不是把任意 CLI 暴露给浏览器，也不表示 Goose 已成为产品能力。Pi 仍是默认且已验收的 Runtime；Goose 在所有验收项通过前只存在于服务端 feature flag 后。
+这不是把任意 CLI 暴露给浏览器。Pi 仍是默认 Runtime；Goose 在所有验收项通过前只存在于服务端 feature flag 后，通过后也只能作为服务端能力接口公布的受控选项。
 
 ## 决策
 
@@ -142,10 +142,20 @@ Cloudflare Preview 已使用组合模板和 `GOOSE_RUNTIME_MODE=spike` 完成真
 模板探针中实际完成 Git init/status；`Pi -> Goose -> Pi -> Goose cancel` 真实 E2E
 再次通过。Runtime 切换仍不重建当前沙箱。
 
-因此本 ADR 的“实现 spike”和“私有 Preview 执行验证”均成立；短时 capability
-的工具继承与精确输出/日志脱敏、浏览器选择、刷新恢复和移动端验收尚未完成，
-“产品公开”门槛仍未满足。普通环境默认模式继续是 `disabled`，当前私有 Preview
-保持 `spike`。
+因此本 ADR 的“实现 spike”和“私有 Preview 执行验证”均成立。2026-07-30
+进一步完成了能力接口驱动的 React Runtime 选择、每次创建 Run 显式提交
+`agentRuntimeId`、移动端浏览器回归，以及最终 assistant Message 对当前 Run
+capability 的精确脱敏。选择偏好有意不持久化：刷新后恢复平台默认 Pi，已经创建的
+Run 仍以 D1 中的 `agent_runtime_id` 为准。
+
+短时 capability 仍会进入对应 Agent 主进程环境，子工具可继承它；这是当前
+ModelGateway 接入方式的已知限制。它绑定单个 Project/Run/模型和 deadline，且 Run
+进入终态后网关立即拒绝；平台不把它写入配置、日志或最终 Message。本项目接受这一
+受限残余风险，不把它等同于原始 Gemini Key。
+
+普通环境默认模式继续是 `disabled`。私有 Preview 的仓库部署目标改为 `public`，
+表示安全的 capabilities 响应公布 Pi/Goose，已通过登录和邮箱 allowlist 的用户可在
+UI 中选择；这不改变私有注册边界，也不批准任意第三方 Runtime。
 
 ## 参考
 

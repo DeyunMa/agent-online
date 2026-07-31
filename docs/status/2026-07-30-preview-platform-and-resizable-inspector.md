@@ -2,7 +2,8 @@
 
 > 类型：功能纵切、模板发布与远程验收快照
 >
-> 范围：E2B v4 平台工具链、受控 Preview 预检、桌面三栏宽度调整
+> 范围：E2B v4 平台工具链、受控 Preview 预检、覆盖式 Project Inspector Drawer、
+> 受控文件上传和 Pi/Goose 浏览器选择
 >
 > 关联：[ADR-0006](../adr/0006-controlled-project-preview.md) ·
 > [沙箱与 Agent 运行时](../architecture/02-sandbox-runtime.md) ·
@@ -15,9 +16,10 @@
 底座”。Project 仍只保存自己的源码和依赖，平台不会下载依赖、执行 Project script
 或读取 Project Vite 配置。
 
-桌面控制台保持左侧 Project 栏固定，中栏与 Project Inspector 通过一个可访问的
-垂直分隔条分配宽度。拖动、方向键、Home/End、双击复位和浏览器持久化均已实现；
-移动端仍使用 Inspector 抽屉，不显示桌面分隔条。
+桌面控制台使用 240 px 固定 Project 栏，中间控制台始终占据完整核心区。Project
+Inspector 默认关闭，以覆盖式 Drawer 展开；可访问分隔条支持拖动、方向键、
+Home/End、双击复位和浏览器持久化，但调整 Drawer 不再重排中间核心区。移动端继续
+使用模态 Inspector Drawer，不显示桌面分隔条。
 
 ## 2. E2B v4 模板
 
@@ -59,13 +61,13 @@ fingerprint。
 
 | 验证 | 结果 |
 | --- | --- |
-| `pnpm check` | 通过：260 unit passed / 1 skipped，7 D1 passed，3 browser passed |
+| `pnpm check` | 通过：268 unit passed / 1 skipped，7 D1 passed，5 browser passed |
 | Preview/Runtime 专项单元测试 | 49 passed |
 | 本地分隔条浏览器专项 | 1 passed |
 | v4 模板构建与版本/权限探针 | 通过 |
 | 真实 E2B + Gemini + Pi/Goose + 平台 Preview | 1 passed，约 63 秒 |
 | 发布前远程协调预检 | 9 checks passed |
-| 部署后健康与公开 capability | `200`；公开 Runtime 仍只有 Pi |
+| 部署后健康与公开 capability | `200`；Pi/Goose 和受控能力均已公布 |
 | 部署后登录态浏览器验收 | 通过 |
 | 验收后远程协调预检 | 9 checks passed |
 
@@ -74,14 +76,13 @@ fingerprint。
 
 部署后浏览器验收在一个临时 Project 中完成：
 
-- 分隔条键盘调整使 Inspector 从 320 px 变为 352 px，中栏同步缩小，左栏保持
-  280 px；刷新后 352 px 偏好仍保留；
-- 空项目返回 `preview.entry_missing`；
-- 声明依赖但没有 `node_modules` 返回 `preview.dependencies_missing`；
-- 移除未安装依赖声明后，平台 Vite 在 iframe 中显示真实 HTML marker；
-- Preview 运行期间真实 Pi Run 成功，记录 2 次模型请求和非零 token；
-- Pi 写入的新文件可由 Files 读取，原 Preview 页面仍可访问；
-- 最后显式停止 Preview 和沙箱并硬删除临时 Project，九项远程预检全部为零。
+- Drawer 默认关闭；打开后宽度为 480 px，键盘调宽到 496 px 时核心区仍保持全宽，
+  左栏保持 240 px；
+- 真实 Pi Run 创建根 `index.html`，记录最终 Message、2 次模型请求和非零 token；
+- Pi 写入的文件由 Files 读回，平台 Vite 在 iframe 中显示真实 marker；
+- 浏览器切换 Goose 后启动长任务并取消，Run 收敛为 `cancelled`；
+- 最后显式停止 Preview 和沙箱并硬删除临时 Project；删除后的 Run 用量仍在 Usage
+  归档中，清理后九项远程协调预检全部通过。
 
 ## 5. 部署
 
@@ -89,21 +90,20 @@ Cloudflare Preview：
 
 - URL：<https://agent-online-preview.mdy1145141.workers.dev>
 - Worker Version：
-  `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa`
+  `4351a021-9e37-4882-adcc-3b767de40639`
 - E2B Template：
   `agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c`
 
 Worker 与 React 源码映射均已上传到 Sentry，部署产物扫描通过且不保留 `.map`。
-完整真实产品 E2E 在前一版本 `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 通过。当前版本
-对应提交 `d2ac70f`，重新通过完整 `pnpm check`，并加入 Project 删除用量归档和左下
-账号菜单。远程 `0008` 迁移、健康、capability、登录态 Usage/侧栏 smoke 和九项远程
-预检通过；本轮没有创建沙箱或调用 Gemini。
+当前版本重新通过完整 `pnpm check` 和既有登录态真实产品纵向验收，包含覆盖式 Drawer、
+Pi、Files、Preview、Goose 取消、停止、删除和用量归档。该版本从未提交工作树构建；
+Sentry release 仍以当前 HEAD `a29c3d263df17f2a29f0c029b74d6e63bfdce129`
+标识，因此源码提交与线上工作树尚不能一一对应。
 
 ## 6. 剩余限制
 
-1. Sentry release 与部署提交
-   `d2ac70fd5a3fe8a64ddc27375826652e5dceb4b9` 一致；后续修改仍需先提交再部署，保持
-   源码映射可追溯。
+1. 当前版本从未提交工作树构建，Sentry release 只能关联部署时的 HEAD，不能完整表示
+   线上改动；下一次发布前应先提交当前工作树，恢复源码映射可追溯性。
 2. 依赖预检只读取小型根 `package.json` 的常规 dependency 字段，不替代完整包管理器
    状态检查；损坏或部分安装的 `node_modules` 仍可能在 Vite 启动时返回
    `preview.unavailable`。

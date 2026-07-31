@@ -14,6 +14,7 @@ import { SandboxPathNotFoundError, SandboxUnavailableError } from "../runtime/co
 
 const maxDirectoryEntries = 500;
 const maxFileBytes = 256 * 1_024;
+export const maxProjectFileUploadBytes = 4 * 1_024 * 1_024;
 const maxPathLength = 512;
 const maxPathDepth = 32;
 
@@ -42,6 +43,7 @@ export type ProjectTextFile = {
 export type ProjectFilesFailure =
   | { kind: "file_too_large" }
   | { kind: "path_not_found" }
+  | { kind: "path_conflict" }
   | { kind: "project_busy" }
   | { kind: "provider_error" }
   | { kind: "sandbox_unavailable" }
@@ -53,6 +55,17 @@ export type ListProjectDirectoryResult =
   | ProjectFilesFailure;
 
 export type ReadProjectFileResult = { file: ProjectTextFile; kind: "ok" } | ProjectFilesFailure;
+
+export type UploadProjectFileResult =
+  | {
+      file: {
+        name: string;
+        path: string;
+        size: number;
+      };
+      kind: "ok";
+    }
+  | ProjectFilesFailure;
 
 export type ProjectFilesServiceOptions = {
   agentRuns: Pick<AgentRunRepository, "findActiveByProjectId">;
@@ -161,6 +174,50 @@ export class ProjectFilesService {
           name: entry.name,
           path: path.value,
           size: bytes.byteLength,
+        },
+        kind: "ok",
+      };
+    } catch (error) {
+      return toFailure(error);
+    }
+  }
+
+  async upload(
+    projectId: string,
+    input: { bytes: Uint8Array; name: string },
+  ): Promise<UploadProjectFileResult> {
+    const path = parseProjectPath(input.name, false);
+    if (path?.segments.length !== 1) {
+      return { kind: "unsupported_path" };
+    }
+    if (input.bytes.byteLength > maxProjectFileUploadBytes) {
+      return { kind: "file_too_large" };
+    }
+
+    const access = await this.getAccess(projectId);
+    if (access.kind !== "ok") {
+      return access;
+    }
+
+    try {
+      const rootEntries = await access.runtime.listDirectory(
+        access.handle,
+        this.options.workingDirectory,
+      );
+      if (rootEntries.some((entry) => entry.name === path.value)) {
+        return { kind: "path_conflict" };
+      }
+
+      await access.runtime.writeFile(
+        access.handle,
+        toAbsolutePath(this.options.workingDirectory, path.segments),
+        input.bytes,
+      );
+      return {
+        file: {
+          name: path.value,
+          path: path.value,
+          size: input.bytes.byteLength,
         },
         kind: "ok",
       };

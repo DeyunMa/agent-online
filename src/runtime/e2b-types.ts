@@ -38,7 +38,7 @@ export type E2BSandbox = {
   files: {
     list(path: string): Promise<EntryInfo[]>;
     read(path: string, options: { format: "bytes" }): Promise<Uint8Array>;
-    write(path: string, content: string): Promise<unknown>;
+    write(path: string, content: string | ArrayBuffer): Promise<unknown>;
   };
   getHost(port: number): string;
   kill(): Promise<boolean>;

@@ -6,15 +6,15 @@ describe("project panel resizing", () => {
   it("keeps a useful console width on a wide desktop", () => {
     const bounds = inspectorWidthBounds(1_160);
 
-    expect(bounds).toEqual({ max: 720, min: 260 });
+    expect(bounds).toEqual({ max: 720, min: 360 });
     expect(clampInspectorWidth(510, bounds)).toBe(510);
   });
 
   it("collapses to the narrow inspector bound when desktop space is constrained", () => {
     const bounds = inspectorWidthBounds(520);
 
-    expect(bounds).toEqual({ max: 220, min: 220 });
-    expect(clampInspectorWidth(320, bounds)).toBe(220);
+    expect(bounds).toEqual({ max: 280, min: 280 });
+    expect(clampInspectorWidth(320, bounds)).toBe(280);
   });
 
   it("clamps pointer and keyboard requests to the current bounds", () => {

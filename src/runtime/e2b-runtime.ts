@@ -359,8 +359,10 @@ export class E2BSandboxRuntime
     }
   }
 
-  async writeFile(handle: RuntimeHandle, path: string, content: string) {
-    await this.requireSandbox(handle).files.write(path, content);
+  async writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array) {
+    const data =
+      typeof content === "string" ? content : (Uint8Array.from(content).buffer as ArrayBuffer);
+    await (await this.attachSandbox(handle)).files.write(path, data);
   }
 
   private requireSandbox(handle: RuntimeHandle) {

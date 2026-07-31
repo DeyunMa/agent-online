@@ -1,6 +1,6 @@
 # E2B + Pi/Goose + Gemini 真实链路
 
-> 状态：Pi 与 Goose adapter 的组合模板本地 E2E 和 Cloudflare Preview 受控产品链路均已通过；Goose 公开 UI 仍待安全门禁与前端验收。
+> 状态：Pi 与 Goose adapter 的组合模板本地 E2E 和 Cloudflare Preview 受控产品链路均已通过；能力驱动的浏览器 Runtime 选择与最终回复精确脱敏已完成本地验收，部署后仍需执行 Hosted E2E。
 > 关联：[ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [运行时边界](../architecture/02-sandbox-runtime.md)
 
 这个 opt-in E2E 测试验证：
@@ -27,8 +27,8 @@
 
 短时 capability 会进入对应 Agent 进程环境，这是 Agent 调用 ModelGateway 所需的
 运行凭据，不是 Gemini Key。当前测试证明模板、沙箱基线和静态 provider 配置不
-持有它；并不声称 Agent 自己或其子工具无法读取该短时凭据。公开产品启用前仍需
-完成输出脱敏与工具继承边界复核。
+持有它；Agent 自己或其子工具仍可能读取该短时凭据。平台在最终 Message 入库前对
+本次 capability 做精确脱敏，且网关在 Run 终态后立即拒绝它。
 
 ## 组合模板
 
@@ -130,7 +130,11 @@ pnpm test:e2e:e2b-agent-runtimes
 
 配置部署后，Worker 与 Workflow 版本存在短暂传播窗口。第一次 TTL 探针命中旧 Workflow 版本，因此正式 timeout/TTL 验收必须先在 Workflow 详情确认最新版本，再运行探针。
 
-`GOOSE_RUNTIME_MODE` 仍不能设置为 `public`。剩余门槛是 capability 的工具继承与精确输出/日志脱敏、React Runtime 选择、刷新恢复和移动端验收。
+2026-07-30 已批准在邮箱 allowlist 保护的 Preview 中设置
+`GOOSE_RUNTIME_MODE=public`。React 选择器只消费 `/api/capabilities`，创建 Run
+显式发送选择值；本地浏览器回归覆盖选择与请求合同。选择偏好不持久化，刷新后恢复
+默认 Pi；既有 Run 的实际 Runtime 仍从 D1 恢复。Hosted UI 的 Pi/Goose 切换需要在
+包含本次代码的部署后再次验收。
 
 ## 2026-07-30 模板权限修复结果
 

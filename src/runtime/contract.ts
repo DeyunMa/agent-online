@@ -168,7 +168,7 @@ export interface SandboxFilesystemRuntime {
   readonly kind: RuntimeKind;
   listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]>;
   readFile(handle: RuntimeHandle, path: string): Promise<Uint8Array>;
-  writeFile(handle: RuntimeHandle, path: string, content: string): Promise<void>;
+  writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array): Promise<void>;
 }
 
 export interface SandboxProcessRuntime {

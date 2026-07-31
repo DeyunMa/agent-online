@@ -41,7 +41,7 @@ pnpm deploy:preview:dry-run
 - 全零的 Preview D1 `database_id`；
 - 包含 `replace-me` 的 `BETTER_AUTH_URL`；
 - 占位 E2B Template ID；
-- 非法或尚未批准的 `GOOSE_RUNTIME_MODE=public`；
+- 非法的 `GOOSE_RUNTIME_MODE`；
 - 启用 Goose 时仍使用非组合 E2B Template；
 - 非 allowlist 的 Preview 访问模式；
 - 非 E2B 的 Preview SandboxRuntime。
@@ -224,7 +224,7 @@ status/failure code 非法组合计数为零，Hosted E2E 通过。
 - Gemini Key 只在 Worker，E2B Key 只在 Worker 的 Sandbox Adapter。
 - D1 中只出现产品状态和聚合 usage，不出现 Provider Key、raw transcript 或 Project 文件。
 - Cloudflare Workflow 免费层的真实限制有实测结论。
-- `GOOSE_RUNTIME_MODE=spike` 时只有显式受控 API 可以执行 Goose，公开 capabilities 和 UI 仍保持 Pi-only。
+- `GOOSE_RUNTIME_MODE=public` 时安全能力接口公布 Pi/Goose，已登录 allowlist 用户可在 UI 选择，创建 Run 仍校验认证、Project 所有权和服务端 Runtime allowlist。
 - Project Preview 只运行固定 `vite-v1`，内容只走同源 GET/HEAD capability；Run/Terminal
   并行、整沙箱 Stop 互斥、显式停止和 expiry/idle cleanup 均收敛。
 - Changes 只读取当前 Git working tree/index；固定命令、危险配置拒绝、输出上限、

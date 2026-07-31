@@ -1,6 +1,6 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、Project Preview、Changes 和脱敏 Sentry Error Monitoring 均已完成私有 Cloudflare 配置；Goose 仍保持 `spike`，不向 UI 公开。
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、Project Preview、Changes 和脱敏 Sentry Error Monitoring 均已完成私有 Cloudflare 配置；私有 Preview 的仓库部署目标使用 `public` 模式向 allowlist 用户公开 Pi/Goose 选择。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -47,12 +47,12 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
 | `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference。当前 v4 还固定 npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/进程诊断/原生编译工具，以及只读 `/opt/agent-online/preview` 下的平台 Vite；能力清单写入只读 manifest。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
-| `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 当前为 `spike` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose，但不向 UI 公布；`public` 才公开选择。只有 E2B 支持 Goose。 |
+| `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 为 `public` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose但不向 UI 公布；`public` 通过安全 capabilities 公布选项，创建 Run 仍要求认证和 Project 所有权。只有 E2B 支持 Goose。 |
 | `SENTRY_ENVIRONMENT` | 本地通常不设置；Preview 为 `preview` | 服务端错误事件的固定环境标签；没有 DSN 时不会初始化 SDK。 |
 
 当前默认 AgentRuntime 固定为 `pi`，不是环境变量。`GOOSE_RUNTIME_MODE` 只控制第二 adapter 的执行与公开门槛，不改变 Project 默认值。
-`spike` 不构成用户权限边界：已通过现有认证和部署访问策略的调用者仍可手工提交
-`agentRuntimeId=goose`。它只能在邮箱 allowlist 保护的私有 Preview 中短时启用。
+`spike` 和 `public` 都不构成用户权限边界；认证与邮箱 allowlist 仍负责访问控制。
+`public` 只决定 `/api/capabilities` 和 UI 是否公布 Goose，不能绕过 Project 所有权。
 
 ## 5. Sentry 错误监控与源码映射
 

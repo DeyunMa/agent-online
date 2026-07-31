@@ -16,9 +16,10 @@
 3. 启动真实 Pi Run，并等待 Cloudflare Workflow 收敛为 `succeeded`；
 4. 最终 assistant Message、真实 token 和模型请求计量可见；
 5. Agent 创建的文件可通过受控 Files 读取；
-6. 第二个运行中 Run 可取消，刷新后没有伪造的最终 assistant Message；
-7. 当前 Project 沙箱可停止；
-8. 测试期间的 JSON API 响应不出现 Provider 引用、traffic token 或模型/沙箱 Key。
+6. 浏览器向同一沙箱上传一个文件，并通过 Files 读回原文；
+7. 浏览器选择 Goose 启动第二个 Run，该运行中 Run 可取消，刷新后没有伪造的最终 assistant Message；
+8. 当前 Project 沙箱可停止；
+9. 测试期间的 JSON API 响应不出现 Provider 引用、traffic token 或模型/沙箱 Key。
 
 全能力路径：
 
@@ -38,13 +39,14 @@ Project 生命周期路径：
 
 这是完整产品路径，不替代 adapter 级 Pi/Goose 组合模板 E2E。后者验证 Runtime 协议和
 同沙箱切换，本文验证 React、Hono、Better Auth、D1、Workflow、ModelGateway 和 E2B
-组合后的公开 Pi 路径。
+组合后的 Pi/Goose 产品路径。
 
 ## 前置条件
 
 - 已按部署文档完成 `RUNS_ENABLED=false` 锁定部署、排空、`0006` 迁移和锁定 smoke。
 - 已重新部署 `RUNS_ENABLED=true`，且 `/api/capabilities` 返回
-  `runCreationEnabled: true`。
+  `runCreationEnabled: true`、`fileUploadEnabled: true` 和
+  `agentRuntimeIds: ["pi", "goose"]`。
 - 测试账号已在 `ACCESS_ALLOWED_EMAILS` 中并完成注册。
 - 工作树对应的代码已提交，部署版本可追溯。
 
@@ -65,7 +67,7 @@ unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 ```
 
 完整执行会创建两个 AgentRun 和三个 E2B 沙箱：只有基线路径使用一次真实 Pi 成功
-Run 和一次可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
+Run 和一次通过 UI 选择 Goose 的可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
 这样仍覆盖真实 ModelGateway/Workflow/usage/取消，同时证明平台 Preview 底座不依赖
 Project 安装 Vite，也避免用模型安装依赖或只为创建沙箱而运行 Agent。成功路径会主动关闭 Terminal/Preview
 并停止沙箱；测试中途失败时，`afterEach` 也会尽力按 Terminal、Preview、sandbox 顺序
@@ -86,6 +88,21 @@ Terminal fixture 的 ready marker 必须由命令实际输出，不能让 marker
 `git -C /workspace` 并避免把多行文本直接拼进 shell，以保持结果可重复。
 
 ## 最近执行
+
+2026-07-30 针对 Preview 版本 `4351a021-9e37-4882-adcc-3b767de40639` 完成既有登录态
+浏览器纵向验收：
+
+- 健康接口返回 `ok`，公开 capability 同时公布 Pi/Goose、文件上传、Files、Terminal、
+  Preview 和 Changes；
+- 桌面 Project Inspector 默认关闭，以 480 px 覆盖 Drawer 展开；左栏保持 240 px，
+  键盘将 Drawer 调宽到 496 px 后中间核心区宽度仍保持不变；
+- 真实 Pi Run 创建根 `index.html`，最终 Message 与 usage 正常，Files 从同一沙箱
+  读回 marker，固定 Vite Preview 在 iframe 中渲染同一 marker；
+- 浏览器选择 Goose 后启动长任务并取消，Run 收敛为 `cancelled`；
+- Preview 与沙箱均显式停止，临时 Project 已硬删除；Usage 仍显示该 Project 的
+  删除用量归档，清理后九项远程协调预检全部通过；
+- 本轮沿用浏览器既有登录态，没有读取或写入测试账号密码。由于
+  `PREVIEW_E2E_*` 进程变量未设置，未重复运行以独立登录开始的三条自动脚本。
 
 2026-07-30 针对 Preview 版本 `37d7950c-c0ca-480e-a3e1-f60a07dc8c81` 完成登录态
 浏览器纵向验收：

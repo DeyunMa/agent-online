@@ -55,6 +55,7 @@ app.get("/api/capabilities", (c) => {
     agentRuntimeIds: [...policy.publicRuntimeIds],
     changesEnabled: sandboxRuntimeId === "e2b",
     defaultAgentRuntimeId,
+    fileUploadEnabled: sandboxRuntimeId === "e2b",
     runCreationEnabled: getDeploymentPolicy(c.env).runsEnabled,
     previewEnabled: sandboxRuntimeId === "e2b",
     terminalEnabled: sandboxRuntimeId === "e2b",

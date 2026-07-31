@@ -11,6 +11,7 @@ export const publicErrorCodes = [
   "sandbox.provider_unavailable",
   "project_path.not_found",
   "project_path.unsupported",
+  "file.already_exists",
   "file.too_large",
   "file.content_unsupported",
   "preview.dependencies_missing",

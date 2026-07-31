@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { app } from "./app";
 import type { AppBindings } from "./env";
-import { maximumProductRequestBytes } from "./http/product-request-guard";
+import {
+  maximumProductRequestBytes,
+  maximumProjectFileUploadRequestBytes,
+} from "./http/product-request-guard";
 
 describe("Worker API", () => {
   it("returns a health response", async () => {
@@ -22,6 +25,7 @@ describe("Worker API", () => {
       agentRuntimeIds: ["pi"],
       changesEnabled: false,
       defaultAgentRuntimeId: "pi",
+      fileUploadEnabled: false,
       previewEnabled: false,
       runCreationEnabled: false,
       terminalEnabled: false,
@@ -45,6 +49,7 @@ describe("Worker API", () => {
     await expect(spike.json()).resolves.toMatchObject({
       agentRuntimeIds: ["pi"],
       changesEnabled: true,
+      fileUploadEnabled: true,
       previewEnabled: true,
       terminalEnabled: true,
     });
@@ -83,6 +88,22 @@ describe("Worker API", () => {
       body: "x".repeat(maximumProductRequestBytes + 1),
       headers: {
         "content-type": "application/json",
+        origin: "https://agent-online.test",
+      },
+      method: "POST",
+    });
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "request.too_large", retryable: false },
+    });
+  });
+
+  it("allows multipart overhead but rejects uploads above their dedicated request limit", async () => {
+    const response = await app.request("https://agent-online.test/api/projects/project-1/files", {
+      body: "x".repeat(maximumProjectFileUploadRequestBytes + 1),
+      headers: {
+        "content-type": "multipart/form-data; boundary=test",
         origin: "https://agent-online.test",
       },
       method: "POST",

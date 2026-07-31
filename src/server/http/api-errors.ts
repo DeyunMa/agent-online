@@ -12,6 +12,7 @@ type PublicErrorDefinition = {
 export const publicErrorDefinitions = {
   "agent_runtime.unavailable": { retryable: false, status: 409 },
   "auth.unauthorized": { retryable: false, status: 401 },
+  "file.already_exists": { retryable: false, status: 409 },
   "file.content_unsupported": { retryable: false, status: 415 },
   "file.too_large": { retryable: false, status: 413 },
   "internal.unexpected": { retryable: true, status: 500 },

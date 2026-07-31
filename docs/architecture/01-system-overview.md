@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2/D3 与 Goose 私有 spike 已完成；2026-07-28 已补强 HTTP 边界、上游 deadline、运行时模块内聚和严格类型门禁。Goose UI 仍关闭。
+> 状态：D2/D3 与 Goose 真实链路已完成；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -9,7 +9,10 @@ Agent Online 的第一版不是团队协作平台，也不是浏览器内运行 
 
 参考 CCOnline 的是产品体验：真实 Coding Agent、独立 Linux 环境、终端、文件与 preview。它不代表复制第三方代码，或推断其未公开实现。
 
-Pi 是默认且已验收的 AgentRuntime。Goose 已按 ADR-0004 完成第二 Runtime 的同 Project 文件连续性、模型通道、事件、取消、usage、deadline 和 TTL 真实 E2E；在 capability 输出脱敏与浏览器选择验收前仍不会出现在 UI。Claude Code 与 Codex CLI 仍只有保留 ID。
+Pi 是默认且已验收的 AgentRuntime。Goose 已按 ADR-0004 完成第二 Runtime 的同
+Project 文件连续性、模型通道、事件、取消、usage、deadline 和 TTL 真实 E2E；
+Preview 的安全 capability 已向 allowlist UI 公布 Pi/Goose。Claude Code 与 Codex
+CLI 仍只有保留 ID。
 
 ## 2. 总体结构
 
@@ -22,7 +25,7 @@ flowchart LR
     H --> MG["ModelGateway\n平台 Gemini Key 和 usage"]
     H --> WF["AgentRunWorkflow\n一个 Run 一个 instance"]
     WF --> RC["RunExecutionService / RunCoordinator"]
-    RC --> AR["AgentRuntime\nPi / gated Goose spike"]
+    RC --> AR["AgentRuntime\nPi / public Goose"]
     RC --> SR["SandboxRuntime\nfake / E2B / later CF"]
     H --> TS["ProjectTerminalService\n同源 WebSocket / 临时互斥"]
     TS --> SR

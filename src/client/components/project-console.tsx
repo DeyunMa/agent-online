@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse } from "../../shared/api";
+import type { AgentRuntimeId } from "../../shared/protocol";
 import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
 import { deriveProjectActivity } from "../project-activity";
 import {
@@ -13,12 +14,13 @@ import {
   agentRunsQueryKey,
   projectDetailQueryKey,
   projectChangesQueryKey,
+  projectFilesQueryKey,
   projectMessagesQueryKey,
   projectQueryKey,
   platformCapabilitiesQueryKey,
   userUsageQueryKey,
 } from "../query-keys";
-import { ProjectInspector } from "./project-inspector";
+import { ProjectInspector, type InspectorView } from "./project-inspector";
 import { ProjectPanelResizer } from "./project-panel-resizer";
 import {
   AgentComposer,
@@ -45,8 +47,15 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const [previewStarting, setPreviewStarting] = useState(false);
   const [terminalActive, setTerminalActive] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorView, setInspectorView] = useState<InspectorView>("overview");
+  const [filesRevision, setFilesRevision] = useState(0);
+  const [agentRuntimePreference, setAgentRuntimePreference] = useState<AgentRuntimeId | null>(null);
   const [view, setView] = useState<ProjectConsoleView>("conversation");
   const mobileInspectorOpen = inspectorOpen && isMobileInspectorViewport;
+  const openInspectorView = useCallback((nextView: InspectorView) => {
+    setInspectorView(nextView);
+    setInspectorOpen(true);
+  }, []);
 
   const project = useQuery({
     queryFn: () => browserApi.getProject(projectId),
@@ -81,7 +90,13 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   });
 
   const createRun = useMutation({
-    mutationFn: (content: string) => browserApi.createAgentRun(projectId, { content }),
+    mutationFn: ({
+      agentRuntimeId,
+      content,
+    }: {
+      agentRuntimeId: AgentRuntimeId;
+      content: string;
+    }) => browserApi.createAgentRun(projectId, { agentRuntimeId, content }),
     onSuccess: async (run) => {
       setActiveRunId(run.id);
       setStreamError(null);
@@ -96,6 +111,21 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     onSuccess: async (run) => {
       queryClient.setQueryData(agentRunQueryKey(projectId, run.id), run);
       await invalidateProjectState(queryClient, projectId);
+    },
+  });
+  const uploadFile = useMutation({
+    mutationFn: (file: File) => browserApi.uploadProjectFile(projectId, file),
+    onSuccess: async () => {
+      setFilesRevision((revision) => revision + 1);
+      openInspectorView("files");
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: projectFilesQueryKey(projectId, ""),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: projectChangesQueryKey(projectId),
+        }),
+      ]);
     },
   });
   const stopSandbox = useMutation({
@@ -124,6 +154,14 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     platformCapabilities.isPending ||
     platformCapabilities.isError ||
     !platformCapabilities.data.runCreationEnabled;
+  const agentRuntimeIds = platformCapabilities.data?.agentRuntimeIds ?? [];
+  const selectedAgentRuntimeId =
+    agentRuntimePreference && agentRuntimeIds.includes(agentRuntimePreference)
+      ? agentRuntimePreference
+      : platformCapabilities.data &&
+          agentRuntimeIds.includes(platformCapabilities.data.defaultAgentRuntimeId)
+        ? platformCapabilities.data.defaultAgentRuntimeId
+        : null;
   const activity = deriveProjectActivity({
     previewActive,
     previewStarting,
@@ -131,11 +169,16 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     terminalActive,
   });
   const exclusiveActivityActive = activity.exclusive !== "idle";
+  const sandboxLease = project.data?.sandboxLease;
+  const fileUploadAvailable =
+    platformCapabilities.data?.fileUploadEnabled === true &&
+    sandboxLease !== null &&
+    sandboxLease !== undefined &&
+    (sandboxLease.status === "idle" || sandboxLease.status === "ready") &&
+    !exclusiveActivityActive;
   const closeInspector = useCallback(() => {
+    inspectorToggleRef.current?.focus({ preventScroll: true });
     setInspectorOpen(false);
-    window.requestAnimationFrame(() => {
-      inspectorToggleRef.current?.focus({ preventScroll: true });
-    });
   }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets console-local state.
@@ -146,40 +189,30 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     setPreviewStarting(false);
     setTerminalActive(false);
     setInspectorOpen(false);
+    setInspectorView("overview");
+    setFilesRevision(0);
+    setAgentRuntimePreference(null);
     setView("conversation");
+    uploadFile.reset();
   }, [projectId]);
 
   useEffect(() => {
-    if (!mobileInspectorOpen) {
+    if (!inspectorOpen) {
       return;
     }
 
     function handleInspectorKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      const target = event.target;
+      const terminalOwnsEscape =
+        target instanceof Element && target.closest(".project-terminal-view") !== null;
+      if (event.key === "Escape" && !event.defaultPrevented && !terminalOwnsEscape) {
         closeInspector();
       }
     }
 
     window.addEventListener("keydown", handleInspectorKeyDown);
     return () => window.removeEventListener("keydown", handleInspectorKeyDown);
-  }, [closeInspector, mobileInspectorOpen]);
-
-  useEffect(() => {
-    if (!isMobileInspectorViewport) {
-      setInspectorOpen(false);
-      return;
-    }
-
-    const focusFrame = window.requestAnimationFrame(() => {
-      if (
-        document.activeElement instanceof HTMLElement &&
-        document.activeElement.closest(".project-inspector")
-      ) {
-        inspectorToggleRef.current?.focus({ preventScroll: true });
-      }
-    });
-    return () => window.cancelAnimationFrame(focusFrame);
-  }, [isMobileInspectorViewport]);
+  }, [closeInspector, inspectorOpen]);
 
   useEffect(() => {
     const recoveredRun = recoveredActiveRun;
@@ -280,7 +313,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           <div className="project-console-header-actions">
             <ProjectActionsMenu placement="header" project={project.data} />
             <button
-              aria-expanded={mobileInspectorOpen}
+              aria-expanded={inspectorOpen}
               aria-label="Open project inspector"
               className="icon-button project-inspector-toggle"
               onClick={() => setInspectorOpen(true)}
@@ -342,18 +375,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                   messages={messages.data}
                   onRetry={() => void messages.refetch()}
                 />
-                <RunHistory
-                  error={recentRuns.error}
-                  isPending={recentRuns.isPending}
-                  messages={messages.data}
-                  onRetry={() => void recentRuns.refetch()}
-                  onSelect={(runId) => {
-                    setActiveRunId(runId);
-                    setStreamError(null);
-                  }}
-                  runs={recentRuns.data}
-                  selectedRunId={currentRunId}
-                />
               </div>
             </>
           ) : (
@@ -373,15 +394,34 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             </div>
           )}
           <AgentComposer
-            disabled={createRun.isPending || runCreationUnavailable || exclusiveActivityActive}
+            agentRuntimeIds={agentRuntimeIds}
+            disabled={
+              createRun.isPending ||
+              runCreationUnavailable ||
+              exclusiveActivityActive ||
+              selectedAgentRuntimeId === null
+            }
             error={createRun.error}
+            fileUploadDisabled={!fileUploadAvailable}
             isSubmitting={createRun.isPending}
-            onSubmit={(content) => createRun.mutateAsync(content)}
+            isUploadingFile={uploadFile.isPending}
+            onChangesOpen={() => openInspectorView("changes")}
+            onAgentRuntimeChange={setAgentRuntimePreference}
+            onFilesOpen={() => openInspectorView("files")}
+            onSubmit={(content, agentRuntimeId) =>
+              createRun.mutateAsync({ agentRuntimeId, content })
+            }
+            onTerminalOpen={() => openInspectorView("terminal")}
+            onUploadFile={(file) => uploadFile.mutateAsync(file)}
+            selectedAgentRuntimeId={selectedAgentRuntimeId}
+            changesEnabled={platformCapabilities.data?.changesEnabled === true}
+            terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
             textareaRef={composerRef}
+            uploadError={uploadFile.error}
           />
         </main>
 
-        <ProjectPanelResizer containerRef={consoleRef} />
+        <ProjectPanelResizer containerRef={consoleRef} open={inspectorOpen} />
         {mobileInspectorOpen ? (
           <button
             aria-label="Dismiss project inspector"
@@ -393,9 +433,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
         <ProjectInspector
           activity={activity}
           changesEnabled={platformCapabilities.data?.changesEnabled === true}
+          filesRevision={filesRevision}
           isStopping={stopSandbox.isPending}
+          onClose={closeInspector}
           onStopSandbox={() => stopSandbox.mutate()}
-          onMobileClose={closeInspector}
+          onViewChange={setInspectorView}
           onPreviewActivityChange={setPreviewActive}
           onPreviewStartingChange={setPreviewStarting}
           onTerminalActivityChange={(active) => {
@@ -411,10 +453,12 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           }}
           project={project.data}
           mobileOpen={mobileInspectorOpen}
+          open={inspectorOpen}
           previewEnabled={platformCapabilities.data?.previewEnabled === true}
           run={currentRun}
           stopError={stopSandbox.error}
           terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
+          view={inspectorView}
         />
       </section>
     </>

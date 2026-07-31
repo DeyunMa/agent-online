@@ -1,7 +1,7 @@
 # Cloudflare Preview 资源台账
 
 > 状态：本文记录截至 2026-07-30 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
-> 受控 Preview 预检和可调桌面检查器已部署；`0006_integrity_guards.sql` 和
+> 受控 Preview 预检、覆盖式可调桌面检查器、受控文件上传和能力驱动的 Pi/Goose 选择已部署；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql`、`0008_archived_run_usage.sql` 均已应用。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
@@ -30,7 +30,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `2f9cd549-dbfb-4a8e-bb76-50967f3dcefa` |
+| 当前部署版本 | `4351a021-9e37-4882-adcc-3b767de40639` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -94,7 +94,7 @@ R2、KV、Durable Object 或文件快照。
 | `BETTER_AUTH_URL` | `https://agent-online-preview.mdy1145141.workers.dev` |
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` |
 | `E2B_TEMPLATE_ID` | `agent-online-pi-goose-runtime:06295331-78c7-46db-ab18-d763a51bae6c` |
-| `GOOSE_RUNTIME_MODE` | `spike` |
+| `GOOSE_RUNTIME_MODE` | `public` |
 | `MAX_RUN_WALL_SECONDS` | `1800` |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` |
 | `RUNTIME_PROVIDER` | `e2b` |
@@ -106,9 +106,8 @@ R2、KV、Durable Object 或文件快照。
 截至 2026-07-30，本表记录的是当前已部署 Preview。v4 组合模板显式安装并探测
 Node/npm/pnpm、Pi/Goose、Python/pip、Git/Bash、rg/jq、归档、进程诊断、编译器和
 平台固定 Vite；只读 `/opt/agent-online` 与默认非 root 用户拥有的可写
-`/workspace` 保持分离。`GOOSE_RUNTIME_MODE=spike` 已上线，
-该模式允许受邀测试者显式调用 Goose，
-但 `/api/capabilities` 和 UI 仍只公布 Pi。旧 Pi-only Provider sandbox 不会
+`/workspace` 保持分离。`GOOSE_RUNTIME_MODE=public` 已上线，
+`/api/capabilities` 向受 allowlist 保护的产品 UI 公布 Pi/Goose。旧 Pi-only Provider sandbox 不会
 随 Worker 配置原地升级；本次验收使用新 Project，让首个 Run 按组合模板创建沙箱。
 
 ## 6. 加密 Secret
@@ -252,12 +251,18 @@ Preview 已验证：
   `archived_run_usage` 可查询；登录态浏览器确认桌面顶栏账号入口隐藏、左下账号菜单可
   进入 Usage、New project 位于左栏顶部且无筛选框。Usage 成功读取 4 个现存 Run；
   健康、Pi-only capability 和九项远程预检通过。
+- 覆盖式 Project Inspector Drawer、240 px 左栏、受控文件上传和 Pi/Goose 选择随版本
+  `4351a021-9e37-4882-adcc-3b767de40639` 部署。健康与公开 capability 通过；登录态
+  浏览器确认 Drawer 默认关闭、键盘调宽不改变核心区宽度，真实 Pi 创建
+  `index.html` 后 Files 可读、Preview 可渲染，Goose 可启动并取消，沙箱和临时
+  Project 均已清理，删除后的 Run 用量仍在 Usage 归档中；清理后九项远程协调预检
+  全部通过。
 
 尚未验证：
 
 - 更复杂任务下 Workflow Free 的 CPU 与 subrequest 限制。
 - Goose capability 在子工具中的继承和精确输出/日志脱敏自动门禁。
-- Goose 浏览器选择、刷新恢复和移动端交互。
+- Goose 刷新恢复和移动端交互。
 
 验收期间产生的取消、超时和探针 Run 记录保留在 Preview D1 中，用于确认状态和 usage 收敛；它们不是生产数据。最终测试 Preview 和 Terminal 行均已删除，沙箱已通过手动 Stop 停止，Provider 引用已清空，文件按 V1 设计允许丢失。
 
