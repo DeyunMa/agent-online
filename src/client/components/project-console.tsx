@@ -335,7 +335,12 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           </div>
         </div>
       </AppHeaderSlot>
-      <section className="project-console" ref={consoleRef}>
+      <section
+        className={
+          inspectorOpen ? "project-console project-console-inspector-open" : "project-console"
+        }
+        ref={consoleRef}
+      >
         <main className="project-console-main" id="project-console-main">
           <ProjectRunTabs onViewChange={setView} view={view} />
           {platformCapabilities.isError ? (
@@ -367,7 +372,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                 run={currentRun}
                 streamError={streamError}
               />
-              <RunMetrics run={currentRun} />
               <div className="project-console-scroll">
                 <ConversationTimeline
                   error={messages.error}
@@ -379,6 +383,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             </>
           ) : (
             <div className="project-console-scroll project-console-runs-view">
+              <RunMetrics compact run={currentRun} />
               <RunHistory
                 error={recentRuns.error}
                 isPending={recentRuns.isPending}
@@ -386,7 +391,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                 onRetry={() => void recentRuns.refetch()}
                 onSelect={(runId) => {
                   setActiveRunId(runId);
-                  setView("conversation");
                 }}
                 runs={recentRuns.data}
                 selectedRunId={currentRunId}

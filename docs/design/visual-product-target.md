@@ -19,19 +19,22 @@ Agent Online 的首屏是可操作的 Coding Agent 工作台，而不是营销�
 
 ## 2. 稳定布局
 
-桌面端采用“紧凑 Project 导航 + 核心工作区 + 按需 Inspector Drawer”的工作台：
+桌面端采用“紧凑 Project 导航 + 核心工作区 + 按需 Inspector 面板”的工作台：
 
 | 区域 | 责任 | 数据来源 |
 | --- | --- | --- |
 | 左栏 | 品牌、顶部 New project、Project 导航、底部账号菜单。Usage 和退出登录从账号菜单进入；不提供 Project 筛选。 | Better Auth 和 `GET /api/projects`。 |
 | 中栏 | 当前 Project、Conversation、AgentRun 状态和任务输入。 | D1 Message、AgentRun 与 SSE。 |
-| 右侧 Drawer | 当前 Project 检查器；显示 Project、Sandbox、AgentRun 和真实 usage，并按后端能力启用文件、changes、终端、preview 标签。 | D1 公开事实和受控 Sandbox API。 |
+| 右侧 Inspector | 当前 Project 检查器；显示 Project、Sandbox、AgentRun 和真实 usage，并按后端能力启用文件、changes、终端、preview 标签。 | D1 公开事实和受控 Sandbox API。 |
 
-桌面端左栏固定为紧凑导航，中间 Project/Conversation 始终占据完整核心区。右侧
-Project Inspector 默认关闭，以非模态覆盖 Drawer 展开，不挤压或重排核心区；Drawer
-左边缘支持拖动、键盘调整和当前浏览器宽度偏好。移动端使用带遮罩、焦点约束和恢复的
-全高 Drawer。收起 Drawer 只改变可见性，不能卸载活动 Terminal/Preview。固定格式
-区域需要稳定尺寸和滚动容器，不能因状态文字、消息长度或按钮出现而导致整体跳动。
+桌面端左栏固定为紧凑导航。Project Inspector 默认关闭，展开后作为右侧独立面板压缩
+中间 Project/Conversation 工作区；面板左边缘支持拖动、键盘调整和当前浏览器宽度偏好。
+对话内容和输入框在工作区内采用居中的同一可读内容列；用户消息以原文显示，assistant
+最终消息使用安全 GFM Markdown（不渲染原始 HTML 或远程图片）。Conversation 只承载
+活动 Run 的可取消状态；终态 Run 的状态、时间和用量放在 `Runs` 页的紧凑摘要中。移动端
+使用带遮罩、焦点约束和恢复的全高 Drawer。收起 Inspector 只改变可见性，不能卸载活动
+Terminal/Preview。固定格式区域需要稳定尺寸和滚动容器，不能因状态文字、消息长度或
+按钮出现而导致整体跳动。
 
 ## 3. 视觉规则
 
@@ -64,4 +67,4 @@ Project Inspector 默认关闭，以非模态覆盖 Drawer 展开，不挤压或
 
 视觉验收至少覆盖 `1440x900` 桌面和 `390x844` 移动视口，检查无水平溢出、文本遮挡、
 布局跳动和无语义的大面积绿色。桌面还需验证 Drawer 默认关闭、打开/关闭、拖动、
-键盘调整、刷新持久化、核心区宽度不变和紧凑左栏；移动端不得显示桌面分隔条。
+键盘调整、刷新持久化、核心区随 Inspector 展开收缩和紧凑左栏；移动端不得显示桌面分隔条。

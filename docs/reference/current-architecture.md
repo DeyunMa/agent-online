@@ -224,13 +224,17 @@ Provider reference、Key、capability、异常 message 或 stack。
 
 ### 5.7 浏览器布局
 
-- 桌面端左侧 Project 导航固定为 240 px，窄桌面为 220 px；Project 主内容始终占据
-  完整核心区。
-- Project Inspector 默认关闭，以右侧非模态覆盖 Drawer 展开，不改变核心区尺寸。
-  Drawer 的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
+- 桌面端左侧 Project 导航固定为 240 px，窄桌面为 220 px；Project Inspector 打开后
+  作为右侧独立面板压缩核心工作区。
+- Project Inspector 默认关闭。面板的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
   宽度通常为 360 至 720 px，受限视口可收敛到 280 px。
+- 对话内容和输入框在核心区内保持居中的同一可读最大宽度。用户消息按原文显示；持久化的
+  assistant 最终消息在浏览器中使用安全 GFM Markdown 渲染，原始 HTML 与远程图片不进入
+  DOM。Conversation 仅显示活动 Run 的可取消状态；终态 Run 的状态、时间和用量以紧凑
+  摘要显示在 `Runs` 页。
 - 用户 Drawer 宽度偏好只保存在当前浏览器 localStorage，不进入 D1，也不构成产品
-  数据。收起只使用 CSS 可见性和位移，不卸载当前 Inspector view。
+  数据。桌面端收起只改变 CSS 可见性和占用宽度，移动端保留位移动画；两端均不卸载当前
+  Inspector view。
 - `760px` 以下隐藏桌面 separator，Inspector 使用带遮罩、焦点约束和焦点恢复的移动端
   Drawer。
 

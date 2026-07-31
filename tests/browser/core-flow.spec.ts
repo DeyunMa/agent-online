@@ -32,21 +32,67 @@ test("persists a cancelled Run and rejects deletion while the Project is active"
 
   await page.getByRole("button", { name: "Cancel run" }).click();
   const currentRunStatus = page.getByRole("region", { name: "Current run status" });
-  await expect(currentRunStatus.getByText("已取消", { exact: true })).toBeVisible({
+  await expect(currentRunStatus).toHaveCount(0, {
     timeout: 15_000,
   });
+  await page.getByRole("tab", { name: "Runs" }).click();
+  const selectedRunSummary = page.getByRole("region", { name: "Selected run summary" });
+  await expect(selectedRunSummary.getByText("已取消", { exact: true })).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole("link", { exact: true, name: projectName })).toBeVisible();
   await expect(
     page.getByRole("list", { name: "Project conversation" }).getByText("Browser smoke task"),
   ).toBeVisible();
-  await expect(
-    page.getByRole("region", { name: "Current run status" }).getByText("已取消", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Current run status" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Run history" })).toHaveCount(0);
   await page.getByRole("tab", { name: "Runs" }).click();
   await expect(page.getByRole("heading", { name: "Run history" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Selected run summary" })).toBeVisible();
+  await expect(page.getByLabel("Selected run metrics")).toBeVisible();
+});
+
+test("renders Assistant Markdown safely in the conversation column", async ({ page }) => {
+  await page.setViewportSize({ height: 900, width: 1_440 });
+  await page.route("**/api/projects/*/messages", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+
+    await route.fulfill({
+      json: [
+        {
+          agentRunId: null,
+          content: "请介绍当前沙箱环境。",
+          createdAt: "2026-07-31T08:00:00.000Z",
+          id: "message-user",
+          role: "user",
+          sequence: 1,
+        },
+        {
+          agentRunId: "run-markdown",
+          content:
+            '### 沙箱概览\n\n- **系统：** `Debian 12`\n- **工作目录：** `/workspace`\n\n![remote image](https://example.com/tracker.png)\n\n<iframe src="https://example.com"></iframe>',
+          createdAt: "2026-07-31T08:00:01.000Z",
+          id: "message-assistant",
+          role: "assistant",
+          sequence: 2,
+        },
+      ],
+    });
+  });
+
+  await registerAndCreateProject(page, "browser-markdown");
+
+  const assistantMessage = page.locator(".timeline-message-assistant article");
+  await expect(assistantMessage.getByRole("heading", { name: "沙箱概览" })).toBeVisible();
+  await expect(assistantMessage.locator("code").filter({ hasText: "Debian 12" })).toBeVisible();
+  await expect(assistantMessage.locator("img, iframe")).toHaveCount(0);
+
+  const assistantBox = await requiredBox(assistantMessage);
+  const composerBox = await requiredBox(page.locator(".agent-composer"));
+  expect(Math.abs(assistantBox.x - composerBox.x)).toBeLessThan(2);
 });
 
 test("selects an advertised Agent runtime for the next Run", async ({ page }) => {
@@ -214,7 +260,7 @@ test("renames and hard-deletes a Project from the mobile layout", async ({ page 
   await expect(page.getByRole("link", { exact: true, name: renamedProject })).toHaveCount(0);
 });
 
-test("opens and resizes the Project inspector drawer without shrinking the core area", async ({
+test("opens and resizes the Project inspector while making space in the core area", async ({
   page,
 }) => {
   await page.setViewportSize({ height: 900, width: 1_440 });
@@ -224,9 +270,7 @@ test("opens and resizes the Project inspector drawer without shrinking the core 
   const consoleMain = page.locator("#project-console-main");
   const inspector = page.locator("#project-inspector");
   const projectRunTabs = page.locator(".project-run-tabs");
-  const runStatusBar = page.locator(".run-status-bar");
   const inspectorHeader = page.locator(".project-inspector-header");
-  const inspectorTabs = page.locator(".inspector-tabs");
   const separator = page.getByRole("separator", {
     name: "Resize project inspector",
   });
@@ -241,12 +285,12 @@ test("opens and resizes the Project inspector drawer without shrinking the core 
   await expect(inspector).toBeVisible();
   await expect(separator).toBeVisible();
 
+  const mainOpen = await requiredBox(consoleMain);
+  expect(mainOpen.width).toBeLessThan(mainBefore.width - 200);
+
   const projectRunTabsBox = await requiredBox(projectRunTabs);
-  const runStatusBarBox = await requiredBox(runStatusBar);
   const inspectorHeaderBox = await requiredBox(inspectorHeader);
-  const inspectorTabsBox = await requiredBox(inspectorTabs);
   expect(bottom(projectRunTabsBox)).toBeCloseTo(bottom(inspectorHeaderBox), 1);
-  expect(bottom(runStatusBarBox)).toBeCloseTo(bottom(inspectorTabsBox), 1);
 
   const inspectorBefore = await requiredBox(inspector);
   const separatorBox = await requiredBox(separator);
@@ -266,7 +310,7 @@ test("opens and resizes the Project inspector drawer without shrinking the core 
   const inspectorAfter = await requiredBox(inspector);
   expect(Math.abs(sidebarAfter.width - sidebarBefore.width)).toBeLessThan(1);
   expect(inspectorAfter.width).toBeGreaterThan(inspectorBefore.width + 120);
-  expect(Math.abs(mainAfter.width - mainBefore.width)).toBeLessThan(1);
+  expect(mainAfter.width).toBeLessThan(mainOpen.width - 120);
 
   await page.reload();
   await expect(inspector).toBeHidden();

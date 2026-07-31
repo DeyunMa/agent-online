@@ -57,9 +57,12 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - Project 查询经 application `ProjectReadService` 统一执行 owner scope；Run 空闲回收、
   Terminal/Preview 释放后的回收和手动停止复用同一 `SandboxReclaimer`。客户端将排他
   活动与可并行的 running Preview 分成两个状态轴，并支持桌面/移动端 tab 键盘导航。
-  桌面端使用 240 px 紧凑左栏，中间 Project 控制台始终占据完整核心区；Project
-  Inspector 默认关闭，以不挤压核心区的右侧覆盖 Drawer 展开，并可通过分隔条拖动或
-  键盘调整。宽度偏好保存在当前浏览器；移动端继续使用模态检查器 Drawer。
+  桌面端使用 240 px 紧凑左栏；Project Inspector 默认关闭，打开后作为右侧独立面板
+  压缩 Project 控制台，并可通过分隔条拖动或键盘调整。对话内容和输入框保持居中的
+  可读宽度并使用同一内容列；assistant 最终消息以安全 GFM Markdown 渲染，原始 HTML
+  和远程图片均不渲染。Conversation 只在 Run 活动时显示可取消的状态，终态 Run 的状态、
+  时间和用量统一显示在 `Runs` 紧凑摘要中。宽度偏好保存在当前浏览器；移动端继续使用
+  模态检查器 Drawer。
 - Sentry 只启用 Error Monitoring。React、Hono 和 Workflow 异常经过严格 allowlist 清洗后上报；Logs、Tracing、Replay、Metrics 和用户内容采集均关闭。Preview 部署上传隐藏源码映射，上传后从 `dist` 删除 `.map`。
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面覆盖 Drawer、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi/Goose 选择均已部署；最新登录态浏览器验收覆盖 Drawer 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。

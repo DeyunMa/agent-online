@@ -8,10 +8,7 @@ test.afterEach(async ({ page }) => {
     const cancel = page.getByRole("button", { name: "Cancel run" });
     if (await cancel.isVisible({ timeout: 1_000 })) {
       await cancel.click();
-      await page
-        .getByRole("region", { name: "Current run status" })
-        .getByText(/^(已取消|执行失败|执行中断|执行超时)$/u)
-        .waitFor({ timeout: 30_000 });
+      await expect(cancel).toHaveCount(0, { timeout: 30_000 });
     }
 
     const openInspector = page.getByRole("button", { name: "Open project inspector" });
@@ -94,18 +91,19 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
     );
   await page.getByRole("button", { name: "Start run" }).click();
 
-  const currentRunStatus = page.getByRole("region", { name: "Current run status" });
-  await expect(currentRunStatus.getByText("执行完成", { exact: true })).toBeVisible({
-    timeout: 180_000,
-  });
   await expect(
     page.getByRole("list", { name: "Project conversation" }).getByText(marker, { exact: false }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 180_000 });
 
-  const totalTokens = page.locator(".run-metrics > div").filter({ hasText: "Total tokens" });
-  const modelRequests = page.locator(".run-metrics > div").filter({ hasText: "Model requests" });
+  await page.getByRole("tab", { name: "Runs" }).click();
+  const selectedRunSummary = page.getByRole("region", { name: "Selected run summary" });
+  await expect(selectedRunSummary.getByText("执行完成", { exact: true })).toBeVisible();
+  const selectedRunMetrics = page.getByLabel("Selected run metrics");
+  const totalTokens = selectedRunMetrics.locator("div").filter({ hasText: "Total tokens" });
+  const modelRequests = selectedRunMetrics.locator("div").filter({ hasText: "Model requests" });
   await expect(totalTokens.locator("dd")).toHaveText(/^(?!0$|—$).+/);
   await expect(modelRequests.locator("dd")).toHaveText(/^[1-9]\d*$/);
+  await page.getByRole("tab", { name: "Conversation" }).click();
 
   const projectInspector = page.getByRole("complementary", { name: "Project inspector" });
   await page.getByLabel("Choose file to upload").setInputFiles({
@@ -128,18 +126,25 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
     .getByLabel("Agent task")
     .fill("Run the shell command `sleep 120`, wait for it to finish, and only then reply.");
   await page.getByRole("button", { name: "Start run" }).click();
+  const currentRunStatus = page.getByRole("region", { name: "Current run status" });
   await expect(currentRunStatus.getByText("正在执行", { exact: true })).toBeVisible({
     timeout: 60_000,
   });
   await page.getByRole("button", { name: "Cancel run" }).click();
-  await expect(currentRunStatus.getByText("已取消", { exact: true })).toBeVisible({
+  await expect(currentRunStatus).toHaveCount(0, {
     timeout: 60_000,
   });
+  await page.getByRole("tab", { name: "Runs" }).click();
+  await expect(
+    page.getByRole("region", { name: "Selected run summary" }).getByText("已取消", { exact: true }),
+  ).toBeVisible();
 
   await page.reload();
-  await expect(currentRunStatus.getByText("已取消", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole("region", { name: "Current run status" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Runs" }).click();
+  await expect(
+    page.getByRole("region", { name: "Selected run summary" }).getByText("已取消", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel("Agent runtime")).toHaveValue("pi");
   await expect(page.locator(".timeline-message-assistant")).toHaveCount(
     assistantMessagesBeforeCancel,

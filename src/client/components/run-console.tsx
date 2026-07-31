@@ -29,6 +29,7 @@ import {
   formatTokenCount,
   shortRunId,
 } from "../presentation";
+import { AgentMessageMarkdown } from "./agent-message-markdown";
 import { ErrorState, LoadingState } from "./ui-states";
 import { handleRovingTabKeyDown } from "../tab-navigation";
 
@@ -92,14 +93,13 @@ export function RunStatusBar({
   }
 
   if (!run) {
-    return (
-      <div className="run-status-bar run-status-bar-empty">
-        <span>No run selected</span>
-      </div>
-    );
+    return null;
   }
 
   const terminal = isTerminalAgentRun(run.status);
+  if (terminal) {
+    return null;
+  }
 
   return (
     <section aria-label="Current run status" aria-live="polite" className="run-status-bar">
@@ -109,7 +109,6 @@ export function RunStatusBar({
       </div>
       <span className="run-status-separator" aria-hidden="true" />
       <span>Run {shortRunId(run.id)}</span>
-      <time dateTime={run.createdAt}>{formatDateTime(run.createdAt)}</time>
       <span>{formatRunDuration(run)}</span>
       <div className="run-status-spacer" />
       {run.failureCode ? (
@@ -137,24 +136,51 @@ export function RunStatusBar({
   );
 }
 
-export function RunMetrics({ run }: { run: AgentRunResponse | undefined }) {
+export function RunMetrics({
+  compact = false,
+  run,
+}: {
+  compact?: boolean;
+  run: AgentRunResponse | undefined;
+}) {
+  if (!run) {
+    return null;
+  }
+
   const metrics = [
-    { label: "Input tokens", value: run ? formatTokenCount(run.usage.inputTokens) : "—" },
-    { label: "Output tokens", value: run ? formatTokenCount(run.usage.outputTokens) : "—" },
-    { label: "Total tokens", value: run ? formatTokenCount(run.usage.totalTokens) : "—" },
-    { label: "Model requests", value: run ? String(run.usage.modelRequestCount) : "—" },
-    { label: "Time", value: run ? formatRunDuration(run) : "—" },
+    { label: "Input tokens", value: formatTokenCount(run.usage.inputTokens) },
+    { label: "Output tokens", value: formatTokenCount(run.usage.outputTokens) },
+    { label: "Total tokens", value: formatTokenCount(run.usage.totalTokens) },
+    { label: "Model requests", value: String(run.usage.modelRequestCount) },
+    { label: "Time", value: formatRunDuration(run) },
   ];
 
   return (
-    <dl className="run-metrics">
-      {metrics.map((metric) => (
-        <div key={metric.label}>
-          <dt>{metric.label}</dt>
-          <dd>{metric.value}</dd>
+    <section aria-label="Selected run summary" className="run-summary">
+      <header className="run-summary-header">
+        <div className={`run-status-pill ${agentRunStatusTone(run.status)}`}>
+          <RunStatusIcon status={run.status} />
+          <span>{agentRunStatusLabel(run.status)}</span>
         </div>
-      ))}
-    </dl>
+        <span>Run {shortRunId(run.id)}</span>
+        <time dateTime={run.createdAt}>{formatDateTime(run.createdAt)}</time>
+        <span>{agentRuntimeLabel(run.agentRuntimeId)}</span>
+      </header>
+      {run.failureCode ? (
+        <p className="run-summary-error">{agentRunFailureLabel(run.failureCode)}</p>
+      ) : null}
+      <dl
+        aria-label="Selected run metrics"
+        className={compact ? "run-metrics run-metrics-compact" : "run-metrics"}
+      >
+        {metrics.map((metric) => (
+          <div key={metric.label}>
+            <dt>{metric.label}</dt>
+            <dd>{metric.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -192,15 +218,19 @@ export function ConversationTimeline({
     <ol className="conversation-timeline" aria-label="Project conversation">
       {visibleMessages.map((message) => (
         <li className={`timeline-message timeline-message-${message.role}`} key={message.id}>
-          <span className="timeline-avatar" aria-hidden="true">
-            {message.role === "user" ? "YOU" : <TerminalSquare size={17} />}
-          </span>
           <article>
             <header>
+              <span className="timeline-avatar" aria-hidden="true">
+                {message.role === "user" ? "YOU" : <TerminalSquare size={15} />}
+              </span>
               <strong>{message.role === "user" ? "You" : "Agent"}</strong>
               <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
             </header>
-            <p>{message.content}</p>
+            {message.role === "assistant" ? (
+              <AgentMessageMarkdown content={message.content} />
+            ) : (
+              <p className="timeline-message-copy">{message.content}</p>
+            )}
           </article>
         </li>
       ))}
