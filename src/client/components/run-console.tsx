@@ -12,7 +12,15 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, type RefObject, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
@@ -315,7 +323,6 @@ export function AgentComposer({
   onUploadFile,
   selectedAgentRuntimeId,
   terminalEnabled,
-  textareaRef,
   uploadError,
 }: {
   agentRuntimeIds: readonly AgentRuntimeId[];
@@ -333,7 +340,6 @@ export function AgentComposer({
   onUploadFile: (file: File) => Promise<unknown>;
   selectedAgentRuntimeId: AgentRuntimeId | null;
   terminalEnabled: boolean;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
   uploadError: Error | null;
 }) {
   const [content, setContent] = useState("");
@@ -376,7 +382,6 @@ export function AgentComposer({
         name="content"
         onChange={(event) => setContent(event.target.value)}
         placeholder="Ask the agent to work on this project..."
-        ref={textareaRef}
         rows={3}
         value={content}
       />
@@ -436,28 +441,12 @@ export function AgentComposer({
           />
         </div>
         <div className="agent-composer-actions">
-          <div className="agent-runtime-control">
-            <select
-              aria-label="Agent runtime"
-              className="agent-runtime-select"
-              disabled={disabled || agentRuntimeIds.length < 2}
-              onChange={(event) => {
-                const runtimeId = agentRuntimeIds.find((id) => id === event.target.value);
-                if (runtimeId) {
-                  onAgentRuntimeChange(runtimeId);
-                }
-              }}
-              value={selectedAgentRuntimeId ?? ""}
-            >
-              {selectedAgentRuntimeId === null ? <option value="">Unavailable</option> : null}
-              {agentRuntimeIds.map((runtimeId) => (
-                <option key={runtimeId} value={runtimeId}>
-                  {agentRuntimeLabel(runtimeId)}
-                </option>
-              ))}
-            </select>
-            <ChevronDown aria-hidden="true" size={14} />
-          </div>
+          <AgentRuntimeSelector
+            disabled={disabled}
+            onChange={onAgentRuntimeChange}
+            runtimeIds={agentRuntimeIds}
+            selectedRuntimeId={selectedAgentRuntimeId}
+          />
           <button
             aria-label="Start run"
             className="composer-submit"
@@ -474,6 +463,147 @@ export function AgentComposer({
         </div>
       </div>
     </form>
+  );
+}
+
+function AgentRuntimeSelector({
+  disabled,
+  onChange,
+  runtimeIds,
+  selectedRuntimeId,
+}: {
+  disabled: boolean;
+  onChange: (runtimeId: AgentRuntimeId) => void;
+  runtimeIds: readonly AgentRuntimeId[];
+  selectedRuntimeId: AgentRuntimeId | null;
+}) {
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [open, setOpen] = useState(false);
+  const selectorDisabled = disabled || runtimeIds.length < 2;
+  const selectedIndex = selectedRuntimeId ? runtimeIds.indexOf(selectedRuntimeId) : 0;
+  const selectedLabel = selectedRuntimeId ? agentRuntimeLabel(selectedRuntimeId) : "Unavailable";
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      optionRefs.current[Math.max(selectedIndex, 0)]?.focus();
+    });
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("pointerdown", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open, selectedIndex]);
+
+  function focusOption(index: number) {
+    optionRefs.current[index]?.focus();
+  }
+
+  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (selectorDisabled || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) {
+      return;
+    }
+
+    event.preventDefault();
+    setOpen(true);
+  }
+
+  function handleOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusOption((index + 1) % runtimeIds.length);
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusOption((index - 1 + runtimeIds.length) % runtimeIds.length);
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusOption(0);
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusOption(runtimeIds.length - 1);
+    }
+  }
+
+  return (
+    <div className="agent-runtime-control" ref={rootRef}>
+      <button
+        aria-controls={open ? menuId : undefined}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label="Agent runtime"
+        className="agent-runtime-trigger"
+        disabled={selectorDisabled}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={handleTriggerKeyDown}
+        ref={triggerRef}
+        title="Choose Agent runtime"
+        type="button"
+      >
+        <span>{selectedLabel}</span>
+        <ChevronDown aria-hidden="true" size={14} />
+      </button>
+      {open ? (
+        <div
+          aria-label="Agent runtime options"
+          className="agent-runtime-menu"
+          id={menuId}
+          role="menu"
+        >
+          {runtimeIds.map((runtimeId, index) => {
+            const selected = runtimeId === selectedRuntimeId;
+
+            return (
+              <button
+                aria-checked={selected}
+                className={
+                  selected
+                    ? "agent-runtime-option agent-runtime-option-selected"
+                    : "agent-runtime-option"
+                }
+                key={runtimeId}
+                onClick={() => {
+                  onChange(runtimeId);
+                  setOpen(false);
+                  window.requestAnimationFrame(() => triggerRef.current?.focus());
+                }}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
+                ref={(element) => {
+                  optionRefs.current[index] = element;
+                }}
+                role="menuitemradio"
+                type="button"
+              >
+                <span>{agentRuntimeLabel(runtimeId)}</span>
+                {selected ? <CheckCircle2 aria-hidden="true" size={14} /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

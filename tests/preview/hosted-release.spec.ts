@@ -81,8 +81,10 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
 
   await expect(page.getByLabel("Agent task")).toBeVisible();
   const agentRuntime = page.getByLabel("Agent runtime");
-  await expect(agentRuntime).toHaveValue("pi");
-  await expect(agentRuntime.locator("option")).toHaveText(["Pi", "Goose"]);
+  await expect(agentRuntime).toHaveText("Pi");
+  await agentRuntime.click();
+  await expect(page.getByRole("menu", { name: "Agent runtime options" })).toBeVisible();
+  await page.getByRole("menuitemradio", { name: "Pi" }).press("Escape");
   await page
     .getByLabel("Agent task")
     .fill(
@@ -121,7 +123,8 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
   await expect(projectInspector.locator(".project-file-content")).toHaveText(marker);
 
   const assistantMessagesBeforeCancel = await page.locator(".timeline-message-assistant").count();
-  await agentRuntime.selectOption("goose");
+  await agentRuntime.click();
+  await page.getByRole("menuitemradio", { name: "Goose" }).click();
   await page
     .getByLabel("Agent task")
     .fill("Run the shell command `sleep 120`, wait for it to finish, and only then reply.");
@@ -145,7 +148,7 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
   await expect(
     page.getByRole("region", { name: "Selected run summary" }).getByText("已取消", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByLabel("Agent runtime")).toHaveValue("pi");
+  await expect(page.getByLabel("Agent runtime")).toHaveText("Pi");
   await expect(page.locator(".timeline-message-assistant")).toHaveCount(
     assistantMessagesBeforeCancel,
   );

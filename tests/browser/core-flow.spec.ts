@@ -91,8 +91,13 @@ test("renders Assistant Markdown safely in the conversation column", async ({ pa
   await expect(assistantMessage.locator("img, iframe")).toHaveCount(0);
 
   const assistantBox = await requiredBox(assistantMessage);
+  const userBox = await requiredBox(page.locator(".timeline-message-user article"));
   const composerBox = await requiredBox(page.locator(".agent-composer"));
   expect(Math.abs(assistantBox.x - composerBox.x)).toBeLessThan(2);
+  expect(userBox.width).toBeLessThan(assistantBox.width);
+  expect(Math.abs(userBox.x + userBox.width - (assistantBox.x + assistantBox.width))).toBeLessThan(
+    2,
+  );
 });
 
 test("selects an advertised Agent runtime for the next Run", async ({ page }) => {
@@ -116,9 +121,12 @@ test("selects an advertised Agent runtime for the next Run", async ({ page }) =>
 
   const runtime = page.getByLabel("Agent runtime");
   await expect(runtime).toBeEnabled();
-  await expect(runtime).toHaveValue("pi");
-  await runtime.selectOption("goose");
-  await expect(runtime).toHaveValue("goose");
+  await expect(runtime).toHaveText("Pi");
+  await runtime.click();
+  const runtimeOptions = page.getByRole("menu", { name: "Agent runtime options" });
+  await expect(runtimeOptions.getByRole("menuitemradio")).toHaveText(["Pi", "Goose"]);
+  await runtimeOptions.getByRole("menuitemradio", { name: "Goose" }).click();
+  await expect(runtime).toHaveText("Goose");
 
   await page.getByLabel("Agent task").fill("Use the selected runtime");
   const requestPromise = page.waitForRequest(
@@ -276,6 +284,7 @@ test("opens and resizes the Project inspector while making space in the core are
   });
   await expect(inspector).toBeHidden();
   await expect(separator).toBeHidden();
+  await expect(page.getByRole("button", { name: "New run" })).toHaveCount(0);
 
   const sidebarBefore = await requiredBox(sidebar);
   const mainBefore = await requiredBox(consoleMain);

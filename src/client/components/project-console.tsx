@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CirclePause, PanelRightOpen, Plus } from "lucide-react";
+import { ChevronRight, CirclePause, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
@@ -37,7 +37,6 @@ import { ProjectActionsMenu } from "./project-actions-menu";
 
 export function ProjectConsole({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const composerRef = useRef<HTMLTextAreaElement>(null);
   const consoleRef = useRef<HTMLElement>(null);
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
@@ -323,15 +322,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             >
               <PanelRightOpen aria-hidden="true" size={17} />
             </button>
-            <button
-              className="new-run-action"
-              disabled={exclusiveActivityActive || runCreationUnavailable}
-              onClick={() => composerRef.current?.focus()}
-              type="button"
-            >
-              <Plus aria-hidden="true" size={16} />
-              <span>New run</span>
-            </button>
           </div>
         </div>
       </AppHeaderSlot>
@@ -420,7 +410,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             selectedAgentRuntimeId={selectedAgentRuntimeId}
             changesEnabled={platformCapabilities.data?.changesEnabled === true}
             terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
-            textareaRef={composerRef}
             uploadError={uploadFile.error}
           />
         </main>
