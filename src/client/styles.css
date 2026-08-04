@@ -541,8 +541,7 @@ textarea:disabled {
   gap: 8px;
 }
 
-.project-inspector-toggle,
-.project-inspector-close {
+.project-inspector-toggle {
   display: inline-grid;
 }
 
@@ -3240,13 +3239,8 @@ body.project-panels-resizing iframe {
     position: sticky;
     z-index: 2;
     top: 0;
-    justify-content: space-between;
     border-bottom: 1px solid var(--border);
     background: var(--surface-subtle);
-  }
-
-  .project-inspector-close {
-    display: inline-grid;
   }
 
   .inspector-tabs {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, CirclePause, PanelRightOpen } from "lucide-react";
+import { ChevronRight, CirclePause, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
@@ -313,14 +313,18 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             <ProjectActionsMenu placement="header" project={project.data} />
             <button
               aria-expanded={inspectorOpen}
-              aria-label="Open project inspector"
+              aria-label={inspectorOpen ? "Close project inspector" : "Open project inspector"}
               className="icon-button project-inspector-toggle"
-              onClick={() => setInspectorOpen(true)}
+              onClick={() => setInspectorOpen((open) => !open)}
               ref={inspectorToggleRef}
-              title="Project inspector"
+              title={inspectorOpen ? "Close project inspector" : "Open project inspector"}
               type="button"
             >
-              <PanelRightOpen aria-hidden="true" size={17} />
+              {inspectorOpen ? (
+                <PanelRightClose aria-hidden="true" size={17} />
+              ) : (
+                <PanelRightOpen aria-hidden="true" size={17} />
+              )}
             </button>
           </div>
         </div>
@@ -428,7 +432,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           changesEnabled={platformCapabilities.data?.changesEnabled === true}
           filesRevision={filesRevision}
           isStopping={stopSandbox.isPending}
-          onClose={closeInspector}
           onStopSandbox={() => stopSandbox.mutate()}
           onViewChange={setInspectorView}
           onPreviewActivityChange={setPreviewActive}

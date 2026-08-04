@@ -1,4 +1,4 @@
-import { LoaderCircle, Square, X } from "lucide-react";
+import { LoaderCircle, Square } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
@@ -29,7 +29,6 @@ export function ProjectInspector({
   filesRevision,
   isStopping,
   mobileOpen,
-  onClose,
   onViewChange,
   onStopSandbox,
   onPreviewActivityChange,
@@ -48,7 +47,6 @@ export function ProjectInspector({
   filesRevision: number;
   isStopping: boolean;
   mobileOpen: boolean;
-  onClose(): void;
   onStopSandbox: () => void;
   onPreviewActivityChange(active: boolean): void;
   onPreviewStartingChange(starting: boolean): void;
@@ -62,7 +60,6 @@ export function ProjectInspector({
   view: InspectorView;
   open: boolean;
 }) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!changesEnabled && view === "changes") {
@@ -85,7 +82,9 @@ export function ProjectInspector({
     }
 
     const focusFrame = window.requestAnimationFrame(() => {
-      closeButtonRef.current?.focus({ preventScroll: true });
+      inspectorRef.current
+        ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+        ?.focus({ preventScroll: true });
     });
     function handleTab(event: KeyboardEvent) {
       trapMobileInspectorFocus(event, inspectorRef.current);
@@ -124,18 +123,6 @@ export function ProjectInspector({
     >
       <header className="project-inspector-header">
         <h2 id="project-inspector-title">Project inspector</h2>
-        {open ? (
-          <button
-            aria-label="Close project inspector"
-            className="icon-button project-inspector-close"
-            onClick={onClose}
-            ref={closeButtonRef}
-            title="Close project inspector"
-            type="button"
-          >
-            <X aria-hidden="true" size={17} />
-          </button>
-        ) : null}
       </header>
 
       <div

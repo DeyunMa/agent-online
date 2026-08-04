@@ -201,7 +201,7 @@ test("uploads one file and opens the Files, Terminal, and Changes inspector view
         name: tabName,
       }),
     ).toHaveAttribute("aria-selected", "true");
-    await inspector.getByRole("button", { name: "Close project inspector" }).click();
+    await page.getByRole("button", { name: "Close project inspector" }).click();
     await expect(inspector).toBeHidden();
   };
 
@@ -293,6 +293,7 @@ test("opens and resizes the Project inspector while making space in the core are
   await page.getByRole("button", { name: "Open project inspector" }).click();
   await expect(inspector).toBeVisible();
   await expect(separator).toBeVisible();
+  await expect(inspector.getByRole("button", { name: "Close project inspector" })).toHaveCount(0);
 
   const mainOpen = await requiredBox(consoleMain);
   expect(mainOpen.width).toBeLessThan(mainBefore.width - 200);
@@ -342,9 +343,15 @@ test("opens and resizes the Project inspector while making space in the core are
   await page.setViewportSize({ height: 844, width: 390 });
   await expect(sidebar).toBeHidden();
   await page.getByRole("button", { name: "Open project inspector" }).click();
-  await expect(page.getByRole("dialog", { name: "Project inspector" })).toBeVisible();
+  const mobileInspector = page.getByRole("dialog", { name: "Project inspector" });
+  await expect(mobileInspector).toBeVisible();
+  await expect(
+    mobileInspector.getByRole("button", { name: "Close project inspector" }),
+  ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Dismiss project inspector" })).toBeVisible();
   await expect(separator).toBeHidden();
+  await page.getByRole("button", { name: "Close project inspector" }).click();
+  await expect(mobileInspector).toBeHidden();
 });
 
 async function requiredBox(locator: Locator) {
