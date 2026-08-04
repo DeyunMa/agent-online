@@ -1,0 +1,271 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent Online 当前系统架构",
+    "subtitle": "单一 Cloudflare Worker 产品：浏览器控制台、受控控制平面与 E2B 沙箱中的 Agent 执行",
+    "output": "agent-online-system-architecture.html",
+    "quality_profile": "showcase",
+    "visual_preset": "blueprint",
+    "repository": {
+      "url": "https://github.com/DeyunMa/agent-online.git",
+      "revision": "e35b4ac45fb6d9505fa28c43d3b29304cbe917b1"
+    }
+  },
+  "components": [
+    {
+      "id": "user-browser",
+      "type": "external",
+      "label": "用户浏览器",
+      "sublabel": "同源 HTTPS 客户端",
+      "pos": [30, 330],
+      "size": [130, 64]
+    },
+    {
+      "id": "react-console",
+      "type": "frontend",
+      "label": "React Console",
+      "sublabel": "Project、消息与受控 Inspector UI",
+      "tag": "Workers Assets",
+      "pos": [240, 330],
+      "size": [160, 72],
+      "sources": [
+        { "path": "src/client/main.tsx", "line": 1, "end_line": 30, "label": "client bootstrap" },
+        { "path": "wrangler.jsonc", "line": 7, "end_line": 10, "label": "assets binding" }
+      ]
+    },
+    {
+      "id": "hono-control-plane",
+      "type": "backend",
+      "label": "Hono 控制平面",
+      "sublabel": "鉴权、Project、Run 与受控能力 API",
+      "tag": "Cloudflare Worker",
+      "pos": [490, 330],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/server/app.ts", "line": 22, "end_line": 75, "label": "Hono routes" },
+        { "path": "worker/index.ts", "line": 3, "end_line": 13, "label": "Worker entry" }
+      ]
+    },
+    {
+      "id": "agent-run-workflow",
+      "type": "cloud",
+      "label": "AgentRunWorkflow",
+      "sublabel": "每个 Run 的执行、超时与回收所有者",
+      "pos": [745, 330],
+      "size": [165, 70],
+      "sources": [
+        { "path": "src/server/agent-run-workflow.ts", "line": 9, "end_line": 152, "label": "Workflow owner" },
+        { "path": "wrangler.jsonc", "line": 20, "end_line": 25, "label": "Workflow binding" }
+      ]
+    },
+    {
+      "id": "e2b-sandbox-runtime",
+      "type": "backend",
+      "label": "SandboxRuntime",
+      "sublabel": "当前 E2B Adapter；生命周期、进程与文件能力",
+      "tag": "Worker 内 Provider Adapter",
+      "pos": [995, 330],
+      "size": [175, 72],
+      "sources": [
+        { "path": "src/server/e2b-runtime-factory.ts", "line": 12, "end_line": 28, "label": "E2B factory" },
+        { "path": "src/runtime/e2b-runtime.ts", "line": 65, "end_line": 68, "label": "runtime capabilities" }
+      ]
+    },
+    {
+      "id": "agent-runtime",
+      "type": "backend",
+      "label": "Pi / Goose Agent",
+      "sublabel": "沙箱进程 · /workspace",
+      "tag": "Terminal / Preview / Changes",
+      "pos": [1260, 330],
+      "size": [180, 72],
+      "sources": [
+        { "path": "src/agent/registry.ts", "line": 5, "end_line": 19, "label": "runtime registry" },
+        { "path": "src/server/app.ts", "line": 51, "end_line": 62, "label": "public capabilities" }
+      ]
+    },
+    {
+      "id": "better-auth",
+      "type": "security",
+      "label": "Better Auth",
+      "sublabel": "邮箱密码与同源会话",
+      "pos": [490, 100],
+      "size": [150, 62],
+      "sources": [
+        { "path": "src/server/auth.ts", "line": 8, "end_line": 34, "label": "auth factory" }
+      ]
+    },
+    {
+      "id": "d1",
+      "type": "database",
+      "label": "Cloudflare D1",
+      "sublabel": "认证、Project、Run、Lease 与临时协调",
+      "pos": [740, 100],
+      "size": [170, 62],
+      "sources": [
+        { "path": "wrangler.jsonc", "line": 12, "end_line": 25, "label": "D1 and Workflow bindings" },
+        { "path": "src/server/services.ts", "line": 79, "end_line": 84, "label": "D1 repositories" }
+      ]
+    },
+    {
+      "id": "model-gateway",
+      "type": "backend",
+      "label": "Run 授权模型网关",
+      "sublabel": "验证短时 capability 并累计 usage",
+      "tag": "Worker Secret 仅在此边界",
+      "pos": [990, 610],
+      "size": [180, 64],
+      "sources": [
+        { "path": "src/server/model-gateway-service.ts", "line": 20, "end_line": 84, "label": "capability and usage" },
+        { "path": "src/server/app.ts", "line": 65, "end_line": 66, "label": "gateway route" }
+      ]
+    },
+    {
+      "id": "gemini-api",
+      "type": "external",
+      "label": "Gemini API",
+      "sublabel": "模型提供方",
+      "pos": [1250, 610],
+      "size": [160, 64],
+      "sources": [
+        { "path": "src/server/model-gateway-service.ts", "line": 71, "end_line": 84, "label": "Gemini key use" }
+      ]
+    },
+    {
+      "id": "sentry",
+      "type": "external",
+      "label": "Sentry",
+      "sublabel": "仅脱敏 Error Monitoring",
+      "pos": [30, 610],
+      "size": [150, 64],
+      "sources": [
+        { "path": "worker/index.ts", "line": 1, "end_line": 11, "label": "Workflow instrumentation" },
+        { "path": "src/client/main.tsx", "line": 1, "end_line": 30, "label": "React boundary" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Cloudflare 单一部署：Assets · Worker · Workflow · D1",
+      "wraps": [
+        "react-console",
+        "hono-control-plane",
+        "agent-run-workflow",
+        "e2b-sandbox-runtime",
+        "better-auth",
+        "d1",
+        "model-gateway"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "security-group",
+      "label": "E2B 项目沙箱：低信任执行边界",
+      "wraps": ["agent-runtime"],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-loads-console",
+      "from": "user-browser",
+      "to": "react-console",
+      "variant": "emphasis"
+    },
+    {
+      "id": "console-calls-control-plane",
+      "from": "react-console",
+      "to": "hono-control-plane",
+      "label": "受控 API",
+      "variant": "emphasis"
+    },
+    {
+      "id": "control-plane-creates-workflow",
+      "from": "hono-control-plane",
+      "to": "agent-run-workflow",
+      "variant": "emphasis"
+    },
+    {
+      "id": "workflow-coordinates-sandbox",
+      "from": "agent-run-workflow",
+      "to": "e2b-sandbox-runtime",
+      "label": "执行协调"
+    },
+    {
+      "id": "runtime-starts-agent",
+      "from": "e2b-sandbox-runtime",
+      "to": "agent-runtime",
+      "label": "受控进程"
+    },
+    {
+      "id": "control-plane-uses-auth",
+      "from": "hono-control-plane",
+      "to": "better-auth",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "auth-stores-session",
+      "from": "better-auth",
+      "to": "d1",
+      "label": "会话",
+      "variant": "security"
+    },
+    {
+      "id": "control-plane-stores-product-state",
+      "from": "hono-control-plane",
+      "to": "d1"
+    },
+    {
+      "id": "agent-calls-model-gateway",
+      "from": "agent-runtime",
+      "to": "model-gateway",
+      "label": "短时 capability",
+      "variant": "security"
+    },
+    {
+      "id": "gateway-calls-gemini",
+      "from": "model-gateway",
+      "to": "gemini-api",
+      "variant": "security"
+    },
+    {
+      "id": "control-plane-reports-sentry",
+      "from": "hono-control-plane",
+      "to": "sentry",
+      "label": "脱敏诊断",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "产品控制平面",
+      "items": [
+        "React 静态资源与 Hono API 同域，只有一个 Worker 部署单元。",
+        "Hono 创建 Run；Cloudflare Workflow 是长生命周期执行、超时与空闲回收的所有者。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "沙箱与工作区",
+      "items": [
+        "真实 Agent、shell、Project 文件和受控 Terminal/Preview/Changes 都在 E2B 沙箱内。",
+        "Project 文件仅存在于 /workspace；停止、过期或故障后允许丢失。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "信任与数据边界",
+      "items": [
+        "模型请求必须携带 Run 范围短时 capability；Gemini 原始 Key 不进入浏览器或沙箱。",
+        "D1 不保存工作区、原始 Agent transcript、终端滚屏、Preview 内容或 Git 历史。"
+      ]
+    }
+  ]
+}

@@ -6,6 +6,12 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 它参考 CCOnline 的产品边界：真实 Agent 进程运行在远程沙箱，浏览器只是控制和可视化界面。它不复制 CCOnline、Pi、Claude Code、Codex 或任何第三方的代码、品牌和商业实现。
 
+## 当前系统架构
+
+[![Agent Online 当前系统架构图](./docs/architecture/agent-online-system-architecture.png)](./docs/architecture/agent-online-system-architecture.html)
+
+点击预览图打开交互式架构图；它包含源码证据、节点搜索、关系追踪和深浅主题。
+
 ## V1 架构结论
 
 - 一个仓库、一个 Cloudflare Worker 部署单元：React 静态资源和 Hono API 同域；不拆分前后端项目。
