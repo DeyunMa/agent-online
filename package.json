@@ -38,6 +38,8 @@
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.15.17",
+    "@base-ui/react": "1.7.0",
     "@sentry/cloudflare": "10.69.0",
     "@sentry/hono": "10.69.0",
     "@sentry/react": "10.69.0",
@@ -46,6 +48,8 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "better-auth": "^1.6.25",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
     "e2b": "2.36.0",
     "hono": "^4.12.32",
     "lucide-react": "^1.26.0",
@@ -53,6 +57,7 @@
     "react-dom": "^19.2.8",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "tailwind-merge": "3.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -62,10 +67,12 @@
     "@cloudflare/vitest-pool-workers": "0.18.8",
     "@playwright/test": "1.62.0",
     "@sentry/vite-plugin": "^5.4.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
+    "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10",

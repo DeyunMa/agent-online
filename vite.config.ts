@@ -1,6 +1,7 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
@@ -33,6 +34,7 @@ export default defineConfig(({ command, mode }) => {
       sourcemap: sentryUploadEnabled ? "hidden" : false,
     },
     plugins: [
+      tailwindcss(),
       react(),
       cloudflare(cloudflareOptions),
       ...(sentryUploadEnabled
@@ -50,6 +52,11 @@ export default defineConfig(({ command, mode }) => {
     server: {
       port: browserSmoke ? 4173 : 5173,
       strictPort: browserSmoke,
+    },
+    resolve: {
+      alias: {
+        "@": resolve(process.cwd(), "src/client"),
+      },
     },
   };
 });

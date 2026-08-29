@@ -13,14 +13,12 @@ import {
   XCircle,
 } from "lucide-react";
 import {
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+  ComposerPrimitive,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAuiState,
+} from "@assistant-ui/react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 
 import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
@@ -40,6 +38,9 @@ import {
 import { AgentMessageMarkdown } from "./agent-message-markdown";
 import { ErrorState, LoadingState } from "./ui-states";
 import { handleRovingTabKeyDown } from "../tab-navigation";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 export type ProjectConsoleView = "conversation" | "runs";
 
@@ -203,46 +204,70 @@ export function ConversationTimeline({
   messages: MessageResponse[] | undefined;
   onRetry: () => void;
 }) {
-  if (isPending) {
-    return <LoadingState label="Loading conversation" />;
-  }
-
-  if (error) {
-    return <ErrorState error={error} onRetry={onRetry} />;
-  }
-
   const visibleMessages = messages ?? [];
 
-  if (visibleMessages.length === 0) {
-    return (
-      <div className="conversation-empty">
-        <TerminalSquare aria-hidden="true" size={24} strokeWidth={1.5} />
-        <p>No messages in this project.</p>
-      </div>
-    );
-  }
+  return (
+    <ThreadPrimitive.Root className="assistant-conversation-thread">
+      <ThreadPrimitive.Viewport autoScroll className="project-console-scroll">
+        {isPending ? <LoadingState label="Loading conversation" /> : null}
+        {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
+        {!isPending && !error && visibleMessages.length === 0 ? (
+          <div className="conversation-empty">
+            <TerminalSquare aria-hidden="true" size={24} strokeWidth={1.5} />
+            <p>No messages in this project.</p>
+          </div>
+        ) : null}
+        {!isPending && !error && visibleMessages.length > 0 ? (
+          <ol className="conversation-timeline" aria-label="Project conversation">
+            <ThreadPrimitive.Messages components={{ Message: ConversationMessage }} />
+          </ol>
+        ) : null}
+      </ThreadPrimitive.Viewport>
+    </ThreadPrimitive.Root>
+  );
+}
+
+function ConversationMessage() {
+  const createdAt = useAuiState((state) => state.message.createdAt);
+  const hasParts = useAuiState((state) => state.message.parts.length > 0);
+  const isRunning = useAuiState((state) => state.message.status?.type === "running");
+  const role = useAuiState((state) => state.message.role);
+  const assistant = role === "assistant";
 
   return (
-    <ol className="conversation-timeline" aria-label="Project conversation">
-      {visibleMessages.map((message) => (
-        <li className={`timeline-message timeline-message-${message.role}`} key={message.id}>
-          <article>
-            <header>
-              <span className="timeline-avatar" aria-hidden="true">
-                {message.role === "user" ? "YOU" : <TerminalSquare size={15} />}
-              </span>
-              <strong>{message.role === "user" ? "You" : "Agent"}</strong>
-              <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
-            </header>
-            {message.role === "assistant" ? (
-              <AgentMessageMarkdown content={message.content} />
-            ) : (
-              <p className="timeline-message-copy">{message.content}</p>
-            )}
-          </article>
-        </li>
-      ))}
-    </ol>
+    <MessagePrimitive.Root asChild>
+      <li className={`timeline-message timeline-message-${role}`}>
+        <article>
+          <header>
+            <span className="timeline-avatar" aria-hidden="true">
+              {role === "user" ? "YOU" : <TerminalSquare size={15} />}
+            </span>
+            <strong>{role === "user" ? "You" : "Agent"}</strong>
+            <time dateTime={createdAt.toISOString()}>{formatTime(createdAt.toISOString())}</time>
+          </header>
+          {assistant && !hasParts && isRunning ? (
+            <p aria-live="polite" className="assistant-run-placeholder">
+              <LoaderCircle aria-hidden="true" className="spin" size={15} />
+              Agent is working on the project…
+            </p>
+          ) : (
+            <MessagePrimitive.Parts>
+              {({ part }) => {
+                if (part.type !== "text") {
+                  return null;
+                }
+
+                return assistant ? (
+                  <AgentMessageMarkdown content={part.text} />
+                ) : (
+                  <p className="timeline-message-copy">{part.text}</p>
+                );
+              }}
+            </MessagePrimitive.Parts>
+          )}
+        </article>
+      </li>
+    </MessagePrimitive.Root>
   );
 }
 
@@ -318,7 +343,6 @@ export function AgentComposer({
   onAgentRuntimeChange,
   onChangesOpen,
   onFilesOpen,
-  onSubmit,
   onTerminalOpen,
   onUploadFile,
   selectedAgentRuntimeId,
@@ -335,57 +359,29 @@ export function AgentComposer({
   onAgentRuntimeChange: (agentRuntimeId: AgentRuntimeId) => void;
   onChangesOpen: () => void;
   onFilesOpen: () => void;
-  onSubmit: (content: string, agentRuntimeId: AgentRuntimeId) => Promise<unknown>;
   onTerminalOpen: () => void;
   onUploadFile: (file: File) => Promise<unknown>;
   selectedAgentRuntimeId: AgentRuntimeId | null;
   terminalEnabled: boolean;
   uploadError: Error | null;
 }) {
-  const [content, setContent] = useState("");
-  const [validationError, setValidationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = content.trim();
-
-    if (!trimmed) {
-      setValidationError("Enter a task for the agent.");
-      return;
-    }
-    if (!selectedAgentRuntimeId) {
-      setValidationError("Select an available Agent.");
-      return;
-    }
-
-    setValidationError(null);
-    void submitRun(trimmed, selectedAgentRuntimeId);
-  }
-
-  async function submitRun(contentToSubmit: string, agentRuntimeId: AgentRuntimeId) {
-    try {
-      await onSubmit(contentToSubmit, agentRuntimeId);
-      setContent("");
-    } catch {
-      // React Query exposes the request failure below the editor.
-    }
-  }
-
   return (
-    <form className="agent-composer" onSubmit={submit}>
-      <textarea
+    <ComposerPrimitive.Root className="agent-composer">
+      <ComposerPrimitive.Input
+        addAttachmentOnPaste={false}
         aria-label="Agent task"
-        disabled={disabled}
-        id="agent-task"
+        asChild
+        cancelOnEscape={false}
         maxLength={64_000}
         name="content"
-        onChange={(event) => setContent(event.target.value)}
         placeholder="Ask the agent to work on this project..."
         rows={3}
-        value={content}
-      />
-      {validationError ? <p className="field-error">{validationError}</p> : null}
+        submitMode="ctrlEnter"
+      >
+        <Textarea className="agent-composer-input min-h-[50px] max-h-40 resize-y border-0 bg-transparent px-3.5 pt-2.5 pb-0 leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0" />
+      </ComposerPrimitive.Input>
       {error ? <ErrorState compact error={error} /> : null}
       {uploadError ? <ErrorState compact error={uploadError} /> : null}
       <div className="agent-composer-toolbar">
@@ -447,22 +443,20 @@ export function AgentComposer({
             runtimeIds={agentRuntimeIds}
             selectedRuntimeId={selectedAgentRuntimeId}
           />
-          <button
+          <ComposerPrimitive.Send
             aria-label="Start run"
-            className="composer-submit"
-            disabled={disabled || !content.trim()}
+            className={cn(buttonVariants({ size: "icon" }), "composer-submit")}
             title="Start run"
-            type="submit"
           >
             {isSubmitting ? (
               <LoaderCircle aria-hidden="true" className="spin" size={17} />
             ) : (
               <Play aria-hidden="true" fill="currentColor" size={16} />
             )}
-          </button>
+          </ComposerPrimitive.Send>
         </div>
       </div>
-    </form>
+    </ComposerPrimitive.Root>
   );
 }
 
@@ -621,16 +615,18 @@ function ComposerTool({
   title?: string;
 }) {
   return (
-    <button
+    <Button
       aria-label={label}
-      className="composer-tool"
+      className="composer-tool text-muted-foreground hover:text-foreground"
       disabled={disabled}
       onClick={onClick}
+      size="icon"
       title={title}
       type="button"
+      variant="ghost"
     >
       {icon}
-    </button>
+    </Button>
   );
 }
 

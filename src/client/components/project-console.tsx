@@ -4,7 +4,7 @@ import { ChevronRight, CirclePause, PanelRightClose, PanelRightOpen } from "luci
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isTerminalAgentRun } from "../../domain/agent-run";
-import type { AgentRunResponse } from "../../shared/api";
+import type { AgentRunResponse, MessageResponse } from "../../shared/api";
 import type { AgentRuntimeId } from "../../shared/protocol";
 import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
 import { deriveProjectActivity } from "../project-activity";
@@ -22,6 +22,7 @@ import {
 } from "../query-keys";
 import { ProjectInspector, type InspectorView } from "./project-inspector";
 import { ProjectPanelResizer } from "./project-panel-resizer";
+import { ProjectAssistantRuntimeProvider } from "./project-assistant-runtime";
 import {
   AgentComposer,
   ConversationTimeline,
@@ -96,6 +97,43 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       agentRuntimeId: AgentRuntimeId;
       content: string;
     }) => browserApi.createAgentRun(projectId, { agentRuntimeId, content }),
+    onMutate: async ({ content }) => {
+      const queryKey = projectMessagesQueryKey(projectId);
+      await queryClient.cancelQueries({ queryKey });
+
+      const previousMessages = queryClient.getQueryData<MessageResponse[]>(queryKey);
+      const sequence =
+        (previousMessages ?? []).reduce(
+          (highest, message) => Math.max(highest, message.sequence),
+          0,
+        ) + 1;
+      const optimisticMessage: MessageResponse = {
+        agentRunId: null,
+        content,
+        createdAt: new Date().toISOString(),
+        id: `optimistic-${crypto.randomUUID()}`,
+        role: "user",
+        sequence,
+      };
+
+      queryClient.setQueryData<MessageResponse[]>(queryKey, (current) => [
+        ...(current ?? []),
+        optimisticMessage,
+      ]);
+
+      return { previousMessages };
+    },
+    onError: (_error, _variables, context) => {
+      queryClient.setQueryData<MessageResponse[]>(
+        projectMessagesQueryKey(projectId),
+        context?.previousMessages ?? [],
+      );
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: projectMessagesQueryKey(projectId),
+      });
+    },
     onSuccess: async (run) => {
       setActiveRunId(run.id);
       setStreamError(null);
@@ -161,6 +199,28 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           agentRuntimeIds.includes(platformCapabilities.data.defaultAgentRuntimeId)
         ? platformCapabilities.data.defaultAgentRuntimeId
         : null;
+  const assistantRuntimeRun =
+    currentRun && !isTerminalAgentRun(currentRun.status)
+      ? currentRun
+      : recoveredActiveRun && !isTerminalAgentRun(recoveredActiveRun.status)
+        ? recoveredActiveRun
+        : undefined;
+  const assistantRuntimeIsRunning = createRun.isPending || assistantRuntimeRun !== undefined;
+  const submitAssistantTask = useCallback(
+    async (content: string) => {
+      if (!selectedAgentRuntimeId) {
+        throw new Error("Select an available Agent.");
+      }
+
+      await createRun.mutateAsync({ agentRuntimeId: selectedAgentRuntimeId, content });
+    },
+    [createRun, selectedAgentRuntimeId],
+  );
+  const cancelAssistantTask = useCallback(async () => {
+    if (currentRun) {
+      await cancelRun.mutateAsync(currentRun.id);
+    }
+  }, [cancelRun, currentRun]);
   const activity = deriveProjectActivity({
     previewActive,
     previewStarting,
@@ -168,6 +228,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     terminalActive,
   });
   const exclusiveActivityActive = activity.exclusive !== "idle";
+  const composerDisabled =
+    createRun.isPending ||
+    runCreationUnavailable ||
+    exclusiveActivityActive ||
+    selectedAgentRuntimeId === null;
   const sandboxLease = project.data?.sandboxLease;
   const fileUploadAvailable =
     platformCapabilities.data?.fileUploadEnabled === true &&
@@ -337,85 +402,82 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       >
         <main className="project-console-main" id="project-console-main">
           <ProjectRunTabs onViewChange={setView} view={view} />
-          {platformCapabilities.isError ? (
-            <div className="run-availability">
-              <ErrorState
-                compact
-                error={platformCapabilities.error}
-                onRetry={() => void platformCapabilities.refetch()}
-              />
-            </div>
-          ) : null}
-          {platformCapabilities.data?.runCreationEnabled === false ? (
-            <div className="run-availability run-availability-paused" role="status">
-              <CirclePause aria-hidden="true" size={15} />
-              <span>New Agent Runs are temporarily paused.</span>
-            </div>
-          ) : null}
-          {view === "conversation" ? (
-            <>
-              <RunStatusBar
-                cancelError={cancelRun.error}
-                isCancelling={cancelRun.isPending}
-                loadError={activeAgentRun.error ?? agentRun.error}
-                onCancel={() => {
-                  if (currentRun) {
-                    cancelRun.mutate(currentRun.id);
-                  }
-                }}
-                run={currentRun}
-                streamError={streamError}
-              />
-              <div className="project-console-scroll">
+          <ProjectAssistantRuntimeProvider
+            isDisabled={composerDisabled}
+            isRunning={assistantRuntimeIsRunning}
+            key={projectId}
+            messages={messages.data ?? []}
+            onCancelRun={cancelAssistantTask}
+            onSubmitText={submitAssistantTask}
+          >
+            {platformCapabilities.isError ? (
+              <div className="run-availability">
+                <ErrorState
+                  compact
+                  error={platformCapabilities.error}
+                  onRetry={() => void platformCapabilities.refetch()}
+                />
+              </div>
+            ) : null}
+            {platformCapabilities.data?.runCreationEnabled === false ? (
+              <div className="run-availability run-availability-paused" role="status">
+                <CirclePause aria-hidden="true" size={15} />
+                <span>New Agent Runs are temporarily paused.</span>
+              </div>
+            ) : null}
+            {view === "conversation" ? (
+              <>
+                <RunStatusBar
+                  cancelError={cancelRun.error}
+                  isCancelling={cancelRun.isPending}
+                  loadError={activeAgentRun.error ?? agentRun.error}
+                  onCancel={() => {
+                    void cancelAssistantTask().catch(() => undefined);
+                  }}
+                  run={currentRun}
+                  streamError={streamError}
+                />
                 <ConversationTimeline
                   error={messages.error}
                   isPending={messages.isPending}
                   messages={messages.data}
                   onRetry={() => void messages.refetch()}
                 />
+              </>
+            ) : (
+              <div className="project-console-scroll project-console-runs-view">
+                <RunMetrics compact run={currentRun} />
+                <RunHistory
+                  error={recentRuns.error}
+                  isPending={recentRuns.isPending}
+                  messages={messages.data}
+                  onRetry={() => void recentRuns.refetch()}
+                  onSelect={(runId) => {
+                    setActiveRunId(runId);
+                  }}
+                  runs={recentRuns.data}
+                  selectedRunId={currentRunId}
+                />
               </div>
-            </>
-          ) : (
-            <div className="project-console-scroll project-console-runs-view">
-              <RunMetrics compact run={currentRun} />
-              <RunHistory
-                error={recentRuns.error}
-                isPending={recentRuns.isPending}
-                messages={messages.data}
-                onRetry={() => void recentRuns.refetch()}
-                onSelect={(runId) => {
-                  setActiveRunId(runId);
-                }}
-                runs={recentRuns.data}
-                selectedRunId={currentRunId}
-              />
-            </div>
-          )}
-          <AgentComposer
-            agentRuntimeIds={agentRuntimeIds}
-            disabled={
-              createRun.isPending ||
-              runCreationUnavailable ||
-              exclusiveActivityActive ||
-              selectedAgentRuntimeId === null
-            }
-            error={createRun.error}
-            fileUploadDisabled={!fileUploadAvailable}
-            isSubmitting={createRun.isPending}
-            isUploadingFile={uploadFile.isPending}
-            onChangesOpen={() => openInspectorView("changes")}
-            onAgentRuntimeChange={setAgentRuntimePreference}
-            onFilesOpen={() => openInspectorView("files")}
-            onSubmit={(content, agentRuntimeId) =>
-              createRun.mutateAsync({ agentRuntimeId, content })
-            }
-            onTerminalOpen={() => openInspectorView("terminal")}
-            onUploadFile={(file) => uploadFile.mutateAsync(file)}
-            selectedAgentRuntimeId={selectedAgentRuntimeId}
-            changesEnabled={platformCapabilities.data?.changesEnabled === true}
-            terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
-            uploadError={uploadFile.error}
-          />
+            )}
+            <AgentComposer
+              agentRuntimeIds={agentRuntimeIds}
+              changesEnabled={platformCapabilities.data?.changesEnabled === true}
+              disabled={composerDisabled}
+              error={createRun.error}
+              fileUploadDisabled={!fileUploadAvailable}
+              isSubmitting={createRun.isPending}
+              isUploadingFile={uploadFile.isPending}
+              onAgentRuntimeChange={setAgentRuntimePreference}
+              onChangesOpen={() => openInspectorView("changes")}
+              onFilesOpen={() => openInspectorView("files")}
+              onTerminalOpen={() => openInspectorView("terminal")}
+              onUploadFile={(file) => uploadFile.mutateAsync(file)}
+              selectedAgentRuntimeId={selectedAgentRuntimeId}
+              terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
+              uploadError={uploadFile.error}
+            />
+          </ProjectAssistantRuntimeProvider>
         </main>
 
         <ProjectPanelResizer containerRef={consoleRef} open={inspectorOpen} />

@@ -8,6 +8,11 @@ test("persists a cancelled Run and rejects deletion while the Project is active"
   const { projectName } = await registerAndCreateProject(page, "browser-run");
   await page.getByLabel("Agent task").fill("Browser smoke task");
   await page.getByRole("button", { name: "Start run" }).click();
+  await expect(
+    page
+      .getByRole("list", { name: "Project conversation" })
+      .getByText("Agent is working on the project…"),
+  ).toBeVisible();
 
   const projectHeaderActions = page.locator(".project-console-header-actions");
   const projectActions = projectHeaderActions.getByRole("button", {
