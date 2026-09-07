@@ -33,6 +33,42 @@ const capabilities = {
 } as const;
 
 describe("RunExecutionService", () => {
+  it("passes previous visible turns to a new execution without persisting the assembled prompt", async () => {
+    const fixture = createFixture();
+    const current = fixture.messages.records[0];
+    if (!current) throw new Error("Missing test input");
+    current.sequence = 2;
+    current.content = "Continue with the second option.";
+    fixture.messages.records.push(
+      { ...current, id: "prior_user", sequence: 0, content: "Suggest two layouts." },
+      {
+        ...current,
+        id: "prior_answer",
+        sequence: 1,
+        role: "assistant",
+        content: "Second option: compact sidebar.",
+      },
+      {
+        ...current,
+        id: "foreign",
+        projectId: "another_project",
+        sequence: 1,
+        content: "Foreign project content",
+      },
+      { ...current, id: "future", sequence: 3, content: "Future message" },
+    );
+    const prompts: string[] = [];
+    await fixture
+      .createService(completingAgent(prompts))
+      .execute({ projectId: "project_1", runId: "run_1" });
+    expect(prompts[0]).toContain("Second option: compact sidebar.");
+    expect(prompts[0]).toContain('"role":"assistant"');
+    expect(prompts[0]).not.toContain("Foreign project content");
+    expect(prompts[0]).not.toContain("Future message");
+    expect(current.content).toBe("Continue with the second option.");
+    expect(JSON.stringify(fixture.diagnosticEvents)).not.toContain("compact sidebar");
+  });
+
   it("reloads the private prompt from D1 and persists only the visible reply", async () => {
     const fixture = createFixture();
     const prompts: string[] = [];
@@ -43,7 +79,10 @@ describe("RunExecutionService", () => {
       runId: "run_1",
     });
 
-    expect(prompts).toEqual(["Build the requested application."]);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain(
+      '"current":{"role":"user","content":"Build the requested application."}',
+    );
     expect(completed.status).toBe("succeeded");
     expect(fixture.messages.records.find((message) => message.role === "assistant")).toMatchObject({
       content: "Completed from the sandbox.",
@@ -422,10 +461,19 @@ class RecordingSandboxRuntime implements SandboxRuntime {
   }
 
   async writeFile(_handle: RuntimeHandle, _path: string, _content: string) {}
+
+  async createFile(_handle: RuntimeHandle, _path: string, _content: Uint8Array) {}
 }
 
 class InMemoryMessageRepository implements MessageRepository {
   constructor(readonly records: MessageRecord[]) {}
+
+  async listContextBefore(projectId: string, sequence: number) {
+    return this.records
+      .filter((message) => message.projectId === projectId && message.sequence < sequence)
+      .sort((left, right) => right.sequence - left.sequence)
+      .slice(0, 21);
+  }
 
   recordAssistant(input: {
     agentRunId: string;

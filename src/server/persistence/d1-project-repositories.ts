@@ -1,9 +1,12 @@
 import type {
   MessageRecord,
+  MessageContextRepository,
+  MessageContextRecord,
   MessageRepository,
   ProjectRecord,
   ProjectRepository,
 } from "../../application/ports";
+import { maxHistoryBytes, maxHistoryMessages } from "../../application/run-context";
 import {
   type MessageRow,
   type ProjectRow,
@@ -144,8 +147,27 @@ export class D1ProjectRepository implements ProjectRepository {
   }
 }
 
-export class D1MessageRepository implements MessageRepository {
+export class D1MessageRepository implements MessageRepository, MessageContextRepository {
   constructor(private readonly db: D1Database) {}
+
+  async listContextBefore(projectId: string, sequence: number): Promise<MessageContextRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT id, project_id, agent_run_id, sequence, role,
+          CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END AS content,
+          created_at
+        FROM messages WHERE project_id = ? AND sequence < ?
+        ORDER BY sequence DESC LIMIT ?`,
+      )
+      .bind(maxHistoryBytes, projectId, sequence, maxHistoryMessages + 1)
+      .all<Omit<MessageRow, "content"> & { content: string | null }>();
+    // Null is an omission marker; preserve all bytes (including embedded NUL) of
+    // smaller messages rather than substringing SQLite TEXT.
+    return result.results.map((row) => ({
+      ...toMessageRecord({ ...row, content: row.content ?? "" }),
+      content: row.content,
+    }));
+  }
 
   async findById(messageId: string, projectId: string): Promise<MessageRecord | null> {
     const row = await this.db

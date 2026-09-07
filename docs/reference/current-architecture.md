@@ -160,6 +160,12 @@ Project 活动状态把排他的 Run/Terminal/Preview-starting 与可并行的 r
 
 Run 状态变化由 D1 持久化；SSE 当前发布状态变化和终态 usage，最终回复由 Message API 读取。
 
+真实 Workflow 执行在当前输入 `sequence` 之前读取最多 21 条同 Project 消息，保留最多
+20 条、序列化后不超过 64 KiB 的连续近期历史。用户/assistant 角色和当前任务以 JSON
+装入瞬时 prompt；这不是 Agent 原生会话恢复。超预算消息整条省略，并明确标记
+`historyTruncated`；不会把工具输出或私有推理带回上下文。提示同时要求检查当前文件，
+因为旧对话不能证明沙箱文件仍然存在。拼装后的 prompt 不另行持久化或记录日志。
+
 创建请求使用本次 invocation 的 `requestId`，随后所有 Workflow、ModelGateway、取消和
 idle cleanup 事件都使用已有 `runId` 作为业务关联根。结构化日志只包含固定事件、
 诊断码、阶段、Runtime/Model ID、终态和聚合 usage，不包含 prompt、回复、文件路径、
@@ -302,6 +308,10 @@ Provider reference、Key、capability、异常 message 或 stack。
 状态组合、结构化日志 schema 和敏感字段缺失。
 
 真实 E2B/Gemini 测试仍是显式 opt-in，不属于每次提交门禁，避免产生外部沙箱和模型成本。
+
+架构图 HTML 带有 Archify 生成器的完整运行时代码，只对该精确文件关闭 Biome lint；
+业务源码仍执行全部规则，架构 JSON 继续接受格式检查，HTML 继续接受仓库凭据扫描。
+不要手工批量改写生成器运行时代码来迎合业务源码 lint；图的内容变更应维护 JSON 源。
 
 ## 9. 相关基准
 

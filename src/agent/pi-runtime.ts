@@ -1,6 +1,8 @@
 import type { AgentEvent, AgentExecution, AgentRunInput, AgentRuntime } from "./contract";
 import type { SandboxProcessSession } from "../runtime/contract";
 
+import { AgentJsonLines, assertFinalTextLimit } from "./json-lines";
+
 const modelProviderId = "agent-online";
 const piConfigRoot = "/tmp/agent-online-pi";
 
@@ -83,20 +85,21 @@ class PiAgentExecution implements AgentExecution {
       type: "agent.started",
     };
 
-    let stdoutBuffer = "";
+    const lines = new AgentJsonLines();
     let finalText = "";
+    let successfulMessage = false;
 
-    for await (const processEvent of this.session.events()) {
-      if (processEvent.type === "process.output" && processEvent.stream === "stdout") {
-        stdoutBuffer += processEvent.chunk;
-        const parsed = readJsonLines(stdoutBuffer);
-        stdoutBuffer = parsed.remainder;
-
-        for (const record of parsed.records) {
+    try {
+      for await (const processEvent of this.session.events()) {
+        const records =
+          processEvent.type === "process.output" && processEvent.stream === "stdout"
+            ? lines.read(processEvent.chunk)
+            : processEvent.type === "process.completed"
+              ? lines.finish()
+              : [];
+        for (const record of records) {
           const event = parsePiRecord(record);
-
           if (event.type === "text") {
-            finalText += event.chunk;
             yield {
               agentRuntimeId: "pi",
               agentRunId: this.input.agentRunId,
@@ -105,7 +108,10 @@ class PiAgentExecution implements AgentExecution {
               type: "agent.output",
             };
           }
-
+          if (event.type === "message") {
+            finalText = event.text;
+            successfulMessage = event.successful;
+          }
           if (event.type === "tool") {
             yield {
               agentRuntimeId: "pi",
@@ -115,47 +121,35 @@ class PiAgentExecution implements AgentExecution {
               type: "agent.tool.started",
             };
           }
-
           if (event.type === "settled") {
+            if (!successfulMessage)
+              throw new Error("Pi settled without a successful final assistant message");
             await this.cancel("completed");
             yield completedEvent(this.input, 0, finalText);
             return;
           }
         }
-      }
-
-      if (processEvent.type === "process.completed") {
-        if (stdoutBuffer.trim()) {
-          for (const record of readJsonLines(`${stdoutBuffer}\n`).records) {
-            const event = parsePiRecord(record);
-            if (event.type === "text") {
-              finalText += event.chunk;
-              yield {
-                agentRuntimeId: "pi",
-                agentRunId: this.input.agentRunId,
-                chunk: event.chunk,
-                sandboxLeaseId: this.input.sandboxLeaseId,
-                type: "agent.output",
-              };
-            }
-          }
+        if (processEvent.type === "process.completed") {
+          yield completedEvent(
+            this.input,
+            processEvent.exitCode === 0 ? 1 : processEvent.exitCode,
+            "",
+          );
+          return;
         }
-
-        yield completedEvent(
-          this.input,
-          processEvent.exitCode === 0 ? 1 : processEvent.exitCode,
-          finalText,
-        );
-        return;
       }
+      throw new Error("Pi RPC process ended without agent_settled or process completion");
+    } catch (error) {
+      // Do not wait on RPC stdin after a broken/oversized protocol stream.
+      await this.session.terminate("failed");
+      throw error;
     }
-
-    throw new Error("Pi RPC process ended without agent_settled or process completion");
   }
 }
 
 type ParsedPiEvent =
   | { chunk: string; type: "text" }
+  | { text: string; successful: boolean; type: "message" }
   | { tool: string; type: "tool" }
   | { type: "settled" }
   | { type: "ignored" };
@@ -176,6 +170,39 @@ function parsePiRecord(record: unknown): ParsedPiEvent {
     }
   }
 
+  if (
+    record.type === "message_start" &&
+    isRecord(record.message) &&
+    record.message.role === "assistant"
+  ) {
+    return { text: "", successful: false, type: "message" };
+  }
+
+  // Pi 0.82.0 RPC message_end carries the complete AgentMessage. Deltas are
+  // progress only; tool turns and failed retry attempts must not become replies.
+  if (
+    record.type === "message_end" &&
+    isRecord(record.message) &&
+    record.message.role === "assistant"
+  ) {
+    const message = record.message;
+    if (!Array.isArray(message.content)) throw new Error("Pi emitted invalid assistant content");
+    let text = "";
+    for (const content of message.content) {
+      if (!isRecord(content)) throw new Error("Pi emitted invalid assistant content");
+      if (content.type === "text") {
+        if (typeof content.text !== "string") throw new Error("Pi emitted invalid assistant text");
+        text += content.text;
+        assertFinalTextLimit(text);
+      }
+    }
+    return {
+      text,
+      successful: message.stopReason === "stop" || message.stopReason === "length",
+      type: "message",
+    };
+  }
+
   if (record.type === "tool_execution_start" && typeof record.toolName === "string") {
     return { tool: record.toolName, type: "tool" };
   }
@@ -185,31 +212,6 @@ function parsePiRecord(record: unknown): ParsedPiEvent {
   }
 
   return { type: "ignored" };
-}
-
-function readJsonLines(input: string) {
-  const records: unknown[] = [];
-  let offset = 0;
-
-  while (true) {
-    const newlineIndex = input.indexOf("\n", offset);
-    if (newlineIndex === -1) {
-      return { records, remainder: input.slice(offset) };
-    }
-
-    const rawLine = input.slice(offset, newlineIndex);
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-    offset = newlineIndex + 1;
-    if (!line) {
-      continue;
-    }
-
-    try {
-      records.push(JSON.parse(line));
-    } catch {
-      throw new Error("Pi RPC emitted malformed JSONL");
-    }
-  }
 }
 
 function createPiArguments(input: AgentRunInput) {

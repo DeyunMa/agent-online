@@ -40,6 +40,12 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["docs/architecture/agent-online-system-architecture.html"],
+      "linter": { "enabled": false }
+    }
+  ],
   "vcs": {
     "clientKind": "git",
     "enabled": true,

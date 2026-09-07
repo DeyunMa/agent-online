@@ -445,6 +445,8 @@ type ProjectPreviewResponse = {
 - 只转发白名单请求头和响应头。
 - 不跟随上游重定向；只改写安全的相对 Location。
 - 对 HTML 注入同源 base path，移除 Vite HMR client，设置 CSP、`no-store`、`nosniff` 和 `no-referrer`。
+- 内容 CSP 设置 `sandbox allow-scripts`；iframe 和直接打开内容 URL 都不能访问平台
+  Cookie、localStorage 或同源父页面 DOM。
 - Worker 到固定 Preview 上游的单次 fetch 最长 15 秒。
 - token 只绑定 `projectId + previewSessionId + expiresAt`。
 

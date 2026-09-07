@@ -20,6 +20,7 @@ import type {
 } from "./contract";
 import { SandboxPathNotFoundError, SandboxUnavailableError } from "./contract";
 import { listE2BChanges, readE2BChangeDiff } from "./e2b-changes";
+import { createE2BFile } from "./e2b-files";
 import {
   assertE2BPreviewStartInput,
   createE2BVitePreviewCommand,
@@ -356,6 +357,14 @@ export class E2BSandboxRuntime
         throw new SandboxUnavailableError();
       }
       throw error;
+    }
+  }
+
+  async createFile(handle: RuntimeHandle, path: string, content: Uint8Array) {
+    try {
+      await createE2BFile(await this.attachSandbox(handle), path, content);
+    } catch (error) {
+      throw mapFilesystemError(error, path);
     }
   }
 

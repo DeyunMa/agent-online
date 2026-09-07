@@ -1,16 +1,20 @@
 import type {
-  AgentRunRepository,
-  SandboxLeaseRecord,
-  SandboxLeaseRepository,
-  TerminalSessionRepository,
-} from "./ports";
-import type {
   RuntimeHandle,
   RuntimeKind,
   SandboxFileEntry,
   SandboxFilesystemRuntime,
 } from "../runtime/contract";
-import { SandboxPathNotFoundError, SandboxUnavailableError } from "../runtime/contract";
+import {
+  SandboxPathConflictError,
+  SandboxPathNotFoundError,
+  SandboxUnavailableError,
+} from "../runtime/contract";
+import type {
+  AgentRunRepository,
+  SandboxLeaseRecord,
+  SandboxLeaseRepository,
+  TerminalSessionRepository,
+} from "./ports";
 
 const maxDirectoryEntries = 500;
 const maxFileBytes = 256 * 1_024;
@@ -200,15 +204,7 @@ export class ProjectFilesService {
     }
 
     try {
-      const rootEntries = await access.runtime.listDirectory(
-        access.handle,
-        this.options.workingDirectory,
-      );
-      if (rootEntries.some((entry) => entry.name === path.value)) {
-        return { kind: "path_conflict" };
-      }
-
-      await access.runtime.writeFile(
+      await access.runtime.createFile(
         access.handle,
         toAbsolutePath(this.options.workingDirectory, path.segments),
         input.bytes,
@@ -402,6 +398,9 @@ function decodeText(bytes: Uint8Array) {
 }
 
 function toFailure(error: unknown): ProjectFilesFailure {
+  if (error instanceof SandboxPathConflictError) {
+    return { kind: "path_conflict" };
+  }
   if (error instanceof SandboxPathNotFoundError) {
     return { kind: "path_not_found" };
   }

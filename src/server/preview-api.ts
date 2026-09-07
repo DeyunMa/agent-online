@@ -11,6 +11,7 @@ import {
   previewContentBasePath,
   type PreviewCapabilityClaims,
 } from "./preview-capability";
+import { previewContentCsp } from "./preview-content-policy";
 import { createServerServices, type ServerServices } from "./services";
 
 type AppContext = Context<AppEnv>;
@@ -26,21 +27,6 @@ const defaultDependencies: PreviewApiDependencies = {
   getAuthenticatedUser,
   now: () => new Date(),
 };
-
-const previewContentCsp = [
-  "default-src 'self' data: blob:",
-  "base-uri 'self'",
-  "connect-src 'none'",
-  "font-src 'self' data:",
-  "form-action 'none'",
-  "frame-ancestors 'self'",
-  "frame-src 'none'",
-  "img-src 'self' data: blob:",
-  "object-src 'none'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
-  "style-src 'self' 'unsafe-inline' data:",
-  "worker-src blob:",
-].join("; ");
 
 const viteClientStub = `
 const styles = new Map();

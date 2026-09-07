@@ -12,10 +12,12 @@ import type {
   AgentRunRecord,
   AgentRunRepository,
   MessageRepository,
+  MessageContextRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
 import { RunCoordinator, type Clock, type CoordinatedAgentRun } from "./run-coordinator";
+import { buildRunPrompt } from "./run-context";
 import type {
   ActivityIdleCleanupInput,
   IdleSandboxStopResult,
@@ -43,7 +45,7 @@ export type RunExecutionServiceDependencies = {
     issuedAt: Date;
     run: AgentRunRecord;
   }): Promise<ModelAccess>;
-  messages: MessageRepository;
+  messages: Pick<MessageRepository, "findById"> & MessageContextRepository;
   runTimeoutMs: number;
   sandboxReclaimer: Pick<SandboxReclaimer, "stopAfterActivityIdle" | "stopAfterRunIdle">;
   sandboxLeases: SandboxLeaseRepository;
@@ -106,6 +108,11 @@ export class RunExecutionService {
       if (message?.role !== "user") {
         throw new Error("AgentRun input message is unavailable");
       }
+      const history = await this.dependencies.messages.listContextBefore(
+        run.projectId,
+        message.sequence,
+      );
+      const prompt = buildRunPrompt(message, history);
 
       stage = "load_lease";
       const sandboxLease = await this.dependencies.sandboxLeases.findByProjectId(run.projectId);
@@ -132,7 +139,7 @@ export class RunExecutionService {
       const managedRun = await coordinator.start({
         agentRun: run,
         modelAccess,
-        prompt: message.content,
+        prompt,
         sandboxLease,
         workingDirectory: this.dependencies.workingDirectory,
       });

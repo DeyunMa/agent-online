@@ -20,20 +20,62 @@ export type E2BTerminalSessionOptions = {
   timeoutMs: number;
 };
 
+// E2B also retains cumulative stdout/stderr internally, so bound total output
+// in addition to our pending event queue. Limits cover both streams.
+export const processOutputLimits = {
+  pendingBytes: 2 * 1024 * 1024,
+  pendingEvents: 4096,
+  totalBytes: 32 * 1024 * 1024,
+} as const;
+
 export async function startE2BProcessSession(
   sandbox: E2BSandbox,
   handle: RuntimeHandle,
   command: SandboxCommand,
   timeoutMs: number,
 ): Promise<SandboxProcessSession> {
-  const queue = new AsyncEventQueue<SandboxProcessEvent>();
+  const queue = new AsyncEventQueue<SandboxProcessEvent>({
+    maxPendingSize: processOutputLimits.pendingBytes,
+    sizeOf: (event) =>
+      event.type === "process.output" ? new TextEncoder().encode(event.chunk).byteLength : 0,
+  });
   const bufferedOutput: SandboxProcessEvent[] = [];
+  let bufferedBytes = 0;
+  let totalBytes = 0;
   let started = false;
+  let outputFailure: Error | null = null;
+  let processHandle: E2BCommandHandle | null = null;
+  const failOutput = () => {
+    if (outputFailure) return;
+    outputFailure = new Error("Process output limit exceeded");
+    bufferedOutput.length = 0;
+    queue.fail(outputFailure, true);
+    // Disconnect first to stop SDK transcript accumulation, then kill remotely.
+    if (processHandle) {
+      void processHandle.disconnect().catch(() => undefined);
+      void processHandle.kill().catch(() => undefined);
+    }
+  };
   const emitOutput = (event: SandboxProcessEvent) => {
+    if (outputFailure || event.type !== "process.output") return;
+    const bytes = new TextEncoder().encode(event.chunk).byteLength;
+    totalBytes += bytes;
+    if (totalBytes > processOutputLimits.totalBytes) {
+      failOutput();
+      return;
+    }
     if (started) {
-      queue.push(event);
+      if (!queue.tryPushBounded(event, processOutputLimits.pendingEvents)) failOutput();
     } else {
-      bufferedOutput.push(event);
+      bufferedBytes += bytes;
+      if (
+        bufferedBytes > processOutputLimits.pendingBytes ||
+        bufferedOutput.length >= processOutputLimits.pendingEvents
+      ) {
+        failOutput();
+      } else {
+        bufferedOutput.push(event);
+      }
     }
   };
   const process = await sandbox.commands.run(toShellCommand(command), {
@@ -60,6 +102,13 @@ export async function startE2BProcessSession(
     timeoutMs,
   });
 
+  processHandle = process;
+  if (outputFailure) {
+    await process.disconnect().catch(() => undefined);
+    await process.kill();
+    throw outputFailure;
+  }
+
   queue.push({
     processId: String(process.pid),
     sandboxLeaseId: handle.sandboxLeaseId,
@@ -69,6 +118,9 @@ export async function startE2BProcessSession(
   for (const event of bufferedOutput) {
     queue.push(event);
   }
+
+  bufferedOutput.length = 0;
+  bufferedBytes = 0;
 
   void settleProcess(process, handle.sandboxLeaseId, queue);
   return new E2BProcessSession(process, queue);
@@ -261,6 +313,19 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
     }
   }
 
+  tryPushBounded(value: T, maxPendingEvents: number) {
+    if (this.closed || this.failure) return true;
+    if (
+      this.waiters.length === 0 &&
+      (this.pending.length >= maxPendingEvents ||
+        (this.options &&
+          this.pendingSize + this.options.sizeOf(value) > this.options.maxPendingSize))
+    )
+      return false;
+    this.push(value);
+    return true;
+  }
+
   pushWithBackpressure(value: T) {
     const operation = this.producerTail.then(() => this.waitAndPush(value));
     this.producerTail = operation.catch(() => undefined);
@@ -279,11 +344,15 @@ class AsyncEventQueue<T> implements AsyncIterable<T> {
     }
   }
 
-  fail(error: unknown) {
+  fail(error: unknown, discardPending = false) {
     if (this.closed || this.failure) {
       return;
     }
 
+    if (discardPending) {
+      this.pending.length = 0;
+      this.pendingSize = 0;
+    }
     this.failure = error;
     this.releaseCapacityWaiters();
     for (const waiter of this.waiters.splice(0)) {

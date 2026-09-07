@@ -84,7 +84,9 @@ D1 当前行，Preview 停止后旧 token 立即失效。
 Worker 只转发 GET/HEAD 和少量安全请求头，添加 Provider traffic token，并移除
 Cookie、Authorization、Set-Cookie、Provider Location、内部 host 与控制头。HTML
 注入同源代理 `<base>` 并重写 root-relative HTML 资源 URL。iframe 不启用
-`allow-same-origin`、表单、弹窗或顶层导航，响应 CSP 禁止 connect 和 form action。
+`allow-same-origin`、表单、弹窗或顶层导航；内容响应 CSP 同时设置
+`sandbox allow-scripts`，使直接打开内容 URL 也保持不透明源隔离，禁止访问平台
+Cookie、localStorage 和同源父页面 DOM。响应 CSP 禁止 connect 和 form action。
 
 ### 4. 生命周期与成本上限
 

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { D1AgentRunRepository, D1ProjectRepository } from "./d1-repositories";
+import { D1AgentRunRepository, D1MessageRepository, D1ProjectRepository } from "./d1-repositories";
 
 const createdAt = "2026-07-27T00:00:00.000Z";
 const finishedAt = "2026-07-27T00:00:10.000Z";
@@ -46,6 +46,36 @@ describe("D1 repositories in the Workers runtime", () => {
       ]),
     );
     expect(foreignKeyFailures.results).toEqual([]);
+  });
+
+  it("bounds context reads and excludes the current input and later messages", async () => {
+    await env.DB.batch(
+      Array.from({ length: 24 }, (_, sequence) =>
+        env.DB.prepare(
+          `INSERT INTO messages (id, project_id, agent_run_id, sequence, role, content, created_at)
+       VALUES (?, 'project_1', NULL, ?, 'user', ?, ?)`,
+        ).bind(
+          `history_${sequence}`,
+          sequence,
+          sequence === 22 ? "x".repeat(70_000) : String(sequence),
+          createdAt,
+        ),
+      ),
+    );
+    const repository = new D1MessageRepository(env.DB);
+    const history = await repository.listContextBefore("project_1", 23);
+    expect(history).toHaveLength(21);
+    expect(history.map((item) => item.sequence)).toEqual(
+      Array.from({ length: 21 }, (_, i) => 22 - i),
+    );
+    expect(history[0]?.content).toBeNull();
+    await env.DB.prepare("UPDATE messages SET content = ? WHERE id = 'history_21'")
+      .bind("before\u0000after")
+      .run();
+    expect((await repository.listContextBefore("project_1", 22))[0]?.content).toBe(
+      "before\u0000after",
+    );
+    expect(await repository.listContextBefore("other_project", 23)).toEqual([]);
   });
 
   it("renames an owned Project and hard-deletes all of its product rows", async () => {

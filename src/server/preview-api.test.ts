@@ -140,6 +140,8 @@ describe("Preview API", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
     expect(response.headers.get("x-provider-host")).toBeNull();
     expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
+    expect(response.headers.get("content-security-policy")).not.toContain("allow-same-origin");
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'none'");
   });
 
@@ -160,6 +162,7 @@ describe("Preview API", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/javascript");
+    expect(response.headers.get("content-security-policy")).toContain("sandbox allow-scripts");
     expect(source).toContain("export function createHotContext()");
     expect(source).toContain("export function updateStyle(id, content)");
     expect(source).toContain("export function removeStyle(id)");

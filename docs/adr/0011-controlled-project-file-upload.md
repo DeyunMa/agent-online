@@ -32,7 +32,8 @@ ID、内部路径以外的宿主信息或凭据。
 ### 2. 直接写当前沙箱
 
 Application service 依赖现有窄 `SandboxFilesystemRuntime`，以 `Uint8Array` 传递文件
-内容。E2B adapter 使用 SDK 的 `ArrayBuffer` 文件写入能力；SandboxRuntime 不认识
+内容。E2B adapter 通过固定、隔离运行的 Python helper 和有界 stdin 消息传输二进制，
+使用目录 fd、`O_NOFOLLOW` 与 `O_EXCL` 原子拒绝同名目标和符号链接；SandboxRuntime 不认识
 HTTP multipart、React 或 Project 所有权。
 
 上传不创建 SandboxLease 或 Provider sandbox。新 Project 必须先通过 Agent Run 或
@@ -42,7 +43,9 @@ Terminal 建立沙箱；否则返回 `sandbox.not_active`。上传也不延长�
 ### 3. 不覆盖，不自动改变 Prompt
 
 V1 对同名路径返回 `409 file.already_exists`，避免一次误操作覆盖 Agent 或 Terminal
-已创建的文件。存在检查与最终写入是尽力一致，不宣称跨并发请求的文件系统事务。
+已创建的文件。Runtime 的 exclusive create 在文件系统内原子地拒绝同名文件、目录及
+符号链接；两个同名并发上传最多一个成功。完整内容接收后才创建目标，但写入失败可能
+留下部分文件，不能将其视为可回滚的文件系统事务。
 
 上传完成后 UI 打开 Files 并刷新 Files/Changes。它不会自动修改 Composer 文本、
 创建 Message、启动 AgentRun 或把文件内容保存到 D1。
@@ -72,7 +75,8 @@ Composer 左侧四个入口分别为：
 ## 风险与回滚
 
 - multipart 请求会在 Worker 内存中解析，因此同时限制 HTTP body 和实际文件字节数。
-- 同名检查与写入之间存在低风险竞态；当前个人项目阶段接受尽力一致语义。
+- Run/Terminal 活动检查与实际上传仍非原子；检查之后启动的任务可能与上传共存。
+  当前个人项目阶段保留尽力一致语义；严格互斥需要单独设计持久协调和异常恢复。
 - 二进制文件可供 Agent/Terminal 使用，但现有 Files 内容预览仍只支持 256 KiB 以内的
   UTF-8 文本。
 

@@ -67,7 +67,8 @@ interface SandboxFilesystemRuntime {
   readonly kind: RuntimeKind;
   listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]>;
   readFile(handle: RuntimeHandle, path: string): Promise<Uint8Array>;
-  writeFile(handle: RuntimeHandle, path: string, content: string): Promise<void>;
+  createFile(handle: RuntimeHandle, path: string, content: Uint8Array): Promise<void>;
+  writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array): Promise<void>;
 }
 
 interface SandboxProcessRuntime {
@@ -209,8 +210,9 @@ application outcome `sandbox_unavailable`，HTTP adapter 映射为 `sandbox.not_
 [ADR-0011](../adr/0011-controlled-project-file-upload.md) 在同一 application/runtime
 边界上额外开放一个窄上传命令：每次只向已有空闲 E2B 沙箱的 `/workspace` 根目录写入
 一个最大 4 MiB 的文件，不覆盖、不创建沙箱、不写 D1/R2，也不自动创建 Message 或
-AgentRun。它与读取能力共享 Project owner、Lease 和 Run/Terminal 互斥检查，但不把
-尽力一致的同名检查宣传成文件系统事务。
+AgentRun。它与读取能力共享 Project owner、Lease 和 Run/Terminal 活动检查；活动检查
+仍为尽力一致。上传使用原子 exclusive create 拒绝同名目标及 symlink 路径组件，
+并发同名请求至多一个成功，但不承诺文件写入失败后的事务回滚。
 
 ## 5. 受控 Terminal 边界
 
@@ -318,6 +320,25 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 - 浏览器直连 Provider、模型 API 或沙箱内部端口。
 - 任意 Preview command/port、应用后端 API 代理、公开分享链接或持久部署。
 - 常驻 Agent session、跨 Run resume 或未授权的任意 CLI。
+
+## Agent 输出资源边界
+
+E2B 通用进程的 stdout/stderr 合计最多 32 MiB；待消费输出最多 2 MiB / 4096
+个事件，启动句柄返回前也适用。超限立即丢弃待消费内容、断开 SDK 流并尝试终止进程；
+协调器继续负责失败终态和终止失败时的资源收敛。累计限制同时约束 E2B SDK 自身保留的
+stdout/stderr；它不是模型 token 或费用预算。
+
+Pi/Goose 按 LF 解析 JSONL，每条记录（包括未结束的分片）最多 1 MiB，最终回复最多
+256 KiB UTF-8。解析器逐条消费，不建立整批 JSON 对象数组。协议错误或超限会终止
+Agent 进程并走现有失败路径，不持久化原始协议或错误内容。
+
+Pi 使用模板固定的 [0.82.0 RPC 协议](https://github.com/earendil-works/pi/blob/v0.82.0/packages/coding-agent/docs/rpc.md)：
+`message_update` 仅用于进度，最后一条 assistant `message_end.message` 的文本块
+决定最终回复；`agent_settled` 才结束 Run。工具回合和失败重试的中间说明不会拼入最终
+回复。缺少完整最终消息、最终 `toolUse/error/aborted` 或未 settled 就退出均不能成功。
+`stop/length` 属于可返回的完整 assistant 消息；空文本返回 null，不回退到中间回复。
+Goose 的任意 `toolRequest`（包括失败或不可见请求）都会清空此前的回复候选，
+避免工具尝试前的进度文本被拼接进最终回复。
 
 ## 11. 外部依据
 

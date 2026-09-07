@@ -6,6 +6,7 @@ import type {
   SandboxProcessSession,
 } from "../runtime/contract";
 import type { AgentEvent, AgentExecutionContext } from "./contract";
+import { maxAgentFinalTextBytes, maxAgentRecordBytes } from "./json-lines";
 import { piRuntime } from "./pi-runtime";
 
 describe("piRuntime", () => {
@@ -26,6 +27,14 @@ describe("piRuntime", () => {
           JSON.stringify({
             assistantMessageEvent: { delta: "world", type: "text_delta" },
             type: "message_update",
+          }),
+          JSON.stringify({
+            type: "message_end",
+            message: {
+              role: "assistant",
+              stopReason: "stop",
+              content: [{ type: "text", text: "world" }],
+            },
           }),
           JSON.stringify({ type: "agent_settled" }),
           "",
@@ -61,7 +70,7 @@ describe("piRuntime", () => {
     ]);
     expect(events.at(-1)).toMatchObject({
       exitCode: 0,
-      finalText: "Hello world",
+      finalText: "world",
       type: "agent.completed",
     });
     expect(context.command).toMatchObject({
@@ -91,6 +100,71 @@ describe("piRuntime", () => {
       `${JSON.stringify({ id: "run_1", message: "Create a hello world app.", type: "prompt" })}\n`,
     );
     expect(session.terminations).toEqual(["completed"]);
+  });
+
+  it.each([
+    { name: "missing message_end", records: [{ type: "agent_settled" }] },
+    {
+      name: "tool-only turn",
+      records: [assistantEnd("toolUse", "Working"), { type: "agent_settled" }],
+    },
+    {
+      name: "failed message",
+      records: [assistantEnd("error", "secret failure details"), { type: "agent_settled" }],
+    },
+    {
+      name: "incomplete follow-up",
+      records: [
+        assistantEnd("stop", "Earlier"),
+        { type: "message_start", message: { role: "assistant" } },
+        { type: "agent_settled" },
+      ],
+    },
+  ])("fails closed for $name", async ({ records }) => {
+    const session = new TestSandboxProcessSession([
+      output(records.map((record) => JSON.stringify(record)).join("\n") + "\n"),
+    ]);
+    const execution = await piRuntime.start(new TestAgentExecutionContext(session), basicInput());
+    await expect(collect(execution.events())).rejects.toThrow(
+      "without a successful final assistant message",
+    );
+    expect(session.terminations).toEqual(["failed"]);
+  });
+
+  it("keeps only the last completed assistant reply across tools and retries", async () => {
+    const records = [
+      assistantEnd("toolUse", "Working"),
+      { type: "tool_execution_start", toolName: "bash" },
+      assistantEnd("error", "retry"),
+      assistantEnd("stop", "Done"),
+      { type: "agent_settled" },
+    ];
+    const session = new TestSandboxProcessSession([
+      output(records.map((record) => JSON.stringify(record)).join("\n") + "\n"),
+    ]);
+    const execution = await piRuntime.start(new TestAgentExecutionContext(session), basicInput());
+    expect((await collect(execution.events())).at(-1)).toMatchObject({
+      finalText: "Done",
+      exitCode: 0,
+    });
+  });
+
+  it.each([
+    ["unterminated record", "x".repeat(maxAgentRecordBytes + 1)],
+    [
+      "complete record",
+      JSON.stringify({ type: "ignored", value: "x".repeat(maxAgentRecordBytes) }) + "\n",
+    ],
+    [
+      "final reply",
+      JSON.stringify(assistantEnd("stop", "界".repeat(Math.ceil(maxAgentFinalTextBytes / 3)))) +
+        "\n",
+    ],
+  ])("terminates on an oversized %s", async (_name, chunk) => {
+    const session = new TestSandboxProcessSession([output(chunk)]);
+    const execution = await piRuntime.start(new TestAgentExecutionContext(session), basicInput());
+    await expect(collect(execution.events())).rejects.toThrow("limit exceeded");
+    expect(session.terminations).toEqual(["failed"]);
   });
 
   it("sends an RPC abort before terminating a cancelled process", async () => {
@@ -191,4 +265,21 @@ async function collect<T>(events: AsyncIterable<T>) {
     values.push(event);
   }
   return values;
+}
+
+function basicInput() {
+  return {
+    agentRunId: "run_1",
+    projectId: "project_1",
+    prompt: "Inspect",
+    sandboxLeaseId: "lease_1",
+    workingDirectory: "/workspace",
+  };
+}
+
+function assistantEnd(stopReason: string, text: string) {
+  return {
+    type: "message_end",
+    message: { role: "assistant", stopReason, content: [{ type: "text", text }] },
+  };
 }

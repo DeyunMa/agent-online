@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-
-import type { AgentRunRecord, SandboxLeaseRecord } from "./ports";
-import { maxProjectFileUploadBytes, ProjectFilesService } from "./project-files";
 import type { RuntimeHandle, SandboxFileEntry } from "../runtime/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
+import type { AgentRunRecord, SandboxLeaseRecord } from "./ports";
+import { maxProjectFileUploadBytes, ProjectFilesService } from "./project-files";
 
 describe("ProjectFilesService", () => {
   it("lists and reads only the current sandbox workspace", async () => {
@@ -119,6 +118,15 @@ describe("ProjectFilesService", () => {
     ).resolves.toEqual({
       kind: "path_conflict",
     });
+  });
+
+  it("returns one conflict for concurrent uploads with the same name", async () => {
+    const fixture = await createFixture();
+    const results = await Promise.all([
+      fixture.service.upload("project-1", { name: "concurrent.txt", bytes: new Uint8Array([1]) }),
+      fixture.service.upload("project-1", { name: "concurrent.txt", bytes: new Uint8Array([2]) }),
+    ]);
+    expect(results.map((result) => result.kind).sort()).toEqual(["ok", "path_conflict"]);
   });
 
   it("rejects unsafe, nested, and oversized uploads before touching the sandbox", async () => {

@@ -71,6 +71,9 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | Project 标题 | trim 后 1 至 120 个 JavaScript string 单元 | Hono/Zod |
 | Project 删除 | 活动 Run、Terminal 或 Preview 时拒绝；成功后不可恢复 | Application 用例 + D1 FK |
 | AgentRun 用户输入 | trim 后 1 至 64,000 个 JavaScript string 单元 | Hono/Zod |
+| Run 历史上下文 | 当前输入之前最多 20 条，序列化 JSON 不超过 64 KiB；超限整条省略并标记 | D1 有界查询 + Application |
+| Agent JSONL | 单记录最多 1 MiB；最终回复最多 256 KiB | Pi/Goose adapter，超限失败并终止 |
+| Agent 进程输出 | stdout/stderr 合计最多 32 MiB；待消费最多 2 MiB 或 4096 事件 | E2B adapter，超限断流并终止 |
 | 普通产品请求体 | 最多 256 KiB | Hono body limit；超限返回 `413 request.too_large` |
 | Project 列表 | 无分页、无应用级条数上限 | D1 查询 |
 | Message 列表 | 无分页，返回 Project 全部可见消息 | D1 查询 |

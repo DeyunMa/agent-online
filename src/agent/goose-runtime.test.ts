@@ -6,6 +6,7 @@ import type {
   SandboxProcessSession,
 } from "../runtime/contract";
 import type { AgentEvent, AgentExecutionContext, AgentRunInput } from "./contract";
+import { maxAgentFinalTextBytes, maxAgentRecordBytes } from "./json-lines";
 import { gooseRuntime } from "./goose-runtime";
 
 describe("gooseRuntime", () => {
@@ -116,6 +117,56 @@ describe("gooseRuntime", () => {
     expect(promptWrite?.content).toBe("Inspect and update the project.");
     expect(JSON.stringify(context.command?.args)).not.toContain("Inspect and update the project.");
   });
+
+  it.each([
+    ["unterminated record", ["x".repeat(maxAgentRecordBytes + 1)]],
+    [
+      "accumulated final reply",
+      [1, 2].map(
+        () =>
+          JSON.stringify(
+            messageRecord({
+              id: "reply",
+              content: [{ type: "text", text: "x".repeat(maxAgentFinalTextBytes / 2 + 1) }],
+            }),
+          ) + "\n",
+      ),
+    ],
+  ])("terminates on an oversized %s", async (_name, chunks) => {
+    const session = new TestSandboxProcessSession(chunks.map(output));
+    const execution = await gooseRuntime.start(new TestAgentExecutionContext(session), runInput());
+    await expect(collect(execution.events())).rejects.toThrow("limit exceeded");
+    expect(session.terminations).toEqual(["failed"]);
+  });
+
+  it.each([true, false])(
+    "discards intermediate text after failed tool requests (visible: %s)",
+    async (userVisible) => {
+      const failedTool = messageRecord({
+        id: "tool",
+        content: [{ type: "toolRequest", toolCall: { status: "error", error: "unavailable" } }],
+      });
+      failedTool.message.metadata.userVisible = userVisible;
+      const records = [
+        messageRecord({ id: "working", content: [{ type: "text", text: "Working" }] }),
+        failedTool,
+        messageRecord({ id: "done", content: [{ type: "text", text: "Done" }] }),
+        { type: "complete" },
+      ];
+      const session = new TestSandboxProcessSession([
+        output(records.map((record) => JSON.stringify(record)).join("\n") + "\n"),
+        { type: "process.completed", sandboxLeaseId: "lease_1", exitCode: 0 },
+      ]);
+      const execution = await gooseRuntime.start(
+        new TestAgentExecutionContext(session),
+        runInput(),
+      );
+      expect((await collect(execution.events())).at(-1)).toMatchObject({
+        finalText: "Done",
+        exitCode: 0,
+      });
+    },
+  );
 
   it("terminates the Goose process without writing to stdin when cancelled", async () => {
     const session = new TestSandboxProcessSession([]);

@@ -1,15 +1,19 @@
 import {
-  FileType,
-  SandboxNotFoundError,
   type CommandStartOpts,
   type EntryInfo,
+  FileType,
   type SandboxConnectOpts,
+  SandboxNotFoundError,
   type SandboxOpts,
 } from "e2b";
 import { describe, expect, it, vi } from "vitest";
 
-import { SandboxNotRepositoryError, SandboxUnavailableError } from "./contract";
-import { E2BSandboxRuntime, type E2BSandboxClient } from "./e2b-runtime";
+import {
+  SandboxNotRepositoryError,
+  SandboxPathConflictError,
+  SandboxUnavailableError,
+} from "./contract";
+import { type E2BSandboxClient, E2BSandboxRuntime } from "./e2b-runtime";
 import { maxGitDiffSectionBytes } from "./git-changes";
 
 describe("E2BSandboxRuntime", () => {
@@ -101,6 +105,31 @@ describe("E2BSandboxRuntime", () => {
     expect(new Uint8Array(sandbox.fileWrites[0]?.content as ArrayBuffer)).toEqual(
       new Uint8Array([0, 1, 255]),
     );
+  });
+
+  it("creates binary files exclusively through bounded stdin without exposing bytes in the command", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = { id: "sandbox-existing", kind: "e2b" as const, sandboxLeaseId: "lease-1" };
+    const content = new TextEncoder().encode("private upload payload");
+    await runtime.createFile(handle, "/workspace/quote's.txt", content);
+    expect(sandbox.fileWrites).toHaveLength(0);
+    expect(sandbox.command).toContain("'/usr/bin/python3' '-I'");
+    expect(sandbox.command).toContain("O_EXCL");
+    expect(sandbox.command).not.toContain("private upload payload");
+    expect(sandbox.process.stdin).toEqual(["private upload payload"]);
+    expect(sandbox.commandOptions).toMatchObject({ stdin: true, timeoutMs: 30_000 });
+    expect(sandbox.process.disconnected).toBe(true);
+  });
+
+  it("maps an exclusive create collision to a provider-independent conflict", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    sandbox.commandResults.push({ exitCode: 44, stderr: "", stdout: "" });
+    const runtime = createRuntime(new FakeE2BClient(sandbox));
+    const handle = { id: "sandbox-existing", kind: "e2b" as const, sandboxLeaseId: "lease-1" };
+    await expect(
+      runtime.createFile(handle, "/workspace/existing", new Uint8Array()),
+    ).rejects.toBeInstanceOf(SandboxPathConflictError);
   });
 
   it("terminates a persisted process reference without stopping the sandbox", async () => {

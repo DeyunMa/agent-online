@@ -91,7 +91,7 @@ erDiagram
 ## 有意不建模的内容
 
 - R2、`WorkspaceRevision`、Project 文件快照、文件版本、回滚、分支、沙箱历史和原始 Agent transcript。
-- `Session` 业务表或长期 Pi Agent 进程；对话连续性来自 Message，AgentProcess 随 `AgentRun` 结束。
+- `Session` 业务表或长期 Pi Agent 进程；对话连续性来自 Message 的有界近期历史（最多 20 条、64 KiB，角色以 JSON 保留在瞬时 prompt 内），不是原生 session resume。AgentProcess 随 `AgentRun` 结束，旧消息不保证工作区仍存在。
 - Preview 历史、多 Preview、公开分享链接、任意命令/端口或持久部署；`PreviewSession` 只是当前临时所有权。
 - `UsageEvent`、`UsageReservation`、`ModelConnection`、`CredentialLease`、BYOK 密文和复杂配额账本。
 - 团队、组织、租户、成员角色和邀请。

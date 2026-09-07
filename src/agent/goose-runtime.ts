@@ -1,6 +1,8 @@
 import type { AgentEvent, AgentExecution, AgentRunInput, AgentRuntime } from "./contract";
 import type { ProcessTerminationReason, SandboxProcessSession } from "../runtime/contract";
 
+import { AgentJsonLines, assertFinalTextLimit } from "./json-lines";
+
 const modelProviderId = "agent_online";
 const gooseConfigRoot = "/tmp/agent-online-goose";
 const gooseMaxTurns = 25;
@@ -72,71 +74,57 @@ class GooseAgentExecution implements AgentExecution {
       type: "agent.started",
     };
 
-    let stdoutBuffer = "";
+    const lines = new AgentJsonLines();
     let completed = false;
     let finalText = "";
 
-    for await (const processEvent of this.session.events()) {
-      if (processEvent.type === "process.output" && processEvent.stream === "stdout") {
-        stdoutBuffer += processEvent.chunk;
-        const parsed = readJsonLines(stdoutBuffer);
-        stdoutBuffer = parsed.remainder;
-        for (const record of parsed.records) {
+    try {
+      for await (const processEvent of this.session.events()) {
+        const records =
+          processEvent.type === "process.output" && processEvent.stream === "stdout"
+            ? lines.read(processEvent.chunk)
+            : processEvent.type === "process.completed"
+              ? lines.finish()
+              : [];
+        for (const record of records) {
           const result = normalizeGooseRecord(record);
           completed ||= result.completed;
           if (result.text) {
             finalText += result.text;
+            assertFinalTextLimit(finalText);
             yield outputEvent(this.input, result.text);
           }
-          for (const tool of result.tools) {
-            yield toolEvent(this.input, tool);
+          for (const tool of result.tools) yield toolEvent(this.input, tool);
+          if (result.hasToolRequest) finalText = "";
+        }
+        if (processEvent.type === "process.completed") {
+          if (processEvent.exitCode === 0 && !completed) {
+            throw new Error("Goose exited without a stream completion event");
           }
-          if (result.tools.length > 0) {
-            finalText = "";
-          }
+
+          yield {
+            agentRuntimeId: "goose",
+            agentRunId: this.input.agentRunId,
+            exitCode: processEvent.exitCode,
+            finalText: finalText || null,
+            sandboxLeaseId: this.input.sandboxLeaseId,
+            type: "agent.completed",
+          };
+          return;
         }
       }
 
-      if (processEvent.type === "process.completed") {
-        if (stdoutBuffer.trim()) {
-          for (const record of readJsonLines(`${stdoutBuffer}\n`).records) {
-            const result = normalizeGooseRecord(record);
-            completed ||= result.completed;
-            if (result.text) {
-              finalText += result.text;
-              yield outputEvent(this.input, result.text);
-            }
-            for (const tool of result.tools) {
-              yield toolEvent(this.input, tool);
-            }
-            if (result.tools.length > 0) {
-              finalText = "";
-            }
-          }
-        }
-
-        if (processEvent.exitCode === 0 && !completed) {
-          throw new Error("Goose exited without a stream completion event");
-        }
-
-        yield {
-          agentRuntimeId: "goose",
-          agentRunId: this.input.agentRunId,
-          exitCode: processEvent.exitCode,
-          finalText: finalText || null,
-          sandboxLeaseId: this.input.sandboxLeaseId,
-          type: "agent.completed",
-        };
-        return;
-      }
+      throw new Error("Goose process ended without process completion");
+    } catch (error) {
+      await this.session.terminate("failed");
+      throw error;
     }
-
-    throw new Error("Goose process ended without process completion");
   }
 }
 
 type NormalizedGooseRecord = {
   completed: boolean;
+  hasToolRequest: boolean;
   text: string;
   tools: string[];
 };
@@ -146,13 +134,13 @@ function normalizeGooseRecord(record: unknown): NormalizedGooseRecord {
     throw new Error("Goose emitted an invalid stream-json record");
   }
   if (record.type === "complete") {
-    return { completed: true, text: "", tools: [] };
+    return { completed: true, hasToolRequest: false, text: "", tools: [] };
   }
   if (record.type === "error") {
     throw new Error("Goose reported an execution error");
   }
   if (record.type === "notification") {
-    return { completed: false, text: "", tools: [] };
+    return { completed: false, hasToolRequest: false, text: "", tools: [] };
   }
   if (record.type !== "message" || !isRecord(record.message)) {
     throw new Error("Goose emitted an unsupported stream-json record");
@@ -160,13 +148,16 @@ function normalizeGooseRecord(record: unknown): NormalizedGooseRecord {
 
   const message = record.message;
   if (message.role !== "assistant") {
-    return { completed: false, text: "", tools: [] };
+    return { completed: false, hasToolRequest: false, text: "", tools: [] };
   }
   if (!Array.isArray(message.content)) {
     throw new Error("Goose emitted an invalid assistant message");
   }
+  const hasToolRequest = message.content.some(
+    (content) => isRecord(content) && content.type === "toolRequest",
+  );
   if (isRecord(message.metadata) && message.metadata.userVisible === false) {
-    return { completed: false, text: "", tools: [] };
+    return { completed: false, hasToolRequest, text: "", tools: [] };
   }
 
   const text: string[] = [];
@@ -190,7 +181,7 @@ function normalizeGooseRecord(record: unknown): NormalizedGooseRecord {
     }
   }
 
-  return { completed: false, text: text.join(""), tools };
+  return { completed: false, hasToolRequest, text: text.join(""), tools };
 }
 
 function readGooseToolName(content: Record<string, unknown>) {
@@ -296,31 +287,6 @@ function toolEvent(input: AgentRunInput, tool: string): AgentEvent {
     tool,
     type: "agent.tool.started",
   };
-}
-
-function readJsonLines(input: string) {
-  const records: unknown[] = [];
-  let offset = 0;
-
-  while (true) {
-    const newlineIndex = input.indexOf("\n", offset);
-    if (newlineIndex === -1) {
-      return { records, remainder: input.slice(offset) };
-    }
-
-    const rawLine = input.slice(offset, newlineIndex);
-    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-    offset = newlineIndex + 1;
-    if (!line) {
-      continue;
-    }
-
-    try {
-      records.push(JSON.parse(line));
-    } catch {
-      throw new Error("Goose emitted malformed stream-json");
-    }
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

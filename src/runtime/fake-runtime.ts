@@ -10,7 +10,7 @@ import type {
   SandboxRuntime,
   SandboxStopReason,
 } from "./contract";
-import { SandboxPathNotFoundError } from "./contract";
+import { SandboxPathConflictError, SandboxPathNotFoundError } from "./contract";
 
 class FakeSandboxProcessSession implements SandboxProcessSession {
   private terminationReason: ProcessTerminationReason | null = null;
@@ -49,6 +49,10 @@ class FakeSandboxProcessSession implements SandboxProcessSession {
         ? [
             JSON.stringify({ command: "prompt", success: true, type: "response" }),
             JSON.stringify({ type: "agent_start" }),
+            JSON.stringify({
+              type: "message_end",
+              message: { role: "assistant", stopReason: "stop", content: [] },
+            }),
             JSON.stringify({ type: "agent_settled" }),
             "",
           ].join("\n")
@@ -177,6 +181,17 @@ export class FakeSandboxRuntime implements SandboxRuntime {
         this.files.delete(key);
       }
     }
+  }
+
+  async createFile(handle: RuntimeHandle, path: string, content: Uint8Array) {
+    this.assertHandle(handle);
+    const key = `${handle.id}:${normalizeAbsolutePath(path)}`;
+    if (
+      [...this.files.keys()].some((existing) => existing === key || existing.startsWith(`${key}/`))
+    ) {
+      throw new SandboxPathConflictError();
+    }
+    this.files.set(key, content.slice());
   }
 
   async writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array) {

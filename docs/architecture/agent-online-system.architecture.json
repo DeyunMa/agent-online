@@ -55,7 +55,12 @@
       "pos": [745, 330],
       "size": [165, 70],
       "sources": [
-        { "path": "src/server/agent-run-workflow.ts", "line": 9, "end_line": 152, "label": "Workflow owner" },
+        {
+          "path": "src/server/agent-run-workflow.ts",
+          "line": 9,
+          "end_line": 152,
+          "label": "Workflow owner"
+        },
         { "path": "wrangler.jsonc", "line": 20, "end_line": 25, "label": "Workflow binding" }
       ]
     },
@@ -68,8 +73,18 @@
       "pos": [995, 330],
       "size": [175, 72],
       "sources": [
-        { "path": "src/server/e2b-runtime-factory.ts", "line": 12, "end_line": 28, "label": "E2B factory" },
-        { "path": "src/runtime/e2b-runtime.ts", "line": 65, "end_line": 68, "label": "runtime capabilities" }
+        {
+          "path": "src/server/e2b-runtime-factory.ts",
+          "line": 12,
+          "end_line": 28,
+          "label": "E2B factory"
+        },
+        {
+          "path": "src/runtime/e2b-runtime.ts",
+          "line": 65,
+          "end_line": 68,
+          "label": "runtime capabilities"
+        }
       ]
     },
     {
@@ -104,7 +119,12 @@
       "pos": [740, 100],
       "size": [170, 62],
       "sources": [
-        { "path": "wrangler.jsonc", "line": 12, "end_line": 25, "label": "D1 and Workflow bindings" },
+        {
+          "path": "wrangler.jsonc",
+          "line": 12,
+          "end_line": 25,
+          "label": "D1 and Workflow bindings"
+        },
         { "path": "src/server/services.ts", "line": 79, "end_line": 84, "label": "D1 repositories" }
       ]
     },
@@ -117,7 +137,12 @@
       "pos": [990, 610],
       "size": [180, 64],
       "sources": [
-        { "path": "src/server/model-gateway-service.ts", "line": 20, "end_line": 84, "label": "capability and usage" },
+        {
+          "path": "src/server/model-gateway-service.ts",
+          "line": 20,
+          "end_line": 84,
+          "label": "capability and usage"
+        },
         { "path": "src/server/app.ts", "line": 65, "end_line": 66, "label": "gateway route" }
       ]
     },
@@ -129,7 +154,12 @@
       "pos": [1250, 610],
       "size": [160, 64],
       "sources": [
-        { "path": "src/server/model-gateway-service.ts", "line": 71, "end_line": 84, "label": "Gemini key use" }
+        {
+          "path": "src/server/model-gateway-service.ts",
+          "line": 71,
+          "end_line": 84,
+          "label": "Gemini key use"
+        }
       ]
     },
     {
@@ -140,7 +170,12 @@
       "pos": [30, 610],
       "size": [150, 64],
       "sources": [
-        { "path": "worker/index.ts", "line": 1, "end_line": 11, "label": "Workflow instrumentation" },
+        {
+          "path": "worker/index.ts",
+          "line": 1,
+          "end_line": 11,
+          "label": "Workflow instrumentation"
+        },
         { "path": "src/client/main.tsx", "line": 1, "end_line": 30, "label": "React boundary" }
       ]
     }

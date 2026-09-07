@@ -107,6 +107,13 @@ export class SandboxPathNotFoundError extends Error {
   }
 }
 
+export class SandboxPathConflictError extends Error {
+  constructor() {
+    super("Sandbox path already exists");
+    this.name = "SandboxPathConflictError";
+  }
+}
+
 export class SandboxUnavailableError extends Error {
   constructor(message = "Sandbox is unavailable") {
     super(message);
@@ -166,6 +173,8 @@ export interface SandboxLifecycleRuntime {
 export interface SandboxFilesystemRuntime {
   readonly filesystemScope: SandboxFilesystemScope;
   readonly kind: RuntimeKind;
+  /** Exclusively create a file; reject existing targets and symlink path components. */
+  createFile(handle: RuntimeHandle, path: string, content: Uint8Array): Promise<void>;
   listDirectory(handle: RuntimeHandle, path: string): Promise<SandboxFileEntry[]>;
   readFile(handle: RuntimeHandle, path: string): Promise<Uint8Array>;
   writeFile(handle: RuntimeHandle, path: string, content: string | Uint8Array): Promise<void>;

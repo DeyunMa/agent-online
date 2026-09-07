@@ -109,6 +109,14 @@ export interface MessageRepository {
   listByProjectId(projectId: string): Promise<MessageRecord[]>;
 }
 
+/** Null content marks a whole message omitted because it exceeds the history budget. */
+export type MessageContextRecord = Omit<MessageRecord, "content"> & { content: string | null };
+
+export interface MessageContextRepository {
+  /** Newest first, strictly before the current input; at most 21 bounded records. */
+  listContextBefore(projectId: string, sequence: number): Promise<MessageContextRecord[]>;
+}
+
 export interface SandboxLeaseRepository {
   /**
    * Atomically detaches a provider sandbox for a user-requested stop only
