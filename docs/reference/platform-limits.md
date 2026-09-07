@@ -92,7 +92,7 @@ ModelGateway 的 4 MiB 实际读取上限。公开注册前仍需增加独立的
 
 | 限制对象 | 默认值 | 可配置范围/固定上限 | 作用 |
 | --- | --- | --- | --- |
-| Run wall time | 1,800 秒 | `MAX_RUN_WALL_SECONDS`：1 至 3,600 秒 | 到期后取消进程并收敛为 `timed_out`。 |
+| Run wall time | 1,800 秒 | `MAX_RUN_WALL_SECONDS`：1 至 3,600 秒 | 到期后取消进程，确认终止后收敛为 `timed_out`；终止失败保留硬锁。 |
 | Sandbox idle TTL | 600 秒 | `RUNTIME_IDLE_TTL_SECONDS`：1 至 86,400 秒 | 最后一次 Run/Terminal/Preview 释放后回收沙箱。 |
 | Agent 进程 Provider timeout | Run wall time + 15 秒 | 派生值 | 给应用取消和状态收敛留缓冲。 |
 | E2B sandbox timeout | 最长活动时长 + idle TTL + 60 秒 | 派生值 | Provider 侧最终回收上限；默认约 41 分钟。 |
@@ -336,6 +336,6 @@ Cloudflare、E2B、Gemini 和 Sentry 的免费额度、并发、CPU、存储、�
 | 浏览器自动化不覆盖完整辅助技术组合 | 已覆盖 roving tab 的方向键/Home/End 与焦点保持，但未自动验证所有屏幕阅读器。 |
 | 浏览器自动化只覆盖核心 smoke | 当前覆盖注册、Project 生命周期、fake Run 取消、刷新恢复和 tab 键盘导航；真实 Terminal/Preview/Changes 仍依赖显式 E2B E2E。 |
 | Sentry 事件清洗依赖 allowlist 持续维护 | 新增诊断字段或 SDK integration 时必须先补脱敏测试；不能靠 Dashboard 规则替代代码边界。 |
-| 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；重复漂移按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
+| 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；Run 终止无法确认时保留非终态锁，重试耗尽后按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
 
 接口结构见 [HTTP、SSE 与 WebSocket 接口](./http-api.md)，数据所有权见 [D1 表设计](./database-schema.md)。

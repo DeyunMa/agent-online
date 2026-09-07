@@ -71,7 +71,7 @@ erDiagram
     `/workspace`。浏览器只拿到绑定 Project/PreviewSession/expiry 的同源短时
     capability，不能拿到 Provider host、traffic token、内部端口或任意启动参数。
 17. Changes 只读取当前 `/workspace/.git` 的 working tree/index，固定 Git 二进制、参数和环境，并拒绝危险配置、额外 Git config scope 和不受支持的路径。隐藏路径会显式标记，不能误报 clean。它不新建沙箱、不写 D1/R2、不修改 repository、不保存 diff，也不声称变更来自某一次 Run。
-18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。
+18. 成功 Run 的终态、sandbox duration、最终 assistant Message 和 Project `updated_at` 必须在一个 D1 batch 中提交；若取消先改变 Run 状态，成功完成必须失败且不能写 assistant Message。Run 的 Lease 更新以非终态 Run 所有权和 Lease 快照为条件，释放 Lease 必须早于提交 Run 终态；无法确认执行已停止时保留非终态硬锁。
 19. D1 trigger 强制 Run 的 Project/User/Lease/Input Message 归属、Run 状态机、status/failure code 合法组合、assistant Message 与 succeeded Run 关联，以及 Terminal/Preview 与 Lease 的 Project 归属。application 校验用于友好错误，不能替代数据库约束。
 20. `requestId` 只关联一次 Worker invocation；跨创建、Workflow、ModelGateway、取消与 idle cleanup 的 AgentRun 使用现有 `runId` 关联。普通 API、持久 Run failure 与内部 diagnostic code 分层，任何一层都不能保存或输出 Provider 原始异常、Key、prompt、回复或文件内容。Sentry 只能作为 `DiagnosticReporter` 的外层 adapter 接收 allowlist 字段，不能启用 Replay、Logs、Tracing、Metrics 或自动用户/请求内容采集。
 21. Project 重命名只修改标题和 `updated_at`。硬删除必须拒绝活动 Run、Terminal 或

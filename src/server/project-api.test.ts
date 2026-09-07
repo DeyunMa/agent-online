@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeId } from "../agent/contract";
+import { CreateAgentRunService } from "../application/create-agent-run";
 import type {
   AgentRunRecord,
   AgentRunRepository,
@@ -15,14 +16,13 @@ import type {
   SandboxLeaseRepository,
   TerminalSessionRepository,
 } from "../application/ports";
-import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectFilesService } from "../application/project-files";
 import { ProjectManagementService } from "../application/project-management";
 import { ProjectReadService } from "../application/project-read";
-import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
 import { ProjectSandboxService } from "../application/project-sandbox";
-import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import { ProjectTerminalService } from "../application/project-terminal";
+import type { CoordinatedAgentRun, StartAgentRunInput } from "../application/run-coordinator";
+import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import { canTransitionAgentRun, isTerminalAgentRun } from "../domain/agent-run";
 import { noopDiagnosticReporter } from "../observability/contract";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
@@ -36,8 +36,7 @@ import type {
 } from "../shared/api";
 import type { AppEnv } from "./env";
 import { createProjectApi } from "./project-api";
-import type { ServerServices } from "./services";
-import type { RunExecutionDispatcher } from "./services";
+import type { RunExecutionDispatcher, ServerServices } from "./services";
 
 const testUser = { email: "user@example.test", id: "user_1" };
 const otherUser = { email: "other@example.test", id: "user_2" };
@@ -563,6 +562,56 @@ describe("Project API", () => {
     expect(fixture.coordinator.starts).toHaveLength(0);
   });
 
+  it.each([
+    ["", "GET"],
+    ["/cancel", "POST"],
+    ["/events", "GET"],
+  ] as const)(
+    "authorizes Run%s with one owned Run lookup and preserves scoped 404s",
+    async (suffix, method) => {
+      const fixture = createFixture(testUser);
+      const runId = await createCancelledRun(fixture);
+      const projectRead = vi.spyOn(fixture.projects, "findOwnedById");
+      const ownedRunRead = vi.spyOn(fixture.agentRuns, "findOwnedById");
+      const cancel = vi.spyOn(fixture.coordinator, "cancel");
+      const request = (projectId: string, id = runId) =>
+        fixture.app.request(
+          `http://agent-online.test/api/projects/${projectId}/agent-runs/${id}${suffix}`,
+          { method },
+        );
+      const response = await request("project_1");
+      expect(response.status).toBe(200);
+      await response.text();
+      expect(projectRead).not.toHaveBeenCalled();
+      expect(ownedRunRead).toHaveBeenCalledOnce();
+      expect(ownedRunRead).toHaveBeenCalledWith(runId, testUser.id);
+      cancel.mockClear();
+
+      expect((await request("wrong-project")).status).toBe(404);
+      expect((await request("project_1", "missing-run")).status).toBe(404);
+      const storedRun = fixture.agentRuns.records.get(runId);
+      if (!storedRun) throw new Error("Expected seeded Run");
+      storedRun.userId = "other-user";
+      expect((await request("project_1")).status).toBe(404);
+      expect(cancel).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["", "GET"],
+    ["/cancel", "POST"],
+    ["/events", "GET"],
+  ] as const)("rejects unauthenticated Run%s before reading state", async (suffix, method) => {
+    const fixture = createFixture(null);
+    const ownedRunRead = vi.spyOn(fixture.agentRuns, "findOwnedById");
+    const response = await fixture.app.request(
+      `http://agent-online.test/api/projects/project_1/agent-runs/run_1${suffix}`,
+      { method },
+    );
+    expect(response.status).toBe(401);
+    expect(ownedRunRead).not.toHaveBeenCalled();
+  });
+
   it("streams terminal fake Run state from D1 without a live registry", async () => {
     const fixture = createFixture(testUser);
     await fixture.projects.create({
@@ -641,6 +690,30 @@ describe("Project API", () => {
   });
 });
 
+async function createCancelledRun(fixture: ReturnType<typeof createFixture>) {
+  await fixture.projects.create({
+    defaultAgentRuntimeId: "pi",
+    id: "project_1",
+    now,
+    title: "Demo",
+    userId: testUser.id,
+  });
+  const response = await fixture.app.request(
+    "http://agent-online.test/api/projects/project_1/agent-runs",
+    {
+      body: JSON.stringify({ content: "Build a demo" }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
+  const run = (await response.json()) as AgentRunResponse;
+  await fixture.app.request(
+    `http://agent-online.test/api/projects/project_1/agent-runs/${run.id}/cancel`,
+    { method: "POST" },
+  );
+  return run.id;
+}
+
 function createFixture(
   user: typeof testUser | null,
   options: {
@@ -651,7 +724,7 @@ function createFixture(
   const projects = new InMemoryProjectRepository();
   const messages = new InMemoryMessageRepository();
   const agentRuns = new InMemoryAgentRunRepository(messages);
-  const sandboxLeases = new InMemorySandboxLeaseRepository();
+  const sandboxLeases = new InMemorySandboxLeaseRepository(agentRuns);
   const coordinator = new FakeRunCoordinator(agentRuns);
   const sandboxRuntime = new PersistentFakeSandboxRuntime();
   let id = 0;
@@ -845,6 +918,29 @@ class InMemoryMessageRepository implements MessageRepository {
 
 class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
   readonly records = new Map<string, SandboxLeaseRecord>();
+
+  constructor(private readonly agentRuns: InMemoryAgentRunRepository) {}
+
+  async updateStateForRun(input: Parameters<SandboxLeaseRepository["updateStateForRun"]>[0]) {
+    const lease = this.records.get(input.leaseId);
+    const run = this.agentRuns.records.get(input.runId);
+    if (
+      !lease ||
+      !run ||
+      isTerminalAgentRun(run.status) ||
+      run.sandboxLeaseId !== lease.id ||
+      run.projectId !== lease.projectId ||
+      lease.providerRef !== input.expectedProviderRef ||
+      lease.updatedAt !== input.expectedUpdatedAt
+    )
+      return null;
+    Object.assign(lease, {
+      providerRef: input.providerRef,
+      status: input.status,
+      updatedAt: input.updatedAt,
+    });
+    return lease;
+  }
 
   async claimIdleAfterActivityForStop(
     input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],

@@ -174,8 +174,15 @@ Provider reference、Key、capability、异常 message 或 stack。
 ### 5.2 取消和恢复
 
 - 取消优先终止当前 Agent 进程，并保留同一 Project 的沙箱文件。
-- 若无法精确终止进程，系统会隔离或停止整个沙箱以恢复边界。
-- Worker/Workflow 所有者丢失时，非终态 Run 会收敛为 `interrupted`；超时收敛为 `timed_out`。
+- 已有进程引用时只精确终止该进程；终止失败保留非终态 Run 和私有进程引用作为
+  硬锁，交由 Workflow 恢复或受控运维处理，不能假报取消成功，也不能用整箱停止
+  误伤可能已经接替的活动。仅启动/执行所有者恢复尚无进程引用时才停止整个沙箱。
+- 启动期间取消先返回 `cancelling`，保留执行 Workflow，让启动所有者处理尚未返回
+  句柄的 Provider 操作，确认清理后再完成取消。
+- Worker/Workflow 所有者丢失时，确认停止后的 Run 收敛为 `interrupted`；应用超时
+  收敛为 `timed_out`。持续 Provider 故障可能保留非终态锁。
+- Run 对 Lease 的更新必须同时匹配非终态 Run 所有权、Provider 引用和更新时间快照；
+  先释放 Lease 再提交 Run 终态，避免旧执行覆盖后续活动。
 - Provider 操作失败不会把密钥或 Provider 错误正文返回浏览器。
 
 ### 5.3 Files 和 Changes

@@ -76,8 +76,10 @@ export function createWorkflowDispatcher(
         projectId: run.projectId,
         runId: run.id,
       });
-      await terminateWorkflowBestEffort(env, run.id);
-      await scheduleRunIdleCleanupBestEffort(env, run.projectId, run.id, diagnostics);
+      if (isTerminalAgentRun(cancelled.status)) {
+        await terminateWorkflowBestEffort(env, run.id);
+        await scheduleRunIdleCleanupBestEffort(env, run.projectId, run.id, diagnostics);
+      }
       return cancelled;
     },
     async start(input) {

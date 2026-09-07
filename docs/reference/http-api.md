@@ -251,9 +251,13 @@ type AgentRunStreamEvent =
 当前实现：
 
 - 连接后立即发送一次 `run.status`。
-- Worker 每 750 ms 从 D1 读取 Run；状态变化时发送新的 `run.status`。
+- Worker 初始每 750 ms 从 D1 读取 Run；状态不变时按 1,500、3,000、5,000 ms
+  退避，状态变化时发送新的 `run.status` 并恢复 750 ms。稳定状态下的终态检测
+  最多等待约 5 秒加 D1 请求耗时。
+- 每 15 秒发送 SSE comment 心跳；心跳不读取 D1、不占用 `sequence`。
 - 进入终态后发送一次 `run.completed` 并结束流。
-- 客户端断开时停止后续 D1 轮询；SSE 不是后台执行所有者。
+- 客户端断开时立即清除等待计时器、停止后续 D1 轮询并丢弃在途查询结果；SSE
+  不是后台执行所有者。
 - 最终 assistant 回复不通过 SSE 发送，浏览器随后刷新 Message API。
 
 SSE 不是可重放事件日志：没有持久 event ID，也不保存 raw Agent 输出。

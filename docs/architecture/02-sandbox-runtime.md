@@ -183,6 +183,12 @@ stateDiagram-v2
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
 5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
+Run 的 Lease 写入必须同时匹配非终态 Run 所有权、Provider 引用和更新时间快照。
+Lease 在 Run 终态前释放，避免旧 Run 覆盖新活动的 Lease。启动期间取消只标记
+`cancelling`，由启动所有者处理尚未返回的 Provider 句柄；不能提前终止该 Workflow。
+已有进程引用时，Provider 终止失败保留 Run 硬锁，不退化为可能误伤新活动的整箱
+停止。进程已不存在视为已停止；无进程引用的启动/恢复才使用整箱停止。
+
 当前仍不实现每用户活动沙箱上限；Project Preview 已实现，但只支持 ADR-0006 的固定 `vite-v1` preset。
 
 ## 4. 受控 Files 边界

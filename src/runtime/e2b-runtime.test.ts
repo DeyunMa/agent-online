@@ -615,7 +615,7 @@ describe("E2BSandboxRuntime", () => {
     );
   });
 
-  it("reports a missing persisted process so cancellation can stop the sandbox", async () => {
+  it("treats an absent persisted process as stopped without killing the sandbox", async () => {
     const sandbox = new FakeE2BSandbox("sandbox-existing");
     sandbox.processKillResult = false;
     const runtime = createRuntime(new FakeE2BClient(sandbox));
@@ -625,9 +625,42 @@ describe("E2BSandboxRuntime", () => {
       sandboxLeaseId: "lease-1",
     });
 
-    await expect(runtime.terminateProcess(handle, "42", "cancelled")).rejects.toThrow(
-      "process was not found",
-    );
+    await expect(runtime.terminateProcess(handle, "42", "cancelled")).resolves.toBeUndefined();
+    expect(sandbox.killed).toBe(false);
+  });
+
+  it("treats an expired sandbox as an already-stopped process", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-expired");
+    const client = new FakeE2BClient(sandbox);
+    client.connectError = new SandboxNotFoundError("expired");
+    const runtime = createRuntime(client);
+    await expect(
+      runtime.terminateProcess(
+        {
+          id: "sandbox-expired",
+          kind: "e2b",
+          sandboxLeaseId: "lease-1",
+        },
+        "42",
+        "cancelled",
+      ),
+    ).resolves.toBeUndefined();
+    expect(sandbox.killedProcessIds).toEqual([]);
+    expect(sandbox.killed).toBe(false);
+  });
+
+  it("propagates unconfirmed connection and termination failures", async () => {
+    const sandbox = new FakeE2BSandbox("sandbox-existing");
+    const client = new FakeE2BClient(sandbox);
+    const runtime = createRuntime(client);
+    const handle = { id: "sandbox-existing", kind: "e2b" as const, sandboxLeaseId: "lease-1" };
+    const failure = new Error("Unconfirmed provider failure");
+    client.connectError = failure;
+    await expect(runtime.terminateProcess(handle, "42", "cancelled")).rejects.toBe(failure);
+    client.connectError = null;
+    vi.spyOn(sandbox.commands, "kill").mockRejectedValueOnce(failure);
+    await expect(runtime.terminateProcess(handle, "42", "cancelled")).rejects.toBe(failure);
+    expect(sandbox.killed).toBe(false);
   });
 
   it("replaces an expired provider reference and treats an already-gone sandbox as stopped", async () => {

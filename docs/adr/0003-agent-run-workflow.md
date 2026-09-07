@@ -87,8 +87,11 @@ Workflow step 可以重试，但 AgentRun 不能重复启动：
 
 - 只有 `queued` Run 可以启动 Pi。
 - step 重试看到 `starting` 或 `running`，说明旧执行所有者已经丢失；平台不恢复 Pi session。
-- 有私有进程引用时，优先只停止该进程并保留沙箱；无法精确停止时才停止整个沙箱。
+- 有私有进程引用时，只停止该进程并保留沙箱；终止失败时保留硬锁。只有执行
+  所有者恢复尚无进程引用的 Run 时才停止整个沙箱。
 - 原状态为 `cancelling` 时收敛为 `cancelled`；其他失去所有者的非终态 Run 收敛为 `interrupted`。
+- 上述终态必须以确认进程或整个沙箱已停止为前提；Provider 终止操作持续失败时保留
+  非终态 Run 及进程引用，阻止新 Run/Terminal，按协调状态恢复文档处理。
 - 终态 Run 直接返回，不重启。
 
 assistant Message 对 `agent_run_id` 有唯一索引。`sandbox_duration_ms` 使用幂等 `MAX` 写入，避免重试或取消竞态重复累计时长。
@@ -104,7 +107,21 @@ starting / running  -> cancelling
                      -> cancelled
 ```
 
-正常路径使用 `SandboxRuntime.terminateProcess()` 只终止当前 Agent 进程，Lease 回到 `idle`，Project 文件继续存在。进程引用缺失或 Provider 无法精确终止时，允许 fail-closed 停止整个沙箱。
+正常路径使用 `SandboxRuntime.terminateProcess()` 只终止当前 Agent 进程，Lease 回到
+`idle`，Project 文件继续存在。进程已不存在属于终止成功；RPC/网络错误不是。已有
+进程引用时，终止失败保留非终态锁，不转为整箱停止：失败返回前另一请求可能已经
+完成旧 Run 并开始复用沙箱。仅启动所有者或丢失所有者后的恢复，在没有进程引用时
+允许停止整个沙箱。
+
+启动期间的取消只请求 `cancelling`，不能因尚无 Provider/进程引用就认为没有资源。
+执行所有者在 Provider 操作返回后观察取消，停止已经启动的进程或跳过启动，随后
+完成取消。只有 Run 已进入终态，取消请求才可以终止执行 Workflow 和调度 idle cleanup。
+重复的 `cancelling` 请求不重复执行 Provider stop；清理失败由执行 Workflow 恢复，
+持续失败时保留硬锁并要求受控运维确认资源已停止。
+
+Lease 状态写入必须匹配当前非终态 Run 与读取时的 Provider/更新时间快照；先完成
+Lease 释放再提交 Run 终态，利用仍在的 Run 互斥锁阻止新活动，旧执行不在终态后
+无条件写 Lease。无需新增持久会话或协调表。
 
 D1 收敛后，Hono 尽力终止原执行 Workflow，并创建一个只负责空闲 TTL 的 `idle-cleanup` Workflow。即使这个调度失败，E2B 自身的 sandbox timeout 仍提供最终成本上界。
 
@@ -112,7 +129,9 @@ D1 收敛后，Hono 尽力终止原执行 Workflow，并创建一个只负责空
 
 应用层从 capability 到期时间计算剩余 Run 时间，到期后通过 `AgentRuntime.cancel("timed_out")` 收敛为 `timed_out`。Workflow step 另设比业务 deadline 多 30 秒的硬 timeout，防止 Provider 创建或网络调用永久挂起。
 
-硬 timeout 后的重试遵循“失去执行所有者”的恢复规则，因此极端中断可能表现为 `interrupted`，不会永久停在非终态。
+硬 timeout 后的重试遵循“失去执行所有者”的恢复规则，因此极端中断可能表现为
+`interrupted`。若 Provider 终止始终不能确认，安全优先于终态收敛：保留非终态硬锁，
+不能仅凭时间过去就允许新执行。
 
 ### 7. 空闲沙箱回收
 
@@ -157,8 +176,8 @@ Gemini Key 只存在于 Worker Secret。Workflow 为每个 Run 签发绑定 `pro
 1. Workflow 参数和输出不含 prompt、最终回复、Provider 引用或凭据。
 2. 同一 Project 并发创建最多一个非终态 Run。
 3. Workflow 重试不会启动第二个 Agent 进程。
-4. 正常取消只停止当前进程并保留沙箱；无法精确终止时才停止整个沙箱。
-5. deadline 和执行中断都能让 D1 收敛到终态。
+4. 正常取消只停止当前进程并保留沙箱；精确终止失败保留锁，只有无进程引用的启动/恢复才停止整个沙箱。
+5. deadline 和执行中断在确认停止后让 D1 收敛到终态；终止未确认时保留硬锁。
 6. 空闲清理不会停止已被新 Run 使用的沙箱。
 7. 浏览器刷新后只依赖 D1 恢复 Run、Message 和公开 Lease 状态。
 8. D1、Workflow 输出、日志和公开 API 不保存 raw transcript、私有推理或原始 Key。

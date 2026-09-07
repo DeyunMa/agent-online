@@ -14,7 +14,11 @@
 3. 在 E2B Dashboard 确认真实 sandbox 和进程是否仍存在。
 4. 等待 Workflow 和 Provider timeout 收敛后，再判断 D1 是否真的陈旧。
 
-不能仅因 `expires_at` 已过就直接删除 Terminal/Preview 行。到期时间只触发持久清理，D1 行仍是互斥事实；盲删可能让旧 PTY/Preview 与新 Run 并行写同一 `/workspace`。
+不能仅因 `expires_at` 已过就直接删除 Terminal/Preview 行，也不能仅因 Run 超时就
+清空非终态 Run 锁。到期时间只触发持久清理，D1 行仍是互斥事实；盲删可能让旧
+进程与新 Run 并行写同一 `/workspace`。Run 精确终止失败后保留 `cancelling` 和
+私有进程引用；重复取消请求不会并发执行第二次清理，先检查执行 Workflow 的恢复
+结果。重试耗尽后按下述前置条件人工恢复。
 
 ## 2. 只读诊断
 

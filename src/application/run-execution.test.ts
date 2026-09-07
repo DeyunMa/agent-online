@@ -165,6 +165,217 @@ describe("RunExecutionService", () => {
     });
   });
 
+  it("keeps cancellation pending when targeted termination cannot be confirmed", async () => {
+    const fixture = createFixture({
+      lease: createLease({ providerRef: "sandbox_1", status: "busy" }),
+      run: createRun({
+        providerProcessRef: "42",
+        startedAt: "2026-07-25T00:00:00.000Z",
+        status: "running",
+      }),
+    });
+    fixture.runtime.terminateProcess = async () => {
+      throw new Error("private process error");
+    };
+    fixture.runtime.stop = async () => {
+      throw new Error("private sandbox error");
+    };
+    await expect(
+      fixture.createService(blockingAgent()).cancel({ projectId: "project_1", runId: "run_1" }),
+    ).rejects.toThrow("Run process termination could not be confirmed");
+    expect(await fixture.agentRuns.findActiveByProjectId("project_1")).toMatchObject({
+      status: "cancelling",
+      providerProcessRef: "42",
+      finishedAt: null,
+    });
+    expect(fixture.sandboxLeases.lease).toMatchObject({ providerRef: "sandbox_1", status: "busy" });
+  });
+
+  it("does not stop a sandbox reused after a delayed targeted termination fails", async () => {
+    const fixture = createFixture({
+      lease: createLease({ providerRef: "sandbox_1", status: "busy" }),
+      run: createRun({
+        providerProcessRef: "42",
+        startedAt: "2026-07-25T00:00:00.000Z",
+        status: "running",
+      }),
+    });
+    let entered!: () => void;
+    let release!: () => void;
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.runtime.terminateProcess = async () => {
+      entered();
+      await pending;
+      throw new Error("old process exited");
+    };
+    const cancelling = fixture
+      .createService(blockingAgent())
+      .cancel({ projectId: "project_1", runId: "run_1" });
+    await entering;
+    await fixture.agentRuns.transition({
+      runId: "run_1",
+      from: "cancelling",
+      to: "cancelled",
+      finishedAt: "2026-07-25T00:00:05.000Z",
+    });
+    await fixture.sandboxLeases.updateState({
+      leaseId: "lease_1",
+      providerRef: "sandbox_1",
+      status: "busy",
+      updatedAt: "2026-07-25T00:00:06.000Z",
+    });
+    release();
+    expect((await cancelling).status).toBe("cancelled");
+    expect(fixture.runtime.stoppedSandboxes).toEqual([]);
+    expect(fixture.sandboxLeases.lease).toMatchObject({
+      status: "busy",
+      updatedAt: "2026-07-25T00:00:06.000Z",
+    });
+  });
+
+  it("retains recovery lock when no process reference exists and whole-sandbox stop fails", async () => {
+    const fixture = createFixture({
+      lease: createLease({ providerRef: "sandbox_1", status: "busy" }),
+      run: createRun({
+        providerProcessRef: null,
+        startedAt: "2026-07-25T00:00:00.000Z",
+        status: "running",
+      }),
+    });
+    fixture.runtime.stop = async () => {
+      throw new Error("private sandbox error");
+    };
+    await expect(
+      fixture.createService(blockingAgent()).execute({ projectId: "project_1", runId: "run_1" }),
+    ).rejects.toThrow("Run process termination could not be confirmed");
+    expect(await fixture.agentRuns.findActiveByProjectId("project_1")).toMatchObject({
+      status: "running",
+      finishedAt: null,
+    });
+  });
+
+  it("keeps startup cancellation locked until a pending sandbox creation returns", async () => {
+    const fixture = createFixture();
+    let entered!: () => void;
+    let release!: () => void;
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.runtime.ensureLease = async () => {
+      entered();
+      await pending;
+      return { id: "sandbox_1", kind: "e2b", sandboxLeaseId: "lease_1" };
+    };
+    let starts = 0;
+    const agent = blockingAgent();
+    const original = agent.start;
+    agent.start = async (...args) => {
+      starts += 1;
+      return original(...args);
+    };
+    const service = fixture.createService(agent);
+    const executing = service.execute({ projectId: "project_1", runId: "run_1" });
+    await entering;
+    expect((await service.cancel({ projectId: "project_1", runId: "run_1" })).status).toBe(
+      "cancelling",
+    );
+    expect(await fixture.agentRuns.findActiveByProjectId("project_1")).not.toBeNull();
+    release();
+    expect((await executing).status).toBe("cancelled");
+    expect(starts).toBe(0);
+    expect(fixture.sandboxLeases.lease.status).toBe("idle");
+  });
+
+  it("does not launch or stop the sandbox when cancelled during Agent configuration", async () => {
+    const fixture = createFixture({
+      lease: createLease({ providerRef: "sandbox_1", status: "idle" }),
+    });
+    let entered!: () => void;
+    let release!: () => void;
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fixture.runtime.writeFile = async () => {
+      entered();
+      await pending;
+    };
+    let spawns = 0;
+    fixture.runtime.startProcess = async () => {
+      spawns += 1;
+      throw new Error("unexpected spawn");
+    };
+    const agent: AgentRuntime = {
+      capabilities,
+      id: "pi",
+      async start(context, input) {
+        await context.files.write("/tmp/config.json", "{}");
+        await context.processes.start({
+          agentRunId: input.agentRunId,
+          command: "pi",
+          args: [],
+          cwd: "/workspace",
+        });
+        throw new Error("unreachable");
+      },
+    };
+    const service = fixture.createService(agent);
+    const executing = service.execute({ projectId: "project_1", runId: "run_1" });
+    await entering;
+    expect((await service.cancel({ projectId: "project_1", runId: "run_1" })).status).toBe(
+      "cancelling",
+    );
+    release();
+    expect((await executing).status).toBe("cancelled");
+    expect(spawns).toBe(0);
+    expect(fixture.runtime.stoppedSandboxes).toEqual([]);
+    expect(fixture.sandboxLeases.lease).toMatchObject({ status: "idle", providerRef: "sandbox_1" });
+  });
+
+  it("terminates an Agent that returns after startup was cancelled", async () => {
+    const fixture = createFixture();
+    let entered!: () => void;
+    let release!: () => void;
+    const entering = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let terminations = 0;
+    const agent = blockingAgent();
+    const original = agent.start;
+    agent.start = async (...args) => {
+      const execution = await original(...args);
+      entered();
+      await pending;
+      execution.cancel = async () => {
+        terminations += 1;
+      };
+      return execution;
+    };
+    const service = fixture.createService(agent);
+    const executing = service.execute({ projectId: "project_1", runId: "run_1" });
+    await entering;
+    expect((await service.cancel({ projectId: "project_1", runId: "run_1" })).status).toBe(
+      "cancelling",
+    );
+    release();
+    expect((await executing).status).toBe("cancelled");
+    expect(terminations).toBe(1);
+    expect(await fixture.agentRuns.findActiveByProjectId("project_1")).toBeNull();
+  });
+
   it("fails closed by stopping the sandbox when a recovered Run has no process reference", async () => {
     const fixture = createFixture({
       lease: createLease({
@@ -519,6 +730,18 @@ class InMemorySandboxLeaseRepository implements SandboxLeaseRepository {
     readonly lease: SandboxLeaseRecord,
     private readonly agentRuns: InMemoryAgentRunRepository,
   ) {}
+
+  async updateStateForRun(input: Parameters<SandboxLeaseRepository["updateStateForRun"]>[0]) {
+    const run = await this.agentRuns.findById(input.runId);
+    if (
+      !run ||
+      isTerminalAgentRun(run.status) ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    )
+      return null;
+    return this.updateState(input);
+  }
 
   async claimIdleAfterActivityForStop(
     input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],

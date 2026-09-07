@@ -172,7 +172,7 @@ export class RunExecutionService {
 
   async cancel(input: AgentRunExecutionInput): Promise<AgentRunRecord> {
     const run = await this.cancelRun(input);
-    this.reportFinished(run);
+    if (isTerminalAgentRun(run.status)) this.reportFinished(run);
     return run;
   }
 
@@ -188,7 +188,12 @@ export class RunExecutionService {
       });
     }
 
-    if (run.status === "starting" || run.status === "running") {
+    // Startup owns resources that may not have returned a provider reference yet.
+    // Keep its lock until that owner has observed cancellation and cleaned up.
+    if (run.status === "cancelling") return run;
+    if (run.status === "starting") return this.transitionOrReload(run, "cancelling");
+
+    if (run.status === "running") {
       run = await this.transitionOrReload(run, "cancelling");
       if (isTerminalAgentRun(run.status)) {
         return run;
@@ -282,7 +287,7 @@ export class RunExecutionService {
     reason: "cancelled" | "failed",
   ) {
     if (!sandboxLease.providerRef) {
-      await this.updateLeaseBestEffort(sandboxLease, null, "stopped");
+      await this.updateLeaseForRun(run, sandboxLease, null, "stopped");
       return;
     }
 
@@ -290,27 +295,34 @@ export class RunExecutionService {
     try {
       runtime = this.dependencies.getSandboxRuntime(sandboxLease.runtimeId);
     } catch (_error) {
-      await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "failed");
-      return;
+      throw new Error("Run process termination could not be confirmed");
     }
 
     const handle = toRuntimeHandle(sandboxLease, sandboxLease.providerRef);
     if (run.providerProcessRef) {
       try {
         await runtime.terminateProcess(handle, run.providerProcessRef, reason);
-        await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "idle");
-        return;
-      } catch (_error) {
-        // Fall through to whole-sandbox termination when the process cannot be targeted.
+      } catch {
+        const current = await this.dependencies.agentRuns.findById(run.id);
+        if (current && isTerminalAgentRun(current.status)) return;
+        // Never stop a shared sandbox after an ambiguous targeted termination:
+        // another owner may publish completion while this request is in flight.
+        throw new Error("Run process termination could not be confirmed");
       }
+      await this.updateLeaseForRun(run, sandboxLease, sandboxLease.providerRef, "idle");
+      return;
     }
+
+    const current = await this.dependencies.agentRuns.findById(run.id);
+    if (current && isTerminalAgentRun(current.status)) return;
 
     try {
       await runtime.stop(handle, "failed");
-      await this.updateLeaseBestEffort(sandboxLease, null, "stopped");
-    } catch (_error) {
-      await this.updateLeaseBestEffort(sandboxLease, sandboxLease.providerRef, "failed");
+    } catch {
+      // Preserve the non-terminal Run and private process reference as a hard lock.
+      throw new Error("Run process termination could not be confirmed");
     }
+    await this.updateLeaseForRun(run, sandboxLease, null, "stopped");
   }
 
   private async recordSandboxDuration(run: AgentRunRecord, finishedAt: string) {
@@ -365,20 +377,25 @@ export class RunExecutionService {
     throw new Error(`Unable to transition AgentRun from ${run.status} to ${to}`);
   }
 
-  private async updateLeaseBestEffort(
+  private async updateLeaseForRun(
+    run: AgentRunRecord,
     sandboxLease: SandboxLeaseRecord,
     providerRef: string | null,
     status: SandboxLeaseRecord["status"],
   ) {
-    try {
-      await this.dependencies.sandboxLeases.updateState({
-        leaseId: sandboxLease.id,
-        providerRef,
-        status,
-        updatedAt: this.timestamp(),
-      });
-    } catch (_error) {
-      // Run state must still converge if a provider or Lease update fails.
+    const updated = await this.dependencies.sandboxLeases.updateStateForRun({
+      leaseId: sandboxLease.id,
+      runId: run.id,
+      expectedProviderRef: sandboxLease.providerRef,
+      expectedUpdatedAt: sandboxLease.updatedAt,
+      providerRef,
+      status,
+      updatedAt: this.timestamp(),
+    });
+    if (!updated) {
+      const current = await this.dependencies.agentRuns.findById(run.id);
+      if (current && isTerminalAgentRun(current.status)) return;
+      throw new Error("Run lease ownership changed");
     }
   }
 

@@ -36,7 +36,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 - 普通产品 mutation 在进入鉴权和 JSON 解析前统一要求同源，并限制请求体为 256 KiB；API 与静态资源分别设置安全响应头，构建门禁会校验 `_headers` 未丢失。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。单次上游模型请求有 120 秒 deadline 且不自动重放非幂等 POST；Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
-- 取消优先只终止当前 Agent 进程并保留 Project 沙箱；deadline 和执行所有者丢失会让 Run 收敛到明确终态；空闲清理使用 D1 条件更新避免停止新 Run 正在使用的沙箱。
+- 取消只精确终止已知的当前 Agent 进程并保留 Project 沙箱；启动中的取消等待执行所有者收敛。deadline 和执行所有者丢失在确认终止后写入明确终态，终止失败保留非终态硬锁；Lease 释放和空闲清理使用 D1 条件更新，避免旧请求影响新活动。
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
 - 私有 Preview 支持邮箱 allowlist 和服务端 `RUNS_ENABLED` 总开关；关闭时浏览器和创建 Run API 同时拒绝新执行，且不写入 Message、Lease 或 AgentRun。
 - Project Inspector 已启用受控 Files：仅附着现有 E2B Lease，读取限制在
@@ -84,6 +84,10 @@ Run history 精简、受控单文件上传和能力驱动的 Pi/Goose 选择。�
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)，最近 Sentry 与架构收敛结果见 [2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
 执行所有权、取消和 TTL 设计见 [ADR-0003](./docs/adr/0003-agent-run-workflow.md)。
+
+最新本地加载性能、SSE 查询和取消竞态加固见
+[2026-09-07 加载性能与 Run 所有权](./docs/status/2026-09-07-performance-and-run-ownership.md)；
+该记录不代表新一轮远程部署。
 
 ## 明确不做
 

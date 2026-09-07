@@ -229,11 +229,15 @@ export class E2BSandboxRuntime
     providerProcessRef: string,
     _reason: ProcessTerminationReason,
   ) {
-    const sandbox = await this.attachSandbox(handle);
     const processId = parseProviderProcessRef(providerProcessRef, "process");
-    const killed = await sandbox.commands.kill(processId);
-    if (!killed) {
-      throw new Error(`E2B process was not found: ${providerProcessRef}`);
+    try {
+      const sandbox = await this.attachSandbox(handle);
+      // E2B returns false only when the PID no longer exists. Both outcomes
+      // confirm that this process does not need another termination attempt.
+      await sandbox.commands.kill(processId);
+    } catch (error) {
+      if (error instanceof SandboxNotFoundError) return;
+      throw error;
     }
   }
 

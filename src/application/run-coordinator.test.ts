@@ -59,6 +59,113 @@ describe("RunCoordinator", () => {
     });
   });
 
+  it("releases the lease while the Run is locked and never writes it after terminal publication", async () => {
+    const fixture = createFixture();
+    const original = fixture.agentRunRepository.completeSucceeded.bind(fixture.agentRunRepository);
+    fixture.agentRunRepository.completeSucceeded = async (input) => {
+      expect(fixture.agentRunRepository.run.status).toBe("running");
+      expect(fixture.sandboxLeaseRepository.lease.status).toBe("idle");
+      const completed = await original(input);
+      await fixture.sandboxLeaseRepository.updateState({
+        leaseId: "lease_1",
+        providerRef: "new-provider",
+        status: "busy",
+        updatedAt: "2026-07-25T00:01:00.000Z",
+      });
+      return completed;
+    };
+    const managed = await fixture
+      .createCoordinator(completingRuntime(0, "Done"))
+      .start(startInput(fixture));
+    await managed.completion;
+    expect(fixture.sandboxLeaseRepository.lease).toMatchObject({
+      providerRef: "new-provider",
+      status: "busy",
+      updatedAt: "2026-07-25T00:01:00.000Z",
+    });
+  });
+
+  it("terminates a captured process session when Agent.start throws after spawning", async () => {
+    const fixture = createFixture();
+    const startProcess = fixture.sandboxRuntime.startProcess.bind(fixture.sandboxRuntime);
+    let terminated = 0;
+    fixture.sandboxRuntime.startProcess = async (...args) => {
+      const session = await startProcess(...args);
+      session.terminate = async () => {
+        terminated += 1;
+      };
+      return session;
+    };
+    const agent: AgentRuntime = {
+      capabilities,
+      id: "pi",
+      async start(context, input) {
+        await context.processes.start({
+          agentRunId: input.agentRunId,
+          command: "pi",
+          args: [],
+          cwd: "/workspace",
+        });
+        throw new Error("adapter failed after spawn");
+      },
+    };
+    const managed = await fixture.createCoordinator(agent).start(startInput(fixture));
+    expect((await managed.completion).status).toBe("failed");
+    expect(terminated).toBe(1);
+    expect(fixture.sandboxLeaseRepository.lease.providerRef).not.toBeNull();
+  });
+
+  it("stops the owned sandbox if a provider spawn fails without returning a handle", async () => {
+    const fixture = createFixture();
+    fixture.sandboxRuntime.startProcess = async () => {
+      throw new Error("ambiguous provider spawn failure");
+    };
+    const agent: AgentRuntime = {
+      capabilities,
+      id: "pi",
+      async start(context, input) {
+        await context.processes.start({
+          agentRunId: input.agentRunId,
+          command: "pi",
+          args: [],
+          cwd: "/workspace",
+        });
+        throw new Error("unreachable");
+      },
+    };
+    const managed = await fixture.createCoordinator(agent).start(startInput(fixture));
+    expect((await managed.completion).status).toBe("failed");
+    expect(fixture.sandboxLeaseRepository.lease).toMatchObject({
+      status: "stopped",
+      providerRef: null,
+    });
+  });
+
+  it("retains the active Run and process reference when targeted cleanup fails", async () => {
+    const fixture = createFixture();
+    fixture.sandboxRuntime.stop = async () => {
+      throw new Error("private provider details");
+    };
+    const agent = failingEventRuntime();
+    const original = agent.start;
+    agent.start = async (...args) => {
+      const execution = await original(...args);
+      execution.cancel = async () => {
+        throw new Error("private process details");
+      };
+      return execution;
+    };
+    const managed = await fixture.createCoordinator(agent).start(startInput(fixture));
+    await expect(managed.completion).rejects.toThrow(
+      "Run process termination could not be confirmed",
+    );
+    expect(fixture.agentRunRepository.run).toMatchObject({
+      status: "running",
+      providerProcessRef: "process_1",
+      finishedAt: null,
+    });
+  });
+
   it("marks a nonzero Agent completion as failed while leaving the sandbox idle", async () => {
     const fixture = createFixture();
     const coordinator = fixture.createCoordinator(completingRuntime(7));
@@ -189,7 +296,7 @@ describe("RunCoordinator", () => {
     ]);
   });
 
-  it("marks the Run and Lease failed when Agent startup fails", async () => {
+  it("marks the Run and Lease failed when Agent startup fails before spawning", async () => {
     const fixture = createFixture();
     const coordinator = fixture.createCoordinator({
       capabilities,
@@ -234,7 +341,10 @@ function startInput(fixture: ReturnType<typeof createFixture>) {
 function createFixture() {
   const messageRepository = new FakeMessageRepository();
   const agentRunRepository = new FakeAgentRunRepository(createAgentRun(), messageRepository);
-  const sandboxLeaseRepository = new FakeSandboxLeaseRepository(createSandboxLease());
+  const sandboxLeaseRepository = new FakeSandboxLeaseRepository(
+    createSandboxLease(),
+    agentRunRepository,
+  );
   const sandboxRuntime = new FakeSandboxRuntime();
 
   return {
@@ -251,6 +361,7 @@ function createFixture() {
       return new RunCoordinator(dependencies);
     },
     messageRepository,
+    sandboxRuntime,
     sandboxLeaseRepository,
   };
 }
@@ -568,7 +679,21 @@ class FakeMessageRepository implements MessageRepository {
 class FakeSandboxLeaseRepository implements SandboxLeaseRepository {
   readonly states: Array<Parameters<SandboxLeaseRepository["updateState"]>[0]> = [];
 
-  constructor(readonly lease: SandboxLeaseRecord) {}
+  constructor(
+    readonly lease: SandboxLeaseRecord,
+    private readonly runs: FakeAgentRunRepository,
+  ) {}
+
+  async updateStateForRun(input: Parameters<SandboxLeaseRepository["updateStateForRun"]>[0]) {
+    if (
+      this.runs.run.id !== input.runId ||
+      isTerminalAgentRun(this.runs.run.status) ||
+      this.lease.providerRef !== input.expectedProviderRef ||
+      this.lease.updatedAt !== input.expectedUpdatedAt
+    )
+      return null;
+    return this.updateState(input);
+  }
 
   async claimIdleAfterActivityForStop(
     input: Parameters<SandboxLeaseRepository["claimIdleAfterActivityForStop"]>[0],

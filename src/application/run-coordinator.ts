@@ -13,7 +13,12 @@ import type {
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
-import type { RuntimeKind, SandboxRuntime } from "../runtime/contract";
+import type {
+  RuntimeKind,
+  SandboxRuntime,
+  SandboxProcessSession,
+  ProcessTerminationReason,
+} from "../runtime/contract";
 import type { AgentRunFailureCode, FailedAgentRunFailureCode } from "../shared/error-codes";
 
 export type Clock = {
@@ -66,6 +71,9 @@ class ManagedRun implements CoordinatedAgentRun {
   private currentLease: SandboxLeaseRecord;
   private currentRun: AgentRunRecord;
   private execution: AgentExecution | null = null;
+  private processSession: SandboxProcessSession | null = null;
+  private processStartAttempted = false;
+  private processStopped = false;
   private readonly rejectCompletion: (reason: unknown) => void;
   private readonly resolveCompletion: (run: AgentRunRecord) => void;
   private lifecycle: Promise<void> = Promise.resolve();
@@ -76,7 +84,7 @@ class ManagedRun implements CoordinatedAgentRun {
     private readonly dependencies: RunCoordinatorDependencies,
     private readonly input: StartAgentRunInput,
   ) {
-    this.currentLease = input.sandboxLease;
+    this.currentLease = { ...input.sandboxLease };
     this.currentRun = input.agentRun;
     this.providerRef = input.sandboxLease.providerRef;
 
@@ -126,6 +134,12 @@ class ManagedRun implements CoordinatedAgentRun {
       startupStage = "mark_lease_ready";
       this.providerRef = sandboxHandle.id;
       await this.updateLease("ready");
+      await this.refreshCurrentRun();
+      if (this.currentRun.status === "cancelling") {
+        await this.complete("cancelled");
+        return;
+      }
+      if (isTerminalAgentRun(this.currentRun.status)) throw new Error("Run no longer owns startup");
       startupStage = "start_agent";
       const execution = await agentRuntime.start(
         {
@@ -133,7 +147,14 @@ class ManagedRun implements CoordinatedAgentRun {
             write: (path, content) => sandboxRuntime.writeFile(sandboxHandle, path, content),
           },
           processes: {
-            start: (command) => sandboxRuntime.startProcess(sandboxHandle, command),
+            start: async (command) => {
+              await this.refreshCurrentRun();
+              if (this.currentRun.status !== "starting")
+                throw new Error("Run startup was cancelled");
+              this.processStartAttempted = true;
+              this.processSession = await sandboxRuntime.startProcess(sandboxHandle, command);
+              return this.processSession;
+            },
           },
         },
         {
@@ -155,6 +176,11 @@ class ManagedRun implements CoordinatedAgentRun {
         throw new Error("Unable to persist AgentRun process reference");
       }
       this.currentRun = runWithProcessRef;
+      if (this.currentRun.status === "cancelling") {
+        await this.terminateExecution("cancelled");
+        await this.complete("cancelled");
+        return;
+      }
 
       startupStage = "mark_lease_busy";
       await this.updateLease("busy");
@@ -189,7 +215,7 @@ class ManagedRun implements CoordinatedAgentRun {
           await this.transition(this.currentRun.status, "cancelling");
         }
 
-        await this.execution.cancel(reason);
+        await this.terminateExecution(reason);
       }
 
       if (reason === "failed") {
@@ -220,6 +246,7 @@ class ManagedRun implements CoordinatedAgentRun {
         return this.fail("run.no_visible_reply", "AGENT_PROTOCOL_INVALID", "persist_completion");
       }
 
+      await this.updateLease(this.providerRef ? "idle" : "stopped");
       const completedRun = await this.dependencies.agentRunRepository.completeSucceeded({
         assistantMessage: visibleReply
           ? {
@@ -246,9 +273,11 @@ class ManagedRun implements CoordinatedAgentRun {
 
       this.currentRun = completedRun;
       this.terminal = true;
-      return this.finishLease(completedRun);
+      this.resolve(completedRun);
+      return completedRun;
     }
 
+    await this.updateLease(this.providerRef ? "idle" : "stopped");
     await this.recordSandboxDuration(finishedAt);
     const completedRun = await this.transition(this.currentRun.status, status, {
       failureCode:
@@ -262,19 +291,8 @@ class ManagedRun implements CoordinatedAgentRun {
     });
     this.terminal = true;
 
-    return this.finishLease(completedRun);
-  }
-
-  private async finishLease(completedRun: AgentRunRecord) {
-    try {
-      await this.updateLease("idle");
-      this.resolve(completedRun);
-      return completedRun;
-    } catch (error) {
-      await this.markLeaseFailed();
-      this.reject(error);
-      throw error;
-    }
+    this.resolve(completedRun);
+    return completedRun;
   }
 
   private async consumeEvents() {
@@ -294,6 +312,7 @@ class ManagedRun implements CoordinatedAgentRun {
             return;
           }
 
+          this.processStopped = true;
           await this.refreshCurrentRun();
 
           if (isTerminalAgentRun(this.currentRun.status)) {
@@ -348,31 +367,26 @@ class ManagedRun implements CoordinatedAgentRun {
       this.reportFailure(errorCode, failureCode, stage);
     }
 
+    await this.terminateExecution();
     await this.refreshCurrentRun();
     if (isTerminalAgentRun(this.currentRun.status)) {
       this.terminal = true;
       this.resolve(this.currentRun);
       return this.currentRun;
     }
-
-    await this.terminateExecution();
+    if (this.currentRun.status === "cancelling") return this.complete("cancelled");
 
     const finishedAt = this.timestamp();
     await this.recordSandboxDuration(finishedAt);
+    await this.updateLease(this.providerRef ? "failed" : "stopped");
     const failedRun = await this.transition(this.currentRun.status, "failed", {
       failureCode,
       finishedAt,
     });
     this.terminal = true;
 
-    try {
-      await this.updateLease("failed");
-      this.resolve(failedRun);
-      return failedRun;
-    } catch (error) {
-      this.reject(error);
-      throw error;
-    }
+    this.resolve(failedRun);
+    return failedRun;
   }
 
   private async failSafely(
@@ -388,14 +402,6 @@ class ManagedRun implements CoordinatedAgentRun {
     }
   }
 
-  private async markLeaseFailed() {
-    try {
-      await this.updateLease("failed");
-    } catch (_error) {
-      // The primary completion failure is reported to the caller; there is no safe retry port yet.
-    }
-  }
-
   private async serialized<T>(operation: () => Promise<T>): Promise<T> {
     const next = this.lifecycle.then(operation, operation);
     this.lifecycle = next.then(
@@ -405,15 +411,43 @@ class ManagedRun implements CoordinatedAgentRun {
     return next;
   }
 
-  private async terminateExecution() {
-    if (!this.execution) {
-      return;
+  private async terminateExecution(reason: ProcessTerminationReason = "failed") {
+    if (this.processStopped || (!this.execution && !this.processStartAttempted)) return;
+    if (this.execution || this.processSession) {
+      try {
+        if (this.execution) await this.execution.cancel(reason);
+        else await this.processSession?.terminate(reason);
+        this.processStopped = true;
+        return;
+      } catch {
+        // A concurrent owner may already have completed this Run and released the
+        // sandbox to a new Run. Never escalate a targeted kill to whole-sandbox stop.
+        await this.refreshCurrentRun();
+        if (isTerminalAgentRun(this.currentRun.status)) {
+          this.processStopped = true;
+          return;
+        }
+        throw new Error("Run process termination could not be confirmed");
+      }
     }
-
+    await this.refreshCurrentRun();
+    if (isTerminalAgentRun(this.currentRun.status)) return;
+    if (!this.providerRef) throw new Error("Run process termination could not be confirmed");
+    // Startup has not returned a process handle. Its non-terminal Run still owns
+    // the lock; HTTP cancellation leaves this cleanup to the startup owner.
     try {
-      await this.execution.cancel("failed");
-    } catch (_error) {
-      // A failed process termination must not prevent D1 state from converging.
+      await this.dependencies.getSandboxRuntime(this.currentLease.runtimeId).stop(
+        {
+          id: this.providerRef,
+          kind: this.currentLease.runtimeId,
+          sandboxLeaseId: this.currentLease.id,
+        },
+        "failed",
+      );
+      this.providerRef = null;
+      this.processStopped = true;
+    } catch {
+      throw new Error("Run process termination could not be confirmed");
     }
   }
 
@@ -480,14 +514,18 @@ class ManagedRun implements CoordinatedAgentRun {
   }
 
   private async updateLease(status: SandboxLeaseRecord["status"]) {
-    const updatedLease = await this.dependencies.sandboxLeaseRepository.updateState({
+    const updatedLease = await this.dependencies.sandboxLeaseRepository.updateStateForRun({
       leaseId: this.currentLease.id,
+      runId: this.currentRun.id,
+      expectedProviderRef: this.currentLease.providerRef,
+      expectedUpdatedAt: this.currentLease.updatedAt,
       providerRef: this.providerRef,
       status,
       updatedAt: this.timestamp(),
     });
 
-    this.currentLease = updatedLease;
+    if (!updatedLease) throw new Error("Run lease ownership changed");
+    this.currentLease = { ...updatedLease };
     this.providerRef = updatedLease.providerRef;
     return updatedLease;
   }

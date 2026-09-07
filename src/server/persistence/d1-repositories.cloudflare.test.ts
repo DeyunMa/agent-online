@@ -1,7 +1,12 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { D1AgentRunRepository, D1MessageRepository, D1ProjectRepository } from "./d1-repositories";
+import {
+  D1AgentRunRepository,
+  D1MessageRepository,
+  D1ProjectRepository,
+  D1SandboxLeaseRepository,
+} from "./d1-repositories";
 
 const createdAt = "2026-07-27T00:00:00.000Z";
 const finishedAt = "2026-07-27T00:00:10.000Z";
@@ -76,6 +81,125 @@ describe("D1 repositories in the Workers runtime", () => {
       "before\u0000after",
     );
     expect(await repository.listContextBefore("other_project", 23)).toEqual([]);
+  });
+
+  it("updates a running Run lease only from its expected snapshot", async () => {
+    await createRunningRun(new D1AgentRunRepository(env.DB));
+    const leases = new D1SandboxLeaseRepository(env.DB);
+    const updated = await leases.updateStateForRun({
+      leaseId: "lease_1",
+      runId: "run_1",
+      expectedProviderRef: null,
+      expectedUpdatedAt: createdAt,
+      providerRef: "provider_1",
+      status: "busy",
+      updatedAt: finishedAt,
+    });
+    expect(updated).toMatchObject({
+      providerRef: "provider_1",
+      status: "busy",
+      updatedAt: finishedAt,
+    });
+    expect(await leases.findByProjectId("project_1")).toEqual(updated);
+  });
+
+  it("rejects a terminal Run write even when a later Run reuses the same provider and snapshot", async () => {
+    const runs = new D1AgentRunRepository(env.DB);
+    const leases = new D1SandboxLeaseRepository(env.DB);
+    await createRunningRun(runs);
+    await leases.updateState({
+      leaseId: "lease_1",
+      providerRef: "provider_1",
+      status: "busy",
+      updatedAt: createdAt,
+    });
+    await runs.transition({
+      from: "running",
+      to: "interrupted",
+      runId: "run_1",
+      finishedAt,
+      failureCode: "run.interrupted",
+    });
+    await createRunningRun(runs, "run_2");
+    await seedRunningPreview();
+    const before = await leases.findByProjectId("project_1");
+    const result = await leases.updateStateForRun({
+      leaseId: "lease_1",
+      runId: "run_1",
+      expectedProviderRef: "provider_1",
+      expectedUpdatedAt: createdAt,
+      providerRef: null,
+      status: "stopped",
+      updatedAt: finishedAt,
+    });
+    expect(result).toBeNull();
+    expect(await leases.findByProjectId("project_1")).toEqual(before);
+    expect((await runs.findById("run_2"))?.status).toBe("running");
+    expect(
+      await env.DB.prepare("SELECT id FROM preview_sessions WHERE id = 'preview_1'").first(),
+    ).toEqual({ id: "preview_1" });
+  });
+
+  it.each([
+    { expectedProviderRef: "wrong_provider", expectedUpdatedAt: createdAt },
+    { expectedProviderRef: "provider_1", expectedUpdatedAt: finishedAt },
+  ])("rejects a stale snapshot without deleting the active Preview: %j", async (snapshot) => {
+    await createRunningRun(new D1AgentRunRepository(env.DB));
+    const leases = new D1SandboxLeaseRepository(env.DB);
+    await leases.updateState({
+      leaseId: "lease_1",
+      providerRef: "provider_1",
+      status: "busy",
+      updatedAt: createdAt,
+    });
+    await seedRunningPreview();
+    const before = await leases.findByProjectId("project_1");
+    expect(
+      await leases.updateStateForRun({
+        leaseId: "lease_1",
+        runId: "run_1",
+        ...snapshot,
+        providerRef: null,
+        status: "stopped",
+        updatedAt: finishedAt,
+      }),
+    ).toBeNull();
+    expect(await leases.findByProjectId("project_1")).toEqual(before);
+    expect(
+      await env.DB.prepare(
+        "SELECT id, status FROM preview_sessions WHERE id = 'preview_1'",
+      ).first(),
+    ).toEqual({ id: "preview_1", status: "running" });
+  });
+
+  it("deletes Preview in the same D1 batch only after a successful Run lease stop", async () => {
+    await createRunningRun(new D1AgentRunRepository(env.DB));
+    const leases = new D1SandboxLeaseRepository(env.DB);
+    await leases.updateState({
+      leaseId: "lease_1",
+      providerRef: "provider_1",
+      status: "busy",
+      updatedAt: createdAt,
+    });
+    await seedRunningPreview();
+    expect(
+      await leases.updateStateForRun({
+        leaseId: "lease_1",
+        runId: "run_1",
+        expectedProviderRef: "provider_1",
+        expectedUpdatedAt: createdAt,
+        providerRef: null,
+        status: "stopped",
+        updatedAt: finishedAt,
+      }),
+    ).toMatchObject({ providerRef: null, status: "stopped", updatedAt: finishedAt });
+    expect(
+      await env.DB.prepare("SELECT id FROM preview_sessions WHERE id = 'preview_1'").first(),
+    ).toBeNull();
+    expect(await leases.findByProjectId("project_1")).toMatchObject({
+      providerRef: null,
+      status: "stopped",
+    });
   });
 
   it("renames an owned Project and hard-deletes all of its product rows", async () => {
@@ -301,12 +425,12 @@ describe("D1 repositories in the Workers runtime", () => {
   });
 });
 
-async function createRunningRun(repository: D1AgentRunRepository) {
+async function createRunningRun(repository: D1AgentRunRepository, runId = "run_1") {
   const created = await repository.createQueuedWithInput({
-    agentRunId: "run_1",
+    agentRunId: runId,
     agentRuntimeId: "pi",
     content: "Create a file",
-    inputMessageId: "message_user_1",
+    inputMessageId: runId === "run_1" ? "message_user_1" : `message_user_${runId}`,
     modelId: "gemini-3.6-flash",
     now: createdAt,
     projectId: "project_1",
@@ -319,13 +443,13 @@ async function createRunningRun(repository: D1AgentRunRepository) {
   }
   await repository.transition({
     from: "queued",
-    runId: "run_1",
+    runId,
     startedAt: createdAt,
     to: "starting",
   });
   await repository.transition({
     from: "starting",
-    runId: "run_1",
+    runId,
     to: "running",
   });
 }
@@ -369,5 +493,15 @@ async function seedUser(id: string, email: string) {
     ) VALUES (?, 'Test User', ?, 1, NULL, ?, ?)`,
   )
     .bind(id, email, createdAt, createdAt)
+    .run();
+}
+
+async function seedRunningPreview() {
+  await env.DB.prepare(`INSERT INTO preview_sessions (
+    id, project_id, sandbox_lease_id, provider_sandbox_ref, provider_process_ref,
+    status, port, expires_at, created_at, updated_at
+  ) VALUES ('preview_1', 'project_1', 'lease_1', 'provider_1', 'process_1',
+    'running', 3000, '2026-07-27T00:30:00.000Z', ?, ?)`)
+    .bind(createdAt, createdAt)
     .run();
 }

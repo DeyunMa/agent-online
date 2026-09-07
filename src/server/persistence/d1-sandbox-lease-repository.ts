@@ -197,6 +197,56 @@ export class D1SandboxLeaseRepository implements SandboxLeaseRepository {
     );
   }
 
+  async updateStateForRun(
+    input: Parameters<SandboxLeaseRepository["updateStateForRun"]>[0],
+  ): Promise<SandboxLeaseRecord | null> {
+    const statements: D1PreparedStatement[] = [
+      this.db
+        .prepare(
+          `UPDATE sandbox_leases
+          SET provider_ref = ?, status = ?, updated_at = ?
+          WHERE id = ? AND provider_ref IS ? AND updated_at = ?
+            AND EXISTS (
+              SELECT 1 FROM agent_runs
+              WHERE id = ? AND sandbox_lease_id = sandbox_leases.id
+                AND project_id = sandbox_leases.project_id
+                AND status IN ('queued', 'starting', 'running', 'cancelling')
+            )`,
+        )
+        .bind(
+          input.providerRef,
+          input.status,
+          input.updatedAt,
+          input.leaseId,
+          input.expectedProviderRef,
+          input.expectedUpdatedAt,
+          input.runId,
+        ),
+    ];
+    if (input.status === "stopped" || input.providerRef === null) {
+      statements.push(
+        this.db
+          .prepare(
+            `DELETE FROM preview_sessions
+            WHERE sandbox_lease_id = ? AND changes() = 1`,
+          )
+          .bind(input.leaseId),
+      );
+    }
+    statements.push(
+      this.db
+        .prepare(`SELECT ${sandboxLeaseColumns} FROM sandbox_leases WHERE id = ? LIMIT 1`)
+        .bind(input.leaseId),
+    );
+    const results = await this.db.batch<SandboxLeaseRow>(statements);
+    if (results[0]?.meta.changes !== 1) {
+      return null;
+    }
+    return toSandboxLeaseRecord(
+      requireBatchRow<SandboxLeaseRow>(results, results.length - 1, "update run sandbox lease"),
+    );
+  }
+
   async updateState(input: {
     providerRef: string | null;
     status: SandboxLeaseStatus;

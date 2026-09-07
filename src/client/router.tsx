@@ -1,16 +1,23 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Outlet, createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { authClient } from "./auth";
 import { AppHeader } from "./components/app-header";
 import { AppHeaderSlotProvider } from "./components/app-header-slot";
 import { AuthGate, AuthLoadingScreen, authErrorMessage } from "./components/auth-gate";
 import { CreateProjectPage } from "./components/create-project-page";
-import { ProjectConsole } from "./components/project-console";
 import { ProjectDashboard } from "./components/project-dashboard";
 import { ProjectSidebar } from "./components/project-sidebar";
-import { UsagePage } from "./components/usage-page";
+import { LoadingState } from "./components/ui-states";
+
+// Start route downloads only when the authenticated shell renders its outlet.
+const ProjectConsole = lazy(() =>
+  import("./components/project-console").then((module) => ({ default: module.ProjectConsole })),
+);
+const UsagePage = lazy(() =>
+  import("./components/usage-page").then((module) => ({ default: module.UsagePage })),
+);
 
 function AppShell() {
   const session = authClient.useSession();
@@ -74,7 +81,9 @@ function AppShell() {
           </p>
         ) : null}
         <AppHeaderSlotProvider target={headerSlot}>
-          <Outlet />
+          <Suspense fallback={<LoadingState label="Loading page" />}>
+            <Outlet />
+          </Suspense>
         </AppHeaderSlotProvider>
       </div>
     </div>

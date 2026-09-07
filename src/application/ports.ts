@@ -158,6 +158,20 @@ export interface SandboxLeaseRepository {
     projectId: string;
     runtimeId: RuntimeKind;
   }): Promise<SandboxLeaseRecord>;
+  /**
+   * Updates an unchanged Lease only while the specified Run still holds its
+   * non-terminal ownership lock. Release the Lease before completing the Run.
+   * Returns null after a competing update or ownership loss.
+   */
+  updateStateForRun(input: {
+    expectedProviderRef: string | null;
+    expectedUpdatedAt: string;
+    leaseId: string;
+    providerRef: string | null;
+    runId: string;
+    status: SandboxLeaseStatus;
+    updatedAt: string;
+  }): Promise<SandboxLeaseRecord | null>;
   updateState(input: {
     providerRef: string | null;
     status: SandboxLeaseStatus;

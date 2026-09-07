@@ -1,15 +1,11 @@
 import type { Hono } from "hono";
-import { streamSSE, type SSEStreamingApi } from "hono/streaming";
+import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-
-import type { AgentRunRecord } from "../application/ports";
-import { isTerminalAgentRun } from "../domain/agent-run";
-import type { AgentRunStreamEvent } from "../shared/api";
 import type { AppEnv } from "./env";
 import type { ProjectApiDependencies } from "./project-api-dependencies";
 import {
-  agentRuntimeUnavailable,
   type AppContext,
+  agentRuntimeUnavailable,
   internalError,
   notFound,
   parseRequest,
@@ -21,13 +17,12 @@ import {
   unauthorized,
   validationError,
 } from "./project-api-support";
+import { streamRunLifecycle } from "./run-lifecycle-stream";
 
 const createAgentRunSchema = z.object({
   agentRuntimeId: z.enum(["pi", "goose"]).optional(),
   content: z.string().trim().min(1).max(64_000),
 });
-
-const runStatusPollIntervalMs = 750;
 
 export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectApiDependencies) {
   api.post("/projects/:projectId/agent-runs", async (c) => {
@@ -105,33 +100,22 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
   });
 
   api.get("/projects/:projectId/agent-runs/:runId", async (c) => {
-    const access = await getOwnedProject(c, dependencies);
+    const access = await getOwnedRun(c, dependencies);
     if (!access) {
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await access.services.projectReads.findOwnedRun(
-      access.project.id,
-      c.req.param("runId"),
-      access.userId,
-    );
-    return run ? c.json(toAgentRunResponse(run)) : notFound(c);
+    const run = access.run;
+    return c.json(toAgentRunResponse(run));
   });
 
   api.post("/projects/:projectId/agent-runs/:runId/cancel", async (c) => {
-    const access = await getOwnedProject(c, dependencies);
+    const access = await getOwnedRun(c, dependencies);
     if (!access) {
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await access.services.projectReads.findOwnedRun(
-      access.project.id,
-      c.req.param("runId"),
-      access.userId,
-    );
-    if (!run) {
-      return notFound(c);
-    }
+    const run = access.run;
 
     access.services.diagnostics.report({
       agentRuntimeId: run.agentRuntimeId,
@@ -148,27 +132,22 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
   });
 
   api.get("/projects/:projectId/agent-runs/:runId/events", async (c) => {
-    const access = await getOwnedProject(c, dependencies);
+    const access = await getOwnedRun(c, dependencies);
     if (!access) {
       return access === null ? unauthorized(c) : notFound(c);
     }
 
-    const run = await access.services.projectReads.findOwnedRun(
-      access.project.id,
-      c.req.param("runId"),
-      access.userId,
-    );
-    if (!run) {
-      return notFound(c);
-    }
+    const run = access.run;
 
-    return streamRunLifecycle(c, run, () =>
-      access.services.projectReads.findOwnedRun(access.project.id, run.id, access.userId),
+    return streamSSE(c, (stream) =>
+      streamRunLifecycle(stream, run, () =>
+        access.services.projectReads.findOwnedRun(run.projectId, run.id, access.userId),
+      ),
     );
   });
 }
 
-async function getOwnedProject(c: AppContext, dependencies: ProjectApiDependencies) {
+async function getOwnedRun(c: AppContext, dependencies: ProjectApiDependencies) {
   const user = await requireAuthenticatedUser(c, dependencies);
   if (!user) {
     return null;
@@ -176,13 +155,14 @@ async function getOwnedProject(c: AppContext, dependencies: ProjectApiDependenci
 
   const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
   const projectId = c.req.param("projectId");
-  if (!projectId) {
+  const runId = c.req.param("runId");
+  if (!projectId || !runId) {
     return false;
   }
-  const project = await services.projectReads.findOwnedProject(projectId, user.id);
-  return project
+  const run = await services.projectReads.findOwnedRun(projectId, runId, user.id);
+  return run
     ? {
-        project,
+        run,
         services,
         userId: user.id,
       }
@@ -197,65 +177,4 @@ function keepRunAlive(c: AppContext, completion: Promise<unknown>) {
   } catch {
     // Hono's in-memory request helper does not provide an ExecutionContext.
   }
-}
-
-function streamRunLifecycle(
-  c: AppContext,
-  initialRun: AgentRunRecord,
-  readRun: () => Promise<AgentRunRecord | null>,
-) {
-  return streamSSE(c, async (stream) => {
-    let aborted = false;
-    let sequence = 0;
-    let run = initialRun;
-    let emittedStatus = run.status;
-
-    stream.onAbort(() => {
-      aborted = true;
-    });
-
-    await writeStreamEvent(stream, {
-      sequence: sequence++,
-      status: emittedStatus,
-      type: "run.status",
-    });
-
-    while (!aborted && !isTerminalAgentRun(run.status)) {
-      await delay(runStatusPollIntervalMs);
-      if (aborted) {
-        return;
-      }
-
-      const updatedRun = await readRun();
-      if (!updatedRun) {
-        return;
-      }
-
-      run = updatedRun;
-      if (run.status !== emittedStatus) {
-        emittedStatus = run.status;
-        await writeStreamEvent(stream, {
-          sequence: sequence++,
-          status: emittedStatus,
-          type: "run.status",
-        });
-      }
-    }
-
-    if (!aborted) {
-      await writeStreamEvent(stream, {
-        sequence,
-        type: "run.completed",
-        usage: run.usage,
-      });
-    }
-  });
-}
-
-function delay(milliseconds: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function writeStreamEvent(stream: SSEStreamingApi, event: AgentRunStreamEvent) {
-  await stream.writeSSE({ data: JSON.stringify(event) });
 }
