@@ -48,8 +48,8 @@ TypeScript、388 项单元测试、15 项隔离本地 Workers D1 测试、produc
 上传、移动 Inspector、重命名和删除、Terminal 单连接连续性及无页面错误、桌面拖拽与
 刷新恢复、认证字段和提交锁定、服务错误后重试、延迟加载与 Preview 隔离。
 
-1 项付费 E2B/Gemini E2E 按默认门控跳过；本轮没有重新验证真实 Provider、远程部署或
-线上数据。构建仍提示 ProjectConsole chunk 超过 500 kB，当前为 534.68 kB、gzip
+1 项付费 E2B/Gemini E2E 按默认门控跳过；本地检查阶段没有重新验证真实 Provider、远程部署或
+线上数据；随后授权的线上验收见下节。构建仍提示 ProjectConsole chunk 超过 500 kB，当前为 534.68 kB、gzip
 160.42 kB；这轮不声称降低整站加载体积。库替换中的浏览器集成失败均已修复并由最终
 完整检查覆盖。
 
@@ -60,3 +60,34 @@ TypeScript、388 项单元测试、15 项隔离本地 Workers D1 测试、produc
 断言后，修复前测试失败；修复 Inspector 的 flex 高度链、Panel 滚动区和 Terminal/
 Preview 的剩余空间布局后通过。移动端同样使用实际剩余视口高度，避免固定最小高度
 再次撑开终端。服务端队列保护保持原样。
+
+## 授权发布与 ego-browser 真实验收
+
+2026-09-08 按用户要求以 `DeyunMa` 作为 author/committer 提交并部署到既有私有 Preview。
+标准库提交为 `ba12745`，Terminal 修复提交为 `716f8dc`；最终 Worker 版本为
+`5781f94f-f4f3-4b54-a4c0-23ba9cdf74f8`。发布使用仓库 `deploy:preview` 脚本，显式固定
+Account 并排除本机另一 Account 的 Token。没有应用新迁移、改动 Secret 或新建 Cloudflare 资源。
+Worker 与浏览器源码映射上传成功；构建有已有 chunk 体积和第三方 source-map 警告。
+
+最终修复后完整 `rtk pnpm check` 再次通过（388 unit、15 D1、13 browser）；发布前后
+远程九项完整性预检通过，页面加载新版本 Assets，health 与能力接口正常。
+
+使用独立 ego-browser 任务空间和一个临时 Project 验证：
+
+- Pi 真实成功 Run 创建 HTML/README、初始化 Git，6 次模型请求，19,700 total tokens，
+  25,845ms sandbox duration；成功状态、最终 Markdown 与聚合 usage 均读回。
+- 上传 51 字节文本后读回，Files 和 Changes 显示对应产物；Preview HTML 返回 200，
+  CSP sandbox 生效，iframe 中按钮点击显示成功状态。修复发布后重新启动 Preview，
+  内容标记与隔离响应头再次通过。
+- Terminal 首次验收发现并修复上节回归。最终真实 PTY 保持连接，`pwd` 返回
+  `/workspace`；检查生成与上传文件的命令输出 `RELEASE_TERMINAL_OK`。桌面标签切换、
+  关闭再打开 Inspector、切换到 390×844 移动布局仍为同一个 xterm 节点及连接，
+  画布高度分别稳定为 696px/645px，浏览器 error/unhandledrejection 计数为 0。
+- 桌面拖拽、刷新恢复和键盘缩放通过；移动端 Rename/Delete UI 通过。
+- 第二个 Pi Run 取消后读回 `cancelled`，聚合 usage 保留；Goose 下拉选择通过，
+  本次没有追加 Goose Provider 执行或长时间 expiry/TTL 验收。
+- 显式关闭 Terminal、停止 Preview 和沙箱后删除临时 Project。项目列表恢复为原有
+  两项；删除前后全时段 usage totals 完全一致。最终远程预检通过，浏览器任务空间关闭。
+
+截图保存在忽略的 `output/release-2026-09-08/`，未提交测试文件或浏览器状态。
+本次只创建本地 Git 提交，未推送远端。
