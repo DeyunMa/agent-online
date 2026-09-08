@@ -83,6 +83,15 @@ Preview 内容代理和 ModelGateway 保留各自已有的协议 envelope。
 
 ## 2. 公开 DTO
 
+`src/shared/api.ts` 用 Zod 定义普通产品请求、公开响应和 Run SSE 事件，TypeScript
+类型从 schema 推导。Hono 的 JSON mutation 在同源、大小限制和鉴权之后通过
+`@hono/zod-validator` 校验；非法 JSON 与字段错误统一返回 `request.invalid`，不公开
+Zod 的输入或错误细节。浏览器 API 对成功响应、错误体和生命周期事件执行运行时校验，
+无法识别的 HTTP 响应显示通用错误，非法 SSE 事件被忽略。
+
+Schema 会移除未知字段；服务端仍须通过独立 DTO 显式选择公开字段，并单独检查所有权，
+不能把客户端校验当作私有数据保护。客户端只引用 Shared，不导入 Server 路由类型。
+
 下列结构省略了 API 从不返回的 `user_id`、Provider 引用、密钥和内部端口。
 
 ```ts

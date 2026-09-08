@@ -1,73 +1,70 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { z } from "zod";
+
+import { createAgentRunRequestSchema } from "../shared/api";
 import type { AppEnv } from "./env";
+import { validateJsonRequest } from "./http/json-validator";
 import type { ProjectApiDependencies } from "./project-api-dependencies";
 import {
   type AppContext,
   agentRuntimeUnavailable,
+  authenticateProjectRequest,
   internalError,
   notFound,
-  parseRequest,
   projectBusy,
   requestDiagnosticContext,
   requireAuthenticatedUser,
   runsDisabled,
   toAgentRunResponse,
   unauthorized,
-  validationError,
 } from "./project-api-support";
 import { streamRunLifecycle } from "./run-lifecycle-stream";
 
-const createAgentRunSchema = z.object({
-  agentRuntimeId: z.enum(["pi", "goose"]).optional(),
-  content: z.string().trim().min(1).max(64_000),
-});
-
 export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectApiDependencies) {
-  api.post("/projects/:projectId/agent-runs", async (c) => {
-    const user = await requireAuthenticatedUser(c, dependencies);
-    if (!user) {
-      return unauthorized(c);
-    }
+  api.post(
+    "/projects/:projectId/agent-runs",
+    authenticateProjectRequest(dependencies),
+    validateJsonRequest(createAgentRunRequestSchema),
+    async (c) => {
+      const user = c.get("authenticatedUser");
+      const input = c.req.valid("json");
 
-    const input = await parseRequest(c, createAgentRunSchema);
-    if (!input) {
-      return validationError(c);
-    }
+      const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
+      const project = await services.projectReads.findOwnedProject(
+        c.req.param("projectId"),
+        user.id,
+      );
+      if (!project) {
+        return notFound(c);
+      }
+      if (!dependencies.getDeploymentPolicy(c.env).runsEnabled) {
+        return runsDisabled(c);
+      }
+      const agentRuntimeId = input.agentRuntimeId ?? project.defaultAgentRuntimeId;
+      if (!services.enabledAgentRuntimeIds.includes(agentRuntimeId)) {
+        return agentRuntimeUnavailable(c);
+      }
 
-    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const project = await services.projectReads.findOwnedProject(c.req.param("projectId"), user.id);
-    if (!project) {
-      return notFound(c);
-    }
-    if (!dependencies.getDeploymentPolicy(c.env).runsEnabled) {
-      return runsDisabled(c);
-    }
-    const agentRuntimeId = input.agentRuntimeId ?? project.defaultAgentRuntimeId;
-    if (!services.enabledAgentRuntimeIds.includes(agentRuntimeId)) {
-      return agentRuntimeUnavailable(c);
-    }
+      const created = await services.createAgentRuns.create({
+        agentRuntimeId,
+        content: input.content,
+        projectId: project.id,
+        userId: user.id,
+      });
 
-    const created = await services.createAgentRuns.create({
-      agentRuntimeId,
-      content: input.content,
-      projectId: project.id,
-      userId: user.id,
-    });
+      if (created.kind === "project_busy") {
+        return projectBusy(c);
+      }
+      if (created.kind === "runtime_mismatch") {
+        return internalError(c);
+      }
+      if (created.completion) {
+        keepRunAlive(c, created.completion);
+      }
 
-    if (created.kind === "project_busy") {
-      return projectBusy(c);
-    }
-    if (created.kind === "runtime_mismatch") {
-      return internalError(c);
-    }
-    if (created.completion) {
-      keepRunAlive(c, created.completion);
-    }
-
-    return c.json(toAgentRunResponse(created.run), 201);
-  });
+      return c.json(toAgentRunResponse(created.run), 201);
+    },
+  );
 
   api.get("/projects/:projectId/agent-runs", async (c) => {
     const user = await requireAuthenticatedUser(c, dependencies);

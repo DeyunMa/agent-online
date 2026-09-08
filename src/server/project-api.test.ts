@@ -43,6 +43,44 @@ const otherUser = { email: "other@example.test", id: "user_2" };
 const now = "2026-07-25T00:00:00.000Z";
 
 describe("Project API", () => {
+  it.each([
+    ["POST", "/api/projects"],
+    ["PATCH", "/api/projects/project_1"],
+    ["POST", "/api/projects/project_1/agent-runs"],
+  ])("authenticates before parsing malformed JSON: %s %s", async (method, path) => {
+    const fixture = createFixture(null);
+    const response = await fixture.app.request(`http://agent-online.test${path}`, {
+      body: '{"private-input":',
+      headers: { "content-type": "application/json" },
+      method,
+    });
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "auth.unauthorized", retryable: false },
+      requestId: "test-request",
+    });
+    expect(fixture.projects.records.size).toBe(0);
+    expect(fixture.coordinator.starts).toHaveLength(0);
+  });
+
+  it.each([
+    ["POST", "/api/projects"],
+    ["PATCH", "/api/projects/project_1"],
+    ["POST", "/api/projects/project_1/agent-runs"],
+  ])("renders malformed JSON through the public error contract: %s %s", async (method, path) => {
+    const fixture = createFixture(testUser);
+    const response = await fixture.app.request(`http://agent-online.test${path}`, {
+      body: '{"private-input":',
+      headers: { "content-type": "application/json" },
+      method,
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "request.invalid", retryable: false },
+      requestId: "test-request",
+    });
+  });
+
   it("rejects an unauthenticated request before accessing product data", async () => {
     const fixture = createFixture(null);
 

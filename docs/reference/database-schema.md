@@ -8,6 +8,12 @@
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
+`src/server/persistence/schema.ts` 是这些物理表的 Drizzle 类型映射，普通 Project CRUD
+和 Message 查询通过 `drizzle-orm/d1` 执行；需要互斥条件、触发器和事务保证的写入仍用
+原生 D1 SQL/batch。`pnpm test:d1` 会将类型映射与隔离 D1 中实际应用的迁移对照。
+`rtk pnpm db:schema:export` 仅离线打印表结构供审阅，不包含领域触发器，也不替换
+Wrangler 迁移历史。接入范围与导出差异见[数据访问约定](../architecture/03-data-auth-and-models.md#3-d1-目标表)。
+
 ## 1. 关系总览
 
 ```mermaid

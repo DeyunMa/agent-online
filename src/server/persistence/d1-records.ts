@@ -1,3 +1,5 @@
+import { getTableColumns, type Table } from "drizzle-orm";
+import type { AgentRuntimeId } from "../../agent/contract";
 import type {
   AgentRunRecord,
   MessageRecord,
@@ -11,86 +13,21 @@ import type {
   ProjectUsageSummary,
   UsageMetrics,
 } from "../../application/user-usage";
-import type { AgentRuntimeId } from "../../agent/contract";
-import type { AgentRunStatus } from "../../domain/agent-run";
-import type { SandboxLeaseStatus } from "../../domain/sandbox-lease";
-import type { RuntimeKind } from "../../runtime/contract";
-import type { AgentRunFailureCode } from "../../shared/error-codes";
+import {
+  agentRuns,
+  messages,
+  previewSessions,
+  type projects,
+  sandboxLeases,
+  terminalSessions,
+} from "./schema";
 
-export type ProjectRow = {
-  created_at: string;
-  default_agent_runtime_id: AgentRuntimeId;
-  id: string;
-  title: string;
-  updated_at: string;
-  user_id: string;
-};
-
-export type SandboxLeaseRow = {
-  created_at: string;
-  id: string;
-  project_id: string;
-  provider_ref: string | null;
-  sandbox_runtime_id: RuntimeKind;
-  status: SandboxLeaseStatus;
-  updated_at: string;
-};
-
-export type AgentRunRow = {
-  agent_runtime_id: AgentRuntimeId;
-  created_at: string;
-  failure_code: AgentRunFailureCode | null;
-  finished_at: string | null;
-  id: string;
-  input_message_id: string | null;
-  input_tokens: number;
-  model_id: string;
-  model_request_count: number;
-  output_tokens: number;
-  project_id: string;
-  provider_process_ref: string | null;
-  sandbox_duration_ms: number;
-  sandbox_lease_id: string;
-  sandbox_runtime_id: RuntimeKind;
-  started_at: string | null;
-  status: AgentRunStatus;
-  total_tokens: number;
-  user_id: string;
-};
-
-export type MessageRow = {
-  agent_run_id: string | null;
-  content: string;
-  created_at: string;
-  id: string;
-  project_id: string;
-  role: "user" | "assistant";
-  sequence: number;
-};
-
-export type TerminalSessionRow = {
-  created_at: string;
-  expires_at: string;
-  id: string;
-  project_id: string;
-  provider_process_ref: string | null;
-  provider_sandbox_ref: string | null;
-  sandbox_lease_id: string;
-  updated_at: string;
-};
-
-export type PreviewSessionRow = {
-  created_at: string;
-  expires_at: string;
-  id: string;
-  port: number;
-  project_id: string;
-  provider_process_ref: string | null;
-  provider_sandbox_ref: string;
-  sandbox_lease_id: string;
-  status: PreviewSessionRecord["status"];
-  updated_at: string;
-};
+export type ProjectRow = typeof projects.$inferSelect;
+export type SandboxLeaseRow = typeof sandboxLeases.$inferSelect;
+export type AgentRunRow = Omit<typeof agentRuns.$inferSelect, "failure_reason">;
+export type MessageRow = typeof messages.$inferSelect;
+export type TerminalSessionRow = typeof terminalSessions.$inferSelect;
+export type PreviewSessionRow = typeof previewSessions.$inferSelect;
 
 export type UsageAggregateRow = {
   input_tokens: number;
@@ -111,80 +48,20 @@ export type AgentRuntimeUsageRow = UsageAggregateRow & {
   agent_runtime_id: AgentRuntimeId;
 };
 
-export const projectColumns = `
-  id,
-  user_id,
-  title,
-  default_agent_runtime_id,
-  created_at,
-  updated_at
-`;
+// Conditional lifecycle writes still use native D1 batch. Their read projections
+// are derived from the same schema as Drizzle queries and never use SELECT *.
+export const sandboxLeaseColumns = columnNames(sandboxLeases);
+export const agentRunColumns = columnNames(agentRuns, ["failure_reason"]);
+export const messageColumns = columnNames(messages);
+export const terminalSessionColumns = columnNames(terminalSessions);
+export const previewSessionColumns = columnNames(previewSessions);
 
-export const sandboxLeaseColumns = `
-  id,
-  project_id,
-  sandbox_runtime_id,
-  provider_ref,
-  status,
-  created_at,
-  updated_at
-`;
-
-export const agentRunColumns = `
-  id,
-  user_id,
-  project_id,
-  input_message_id,
-  sandbox_lease_id,
-  agent_runtime_id,
-  sandbox_runtime_id,
-  model_id,
-  status,
-  input_tokens,
-  output_tokens,
-  total_tokens,
-  model_request_count,
-  provider_process_ref,
-  sandbox_duration_ms,
-  failure_code,
-  created_at,
-  started_at,
-  finished_at
-`;
-
-export const messageColumns = `
-  id,
-  project_id,
-  agent_run_id,
-  sequence,
-  role,
-  content,
-  created_at
-`;
-
-export const terminalSessionColumns = `
-  id,
-  project_id,
-  sandbox_lease_id,
-  provider_sandbox_ref,
-  provider_process_ref,
-  expires_at,
-  created_at,
-  updated_at
-`;
-
-export const previewSessionColumns = `
-  id,
-  project_id,
-  sandbox_lease_id,
-  provider_sandbox_ref,
-  provider_process_ref,
-  status,
-  port,
-  expires_at,
-  created_at,
-  updated_at
-`;
+function columnNames(table: Table, omitted: readonly string[] = []): string {
+  return Object.values(getTableColumns(table))
+    .map((column) => column.name)
+    .filter((name) => !omitted.includes(name))
+    .join(", ");
+}
 
 export function toProjectRecord(row: ProjectRow): ProjectRecord {
   return {

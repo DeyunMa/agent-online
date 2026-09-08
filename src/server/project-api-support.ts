@@ -1,5 +1,4 @@
-import type { Context } from "hono";
-import type { z } from "zod";
+import type { Context, MiddlewareHandler } from "hono";
 
 import type {
   AgentRunRecord,
@@ -21,16 +20,17 @@ import type { ProjectApiDependencies } from "./project-api-dependencies";
 
 export type AppContext = Context<AppEnv>;
 
-export async function parseRequest<T extends z.ZodType>(
-  c: AppContext,
-  schema: T,
-): Promise<z.output<T> | null> {
-  try {
-    const parsed = schema.safeParse(await c.req.json());
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
+export function authenticateProjectRequest(
+  dependencies: ProjectApiDependencies,
+): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const user = await requireAuthenticatedUser(c, dependencies);
+    if (!user) {
+      return unauthorized(c);
+    }
+    c.set("authenticatedUser", user);
+    await next();
+  };
 }
 
 export function requireAuthenticatedUser(c: AppContext, dependencies: ProjectApiDependencies) {

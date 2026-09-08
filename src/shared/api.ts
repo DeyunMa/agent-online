@@ -1,175 +1,221 @@
-import type {
-  AgentRunStatus,
-  AgentRuntimeId,
-  RuntimeKind,
-  SandboxChangeKind,
-  SandboxLeaseStatus,
+import { z } from "zod";
+
+import { agentRunFailureCodes, publicErrorCodes } from "./error-codes";
+import {
+  agentRunStatuses,
+  agentRuntimeIds,
+  isSupportedAgentRuntimeId,
+  runtimeKinds,
+  sandboxChangeKinds,
+  sandboxLeaseStatuses,
 } from "./protocol";
-import type { AgentRunFailureCode, PublicErrorCode } from "./error-codes";
 
-export type HealthResponse = {
-  name: "agent-online";
-  requestId: string;
-  status: "ok";
-};
+const agentRuntimeIdSchema = z.enum(agentRuntimeIds);
+const nonNegativeIntegerSchema = z.number().int().nonnegative();
 
-export type PlatformCapabilitiesResponse = {
-  agentRuntimeIds: AgentRuntimeId[];
-  changesEnabled: boolean;
-  defaultAgentRuntimeId: AgentRuntimeId;
-  fileUploadEnabled: boolean;
-  runCreationEnabled: boolean;
-  previewEnabled: boolean;
-  terminalEnabled: boolean;
-};
+// Public objects intentionally strip unknown fields. Server DTOs still explicitly select
+// the allowed properties; these schemas do not replace owner checks or DTO allowlists.
+export const healthResponseSchema = z.object({
+  name: z.literal("agent-online"),
+  requestId: z.string(),
+  status: z.literal("ok"),
+});
+export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-export type ProjectChangeEntryResponse = {
-  path: string;
-  previousPath: string | null;
-  stagedKind: SandboxChangeKind | null;
-  unstagedKind: SandboxChangeKind | null;
-};
+export const platformCapabilitiesResponseSchema = z.object({
+  agentRuntimeIds: z.array(agentRuntimeIdSchema),
+  changesEnabled: z.boolean(),
+  defaultAgentRuntimeId: agentRuntimeIdSchema,
+  fileUploadEnabled: z.boolean(),
+  runCreationEnabled: z.boolean(),
+  previewEnabled: z.boolean(),
+  terminalEnabled: z.boolean(),
+});
+export type PlatformCapabilitiesResponse = z.infer<typeof platformCapabilitiesResponseSchema>;
 
-export type ProjectChangesResponse = {
-  entries: ProjectChangeEntryResponse[];
-  repository: boolean;
-  truncated: boolean;
-  unsupportedEntries: boolean;
-};
+export const projectChangeEntryResponseSchema = z.object({
+  path: z.string(),
+  previousPath: z.string().nullable(),
+  stagedKind: z.enum(sandboxChangeKinds).nullable(),
+  unstagedKind: z.enum(sandboxChangeKinds).nullable(),
+});
+export type ProjectChangeEntryResponse = z.infer<typeof projectChangeEntryResponseSchema>;
 
-export type ProjectChangeDiffSectionResponse = {
-  content: string;
-  truncated: boolean;
-};
+export const projectChangesResponseSchema = z.object({
+  entries: z.array(projectChangeEntryResponseSchema),
+  repository: z.boolean(),
+  truncated: z.boolean(),
+  unsupportedEntries: z.boolean(),
+});
+export type ProjectChangesResponse = z.infer<typeof projectChangesResponseSchema>;
 
-export type ProjectChangeDiffResponse = {
-  change: ProjectChangeEntryResponse;
-  staged: ProjectChangeDiffSectionResponse | null;
-  unstaged: ProjectChangeDiffSectionResponse | null;
-};
+export const projectChangeDiffSectionResponseSchema = z.object({
+  content: z.string(),
+  truncated: z.boolean(),
+});
+export type ProjectChangeDiffSectionResponse = z.infer<
+  typeof projectChangeDiffSectionResponseSchema
+>;
 
-export type ProjectPreviewResponse = {
-  contentUrl: string | null;
-  expiresAt: string | null;
-  status: "running" | "starting" | "stopped";
-};
+export const projectChangeDiffResponseSchema = z.object({
+  change: projectChangeEntryResponseSchema,
+  staged: projectChangeDiffSectionResponseSchema.nullable(),
+  unstaged: projectChangeDiffSectionResponseSchema.nullable(),
+});
+export type ProjectChangeDiffResponse = z.infer<typeof projectChangeDiffResponseSchema>;
 
-export type SandboxLeaseResponse = {
-  id: string;
-  runtimeId: RuntimeKind;
-  status: SandboxLeaseStatus;
-  updatedAt: string;
-};
+export const projectPreviewResponseSchema = z.object({
+  contentUrl: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  status: z.enum(["running", "starting", "stopped"]),
+});
+export type ProjectPreviewResponse = z.infer<typeof projectPreviewResponseSchema>;
 
-export type ProjectResponse = {
-  createdAt: string;
-  defaultAgentRuntimeId: AgentRuntimeId;
-  id: string;
-  sandboxLease: SandboxLeaseResponse | null;
-  title: string;
-  updatedAt: string;
-};
+export const sandboxLeaseResponseSchema = z.object({
+  id: z.string(),
+  runtimeId: z.enum(runtimeKinds),
+  status: z.enum(sandboxLeaseStatuses),
+  updatedAt: z.string(),
+});
+export type SandboxLeaseResponse = z.infer<typeof sandboxLeaseResponseSchema>;
 
-export type MessageResponse = {
-  agentRunId: string | null;
-  content: string;
-  createdAt: string;
-  id: string;
-  role: "user" | "assistant";
-  sequence: number;
-};
+export const projectResponseSchema = z.object({
+  createdAt: z.string(),
+  defaultAgentRuntimeId: agentRuntimeIdSchema,
+  id: z.string(),
+  sandboxLease: sandboxLeaseResponseSchema.nullable(),
+  title: z.string(),
+  updatedAt: z.string(),
+});
+export type ProjectResponse = z.infer<typeof projectResponseSchema>;
 
-export type AgentRunUsageResponse = {
-  inputTokens: number;
-  modelRequestCount: number;
-  outputTokens: number;
-  sandboxDurationMs: number;
-  totalTokens: number;
-};
+export const messageResponseSchema = z.object({
+  agentRunId: z.string().nullable(),
+  content: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  role: z.enum(["user", "assistant"]),
+  sequence: nonNegativeIntegerSchema,
+});
+export type MessageResponse = z.infer<typeof messageResponseSchema>;
 
-export type UsageMetricsResponse = AgentRunUsageResponse & {
-  runCount: number;
-};
+export const agentRunUsageResponseSchema = z.object({
+  inputTokens: nonNegativeIntegerSchema,
+  modelRequestCount: nonNegativeIntegerSchema,
+  outputTokens: nonNegativeIntegerSchema,
+  sandboxDurationMs: nonNegativeIntegerSchema,
+  totalTokens: nonNegativeIntegerSchema,
+});
+export type AgentRunUsageResponse = z.infer<typeof agentRunUsageResponseSchema>;
 
-export type UserUsageResponse = {
-  agentRuntimes: Array<{
-    agentRuntimeId: AgentRuntimeId;
-    usage: UsageMetricsResponse;
-  }>;
-  projects: Array<{
-    projectDeleted: boolean;
-    projectId: string;
-    projectTitle: string;
-    usage: UsageMetricsResponse;
-  }>;
-  scope: "all_time";
-  totals: UsageMetricsResponse;
-};
+export const usageMetricsResponseSchema = agentRunUsageResponseSchema.extend({
+  runCount: nonNegativeIntegerSchema,
+});
+export type UsageMetricsResponse = z.infer<typeof usageMetricsResponseSchema>;
 
-export type AgentRunResponse = {
-  agentRuntimeId: AgentRuntimeId;
-  createdAt: string;
-  failureCode: AgentRunFailureCode | null;
-  finishedAt: string | null;
-  id: string;
-  inputMessageId: string | null;
-  modelId: string;
-  sandboxLeaseId: string;
-  sandboxRuntimeId: RuntimeKind;
-  startedAt: string | null;
-  status: AgentRunStatus;
-  usage: AgentRunUsageResponse;
-};
+export const userUsageResponseSchema = z.object({
+  agentRuntimes: z.array(
+    z.object({
+      agentRuntimeId: agentRuntimeIdSchema,
+      usage: usageMetricsResponseSchema,
+    }),
+  ),
+  projects: z.array(
+    z.object({
+      projectDeleted: z.boolean(),
+      projectId: z.string(),
+      projectTitle: z.string(),
+      usage: usageMetricsResponseSchema,
+    }),
+  ),
+  scope: z.literal("all_time"),
+  totals: usageMetricsResponseSchema,
+});
+export type UserUsageResponse = z.infer<typeof userUsageResponseSchema>;
 
-export type CreateProjectRequest = {
-  title: string;
-};
+export const agentRunResponseSchema = z.object({
+  agentRuntimeId: agentRuntimeIdSchema,
+  createdAt: z.string(),
+  failureCode: z.enum(agentRunFailureCodes).nullable(),
+  finishedAt: z.string().nullable(),
+  id: z.string(),
+  inputMessageId: z.string().nullable(),
+  modelId: z.string(),
+  sandboxLeaseId: z.string(),
+  sandboxRuntimeId: z.enum(runtimeKinds),
+  startedAt: z.string().nullable(),
+  status: z.enum(agentRunStatuses),
+  usage: agentRunUsageResponseSchema,
+});
+export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
 
-export type UpdateProjectRequest = {
-  title: string;
-};
+export const createProjectRequestSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+});
+export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 
-export type CreateAgentRunRequest = {
-  agentRuntimeId?: AgentRuntimeId;
-  content: string;
-};
+export const updateProjectRequestSchema = createProjectRequestSchema;
+export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
 
-export type ProjectFileEntryResponse = {
-  kind: "directory" | "file" | "symlink";
-  modifiedAt: string | null;
-  name: string;
-  path: string;
-  size: number;
-};
+export const createAgentRunRequestSchema = z.object({
+  // Reserved identifiers remain representable in public records, but cannot start a Run.
+  // The server registry additionally checks the deployment's enabled runtimes.
+  agentRuntimeId: agentRuntimeIdSchema.refine(isSupportedAgentRuntimeId).optional(),
+  content: z.string().trim().min(1).max(64_000),
+});
+export type CreateAgentRunRequest = z.infer<typeof createAgentRunRequestSchema>;
 
-export type ProjectDirectoryResponse = {
-  entries: ProjectFileEntryResponse[];
-  path: string;
-  truncated: boolean;
-};
+export const projectFileEntryResponseSchema = z.object({
+  kind: z.enum(["directory", "file", "symlink"]),
+  modifiedAt: z.string().nullable(),
+  name: z.string(),
+  path: z.string(),
+  size: nonNegativeIntegerSchema,
+});
+export type ProjectFileEntryResponse = z.infer<typeof projectFileEntryResponseSchema>;
 
-export type ProjectFileResponse = {
-  content: string;
-  modifiedAt: string | null;
-  name: string;
-  path: string;
-  size: number;
-};
+export const projectDirectoryResponseSchema = z.object({
+  entries: z.array(projectFileEntryResponseSchema),
+  path: z.string(),
+  truncated: z.boolean(),
+});
+export type ProjectDirectoryResponse = z.infer<typeof projectDirectoryResponseSchema>;
 
-export type ProjectFileUploadResponse = {
-  name: string;
-  path: string;
-  size: number;
-};
+export const projectFileResponseSchema = z.object({
+  content: z.string(),
+  modifiedAt: z.string().nullable(),
+  name: z.string(),
+  path: z.string(),
+  size: nonNegativeIntegerSchema,
+});
+export type ProjectFileResponse = z.infer<typeof projectFileResponseSchema>;
 
-export type AgentRunStreamEvent =
-  | { sequence: number; status: AgentRunStatus; type: "run.status" }
-  | { sequence: number; type: "run.completed"; usage: AgentRunUsageResponse };
+export const projectFileUploadResponseSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  size: nonNegativeIntegerSchema,
+});
+export type ProjectFileUploadResponse = z.infer<typeof projectFileUploadResponseSchema>;
 
-export type ApiErrorResponse = {
-  error: {
-    code: PublicErrorCode;
-    retryable: boolean;
-  };
-  requestId: string;
-};
+export const agentRunStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    sequence: nonNegativeIntegerSchema,
+    status: z.enum(agentRunStatuses),
+    type: z.literal("run.status"),
+  }),
+  z.object({
+    sequence: nonNegativeIntegerSchema,
+    type: z.literal("run.completed"),
+    usage: agentRunUsageResponseSchema,
+  }),
+]);
+export type AgentRunStreamEvent = z.infer<typeof agentRunStreamEventSchema>;
+
+export const apiErrorResponseSchema = z.object({
+  error: z.object({
+    code: z.enum(publicErrorCodes),
+    retryable: z.boolean(),
+  }),
+  requestId: z.string(),
+});
+export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;

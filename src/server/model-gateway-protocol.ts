@@ -1,3 +1,5 @@
+import { createParser } from "eventsource-parser";
+
 import { readBoundedText } from "./model-gateway-body";
 
 export type ModelGatewayUsage = {
@@ -142,86 +144,97 @@ export function toUpstreamRequest(request: OpenAiCompletionRequest, maxOutputTok
 export function normalizeStreamingToolProtocol(body: string) {
   const choicesWithToolCalls = new Set<number>();
 
-  return body
-    .split(/\r?\n/)
-    .map((line) => {
-      if (!line.startsWith("data:")) {
-        return line;
+  const output: string[] = [];
+  const parser = createParser({
+    onComment: (comment) => output.push(`:${comment}\n\n`),
+    onId: (id) => output.push(`id: ${id}\n\n`),
+    onRetry: (retry) => output.push(`retry: ${retry}\n\n`),
+    onEvent(event) {
+      const data = normalizeData(event.data);
+      output.push(
+        `${event.id !== undefined ? `id: ${event.id}\n` : ""}${event.event !== undefined ? `event: ${event.event}\n` : ""}${data
+          .split("\n")
+          .map((line) => `data: ${line}`)
+          .join("\n")}\n\n`,
+      );
+    },
+  });
+  // The gateway already bounded and buffered the response to 8 MiB. Only complete
+  // SSE events are forwarded; EOF must not synthesize a missing event boundary.
+  parser.feed(body);
+  return output.join("");
+
+  function normalizeData(data: string) {
+    if (!data.trim() || data.trim() === "[DONE]") {
+      return data;
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(data);
+    } catch (_error) {
+      return data;
+    }
+    if (!isRecord(payload) || !Array.isArray(payload.choices)) {
+      return data;
+    }
+
+    let changed = false;
+    for (const rawChoice of payload.choices) {
+      if (!isRecord(rawChoice)) {
+        continue;
       }
 
-      const data = line.slice("data:".length).trim();
-      if (!data || data === "[DONE]") {
-        return line;
-      }
-
-      let payload: unknown;
-      try {
-        payload = JSON.parse(data);
-      } catch (_error) {
-        return line;
-      }
-      if (!isRecord(payload) || !Array.isArray(payload.choices)) {
-        return line;
-      }
-
-      let changed = false;
-      for (const rawChoice of payload.choices) {
-        if (!isRecord(rawChoice)) {
-          continue;
-        }
-
-        const index =
-          typeof rawChoice.index === "number" && Number.isSafeInteger(rawChoice.index)
-            ? rawChoice.index
-            : 0;
-        if (
-          isRecord(rawChoice.delta) &&
-          Array.isArray(rawChoice.delta.tool_calls) &&
-          rawChoice.delta.tool_calls.length > 0
-        ) {
-          choicesWithToolCalls.add(index);
-          const reasoningDetails = Array.isArray(rawChoice.delta.reasoning_details)
-            ? [...rawChoice.delta.reasoning_details]
-            : [];
-          for (const rawToolCall of rawChoice.delta.tool_calls) {
-            if (!isRecord(rawToolCall) || typeof rawToolCall.id !== "string") {
-              continue;
-            }
-
-            const signature = readGoogleThoughtSignature(rawToolCall);
-            if (
-              !signature ||
-              reasoningDetails.some(
-                (detail) =>
-                  isRecord(detail) &&
-                  detail.type === "reasoning.encrypted" &&
-                  detail.id === rawToolCall.id,
-              )
-            ) {
-              continue;
-            }
-
-            reasoningDetails.push({
-              data: signature,
-              id: rawToolCall.id,
-              type: "reasoning.encrypted",
-            });
-            changed = true;
+      const index =
+        typeof rawChoice.index === "number" && Number.isSafeInteger(rawChoice.index)
+          ? rawChoice.index
+          : 0;
+      if (
+        isRecord(rawChoice.delta) &&
+        Array.isArray(rawChoice.delta.tool_calls) &&
+        rawChoice.delta.tool_calls.length > 0
+      ) {
+        choicesWithToolCalls.add(index);
+        const reasoningDetails = Array.isArray(rawChoice.delta.reasoning_details)
+          ? [...rawChoice.delta.reasoning_details]
+          : [];
+        for (const rawToolCall of rawChoice.delta.tool_calls) {
+          if (!isRecord(rawToolCall) || typeof rawToolCall.id !== "string") {
+            continue;
           }
-          if (reasoningDetails.length > 0) {
-            rawChoice.delta.reasoning_details = reasoningDetails;
-          }
-        }
 
-        if (choicesWithToolCalls.has(index) && rawChoice.finish_reason === "stop") {
-          rawChoice.finish_reason = "tool_calls";
+          const signature = readGoogleThoughtSignature(rawToolCall);
+          if (
+            !signature ||
+            reasoningDetails.some(
+              (detail) =>
+                isRecord(detail) &&
+                detail.type === "reasoning.encrypted" &&
+                detail.id === rawToolCall.id,
+            )
+          ) {
+            continue;
+          }
+
+          reasoningDetails.push({
+            data: signature,
+            id: rawToolCall.id,
+            type: "reasoning.encrypted",
+          });
           changed = true;
         }
+        if (reasoningDetails.length > 0) {
+          rawChoice.delta.reasoning_details = reasoningDetails;
+        }
       }
 
-      return changed ? `data: ${JSON.stringify(payload)}` : line;
-    })
-    .join("\n");
+      if (choicesWithToolCalls.has(index) && rawChoice.finish_reason === "stop") {
+        rawChoice.finish_reason = "tool_calls";
+        changed = true;
+      }
+    }
+
+    return changed ? JSON.stringify(payload) : data;
+  }
 }
 
 export function readOpenAiUsage(body: string, streaming: boolean): ModelGatewayUsage | null {
@@ -234,24 +247,21 @@ export function readOpenAiUsage(body: string, streaming: boolean): ModelGatewayU
   }
 
   let usage: ModelGatewayUsage | null = null;
-  for (const line of body.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) {
-      continue;
-    }
-
-    const data = line.slice("data:".length).trim();
-    if (!data || data === "[DONE]") {
-      continue;
-    }
-
-    try {
-      usage = toModelGatewayUsage(JSON.parse(data)) ?? usage;
-    } catch (_error) {
-      return null;
-    }
-  }
-
-  return usage;
+  let malformed = false;
+  const parser = createParser({
+    onEvent({ data }) {
+      if (!data.trim() || data.trim() === "[DONE]") {
+        return;
+      }
+      try {
+        usage = toModelGatewayUsage(JSON.parse(data)) ?? usage;
+      } catch (_error) {
+        malformed = true;
+      }
+    },
+  });
+  parser.feed(body);
+  return malformed ? null : usage;
 }
 
 function toGeminiOpenAiMessages(messages: Array<Record<string, unknown>>) {

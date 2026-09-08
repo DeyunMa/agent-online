@@ -1,6 +1,11 @@
 import {
+  ComposerPrimitive,
+  MessagePrimitive,
+  ThreadPrimitive,
+  useAuiState,
+} from "@assistant-ui/react";
+import {
   CheckCircle2,
-  ChevronDown,
   CircleDashed,
   Folder,
   GitBranch,
@@ -12,23 +17,28 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
+import { type ReactNode, useRef } from "react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
-  ComposerPrimitive,
-  MessagePrimitive,
-  ThreadPrimitive,
-  useAuiState,
-} from "@assistant-ui/react";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
-
-import { isTerminalAgentRun, type AgentRunStatus } from "../../domain/agent-run";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { type AgentRunStatus, isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
 import type { AgentRuntimeId } from "../../shared/protocol";
 import type { BrowserApiError } from "../api";
 import {
-  agentRuntimeLabel,
   agentRunFailureLabel,
   agentRunStatusLabel,
   agentRunStatusTone,
+  agentRuntimeLabel,
   formatDateTime,
   formatRunDuration,
   formatTime,
@@ -37,48 +47,24 @@ import {
 } from "../presentation";
 import { AgentMessageMarkdown } from "./agent-message-markdown";
 import { ErrorState, LoadingState } from "./ui-states";
-import { handleRovingTabKeyDown } from "../tab-navigation";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 
 export type ProjectConsoleView = "conversation" | "runs";
 
-export function ProjectRunTabs({
-  onViewChange,
-  view,
-}: {
-  onViewChange: (view: ProjectConsoleView) => void;
-  view: ProjectConsoleView;
-}) {
+export function ProjectRunTabs() {
   return (
-    <div
+    <TabsList
+      activateOnFocus
       aria-label="Project views"
-      className="project-run-tabs"
-      onKeyDown={handleRovingTabKeyDown}
-      role="tablist"
+      className="project-run-tabs w-full"
+      variant="line"
     >
-      <button
-        aria-selected={view === "conversation"}
-        className={view === "conversation" ? "console-tab console-tab-active" : "console-tab"}
-        onClick={() => onViewChange("conversation")}
-        role="tab"
-        tabIndex={view === "conversation" ? 0 : -1}
-        type="button"
-      >
+      <TabsTrigger className="console-tab flex-none" value="conversation">
         Conversation
-      </button>
-      <button
-        aria-selected={view === "runs"}
-        className={view === "runs" ? "console-tab console-tab-active" : "console-tab"}
-        onClick={() => onViewChange("runs")}
-        role="tab"
-        tabIndex={view === "runs" ? 0 : -1}
-        type="button"
-      >
+      </TabsTrigger>
+      <TabsTrigger className="console-tab flex-none" value="runs">
         Runs
-      </button>
-    </div>
+      </TabsTrigger>
+    </TabsList>
   );
 }
 
@@ -471,133 +457,46 @@ function AgentRuntimeSelector({
   runtimeIds: readonly AgentRuntimeId[];
   selectedRuntimeId: AgentRuntimeId | null;
 }) {
-  const menuId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [open, setOpen] = useState(false);
-  const selectorDisabled = disabled || runtimeIds.length < 2;
-  const selectedIndex = selectedRuntimeId ? runtimeIds.indexOf(selectedRuntimeId) : 0;
-  const selectedLabel = selectedRuntimeId ? agentRuntimeLabel(selectedRuntimeId) : "Unavailable";
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const focusFrame = window.requestAnimationFrame(() => {
-      optionRefs.current[Math.max(selectedIndex, 0)]?.focus();
-    });
-    const closeOnPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open, selectedIndex]);
-
-  function focusOption(index: number) {
-    optionRefs.current[index]?.focus();
-  }
-
-  function handleTriggerKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
-    if (selectorDisabled || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) {
-      return;
-    }
-
-    event.preventDefault();
-    setOpen(true);
-  }
-
-  function handleOptionKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      focusOption((index + 1) % runtimeIds.length);
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      focusOption((index - 1 + runtimeIds.length) % runtimeIds.length);
-    }
-    if (event.key === "Home") {
-      event.preventDefault();
-      focusOption(0);
-    }
-    if (event.key === "End") {
-      event.preventDefault();
-      focusOption(runtimeIds.length - 1);
-    }
-  }
+  const items = runtimeIds.map((runtimeId) => ({
+    label: agentRuntimeLabel(runtimeId),
+    value: runtimeId,
+  }));
 
   return (
-    <div className="agent-runtime-control" ref={rootRef}>
-      <button
-        aria-controls={open ? menuId : undefined}
-        aria-expanded={open}
-        aria-haspopup="menu"
+    <Select<AgentRuntimeId>
+      disabled={disabled || runtimeIds.length < 2}
+      items={items}
+      onValueChange={(runtimeId) => {
+        if (runtimeId !== null) {
+          onChange(runtimeId);
+        }
+      }}
+      value={selectedRuntimeId}
+    >
+      <SelectTrigger
         aria-label="Agent runtime"
         className="agent-runtime-trigger"
-        disabled={selectorDisabled}
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={handleTriggerKeyDown}
-        ref={triggerRef}
+        size="sm"
         title="Choose Agent runtime"
-        type="button"
       >
-        <span>{selectedLabel}</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </button>
-      {open ? (
-        <div
-          aria-label="Agent runtime options"
-          className="agent-runtime-menu"
-          id={menuId}
-          role="menu"
-        >
-          {runtimeIds.map((runtimeId, index) => {
-            const selected = runtimeId === selectedRuntimeId;
-
-            return (
-              <button
-                aria-checked={selected}
-                className={
-                  selected
-                    ? "agent-runtime-option agent-runtime-option-selected"
-                    : "agent-runtime-option"
-                }
-                key={runtimeId}
-                onClick={() => {
-                  onChange(runtimeId);
-                  setOpen(false);
-                  window.requestAnimationFrame(() => triggerRef.current?.focus());
-                }}
-                onKeyDown={(event) => handleOptionKeyDown(event, index)}
-                ref={(element) => {
-                  optionRefs.current[index] = element;
-                }}
-                role="menuitemradio"
-                type="button"
-              >
-                <span>{agentRuntimeLabel(runtimeId)}</span>
-                {selected ? <CheckCircle2 aria-hidden="true" size={14} /> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
+        <SelectValue placeholder="Unavailable" />
+      </SelectTrigger>
+      <SelectContent
+        align="end"
+        alignItemWithTrigger={false}
+        aria-label="Agent runtime options"
+        side="top"
+        sideOffset={8}
+      >
+        <SelectGroup>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 

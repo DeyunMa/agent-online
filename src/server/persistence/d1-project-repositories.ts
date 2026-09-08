@@ -1,39 +1,38 @@
+import { and, asc, desc, eq, getTableColumns, lt, sql } from "drizzle-orm";
+import { type DrizzleD1Database, drizzle } from "drizzle-orm/d1";
+
 import type {
-  MessageRecord,
-  MessageContextRepository,
   MessageContextRecord,
+  MessageContextRepository,
+  MessageRecord,
   MessageRepository,
   ProjectRecord,
   ProjectRepository,
 } from "../../application/ports";
 import { maxHistoryBytes, maxHistoryMessages } from "../../application/run-context";
-import {
-  type MessageRow,
-  type ProjectRow,
-  messageColumns,
-  projectColumns,
-  toMessageRecord,
-  toProjectRecord,
-} from "./d1-records";
+import { toMessageRecord, toProjectRecord } from "./d1-records";
+import { messages, projects } from "./schema";
 
 export class D1ProjectRepository implements ProjectRepository {
-  constructor(private readonly db: D1Database) {}
+  private readonly orm: DrizzleD1Database;
+
+  constructor(private readonly db: D1Database) {
+    this.orm = drizzle(db);
+  }
 
   async create(
     input: Omit<ProjectRecord, "createdAt" | "updatedAt"> & { now: string },
   ): Promise<ProjectRecord> {
-    await this.db
-      .prepare(
-        `INSERT INTO projects (
-          id,
-          user_id,
-          title,
-          default_agent_runtime_id,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(input.id, input.userId, input.title, input.defaultAgentRuntimeId, input.now, input.now)
+    await this.orm
+      .insert(projects)
+      .values({
+        id: input.id,
+        user_id: input.userId,
+        title: input.title,
+        default_agent_runtime_id: input.defaultAgentRuntimeId,
+        created_at: input.now,
+        updated_at: input.now,
+      })
       .run();
 
     return {
@@ -106,23 +105,24 @@ export class D1ProjectRepository implements ProjectRepository {
   }
 
   async findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null> {
-    const row = await this.db
-      .prepare(`SELECT ${projectColumns} FROM projects WHERE id = ? AND user_id = ? LIMIT 1`)
-      .bind(projectId, userId)
-      .first<ProjectRow>();
+    const row = await this.orm
+      .select()
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.user_id, userId)))
+      .get();
 
-    return row === null ? null : toProjectRecord(row);
+    return row === undefined ? null : toProjectRecord(row);
   }
 
   async listOwned(userId: string): Promise<ProjectRecord[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT ${projectColumns} FROM projects WHERE user_id = ? ORDER BY updated_at DESC, id DESC`,
-      )
-      .bind(userId)
-      .all<ProjectRow>();
+    const rows = await this.orm
+      .select()
+      .from(projects)
+      .where(eq(projects.user_id, userId))
+      .orderBy(desc(projects.updated_at), desc(projects.id))
+      .all();
 
-    return result.results.map(toProjectRecord);
+    return rows.map(toProjectRecord);
   }
 
   async renameOwned(input: {
@@ -131,59 +131,63 @@ export class D1ProjectRepository implements ProjectRepository {
     updatedAt: string;
     userId: string;
   }): Promise<ProjectRecord | null> {
-    const result = await this.db
-      .prepare(
-        `UPDATE projects
-        SET title = ?, updated_at = ?
-        WHERE id = ? AND user_id = ?`,
-      )
-      .bind(input.title, input.updatedAt, input.projectId, input.userId)
-      .run();
-    if (result.meta.changes === 0) {
-      return null;
-    }
+    const row = await this.orm
+      .update(projects)
+      .set({ title: input.title, updated_at: input.updatedAt })
+      .where(and(eq(projects.id, input.projectId), eq(projects.user_id, input.userId)))
+      .returning()
+      .get();
 
-    return this.findOwnedById(input.projectId, input.userId);
+    return row === undefined ? null : toProjectRecord(row);
   }
 }
 
 export class D1MessageRepository implements MessageRepository, MessageContextRepository {
-  constructor(private readonly db: D1Database) {}
+  private readonly orm: DrizzleD1Database;
+
+  constructor(db: D1Database) {
+    this.orm = drizzle(db);
+  }
 
   async listContextBefore(projectId: string, sequence: number): Promise<MessageContextRecord[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT id, project_id, agent_run_id, sequence, role,
-          CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END AS content,
-          created_at
-        FROM messages WHERE project_id = ? AND sequence < ?
-        ORDER BY sequence DESC LIMIT ?`,
-      )
-      .bind(maxHistoryBytes, projectId, sequence, maxHistoryMessages + 1)
-      .all<Omit<MessageRow, "content"> & { content: string | null }>();
+    const rows = await this.orm
+      .select({
+        ...getTableColumns(messages),
+        content: sql<
+          string | null
+        >`case when length(cast(${messages.content} as blob)) <= ${maxHistoryBytes} then ${messages.content} else null end`,
+      })
+      .from(messages)
+      .where(and(eq(messages.project_id, projectId), lt(messages.sequence, sequence)))
+      .orderBy(desc(messages.sequence))
+      .limit(maxHistoryMessages + 1)
+      .all();
     // Null is an omission marker; preserve all bytes (including embedded NUL) of
     // smaller messages rather than substringing SQLite TEXT.
-    return result.results.map((row) => ({
+    return rows.map((row) => ({
       ...toMessageRecord({ ...row, content: row.content ?? "" }),
       content: row.content,
     }));
   }
 
   async findById(messageId: string, projectId: string): Promise<MessageRecord | null> {
-    const row = await this.db
-      .prepare(`SELECT ${messageColumns} FROM messages WHERE id = ? AND project_id = ? LIMIT 1`)
-      .bind(messageId, projectId)
-      .first<MessageRow>();
+    const row = await this.orm
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId)))
+      .get();
 
-    return row === null ? null : toMessageRecord(row);
+    return row === undefined ? null : toMessageRecord(row);
   }
 
   async listByProjectId(projectId: string): Promise<MessageRecord[]> {
-    const result = await this.db
-      .prepare(`SELECT ${messageColumns} FROM messages WHERE project_id = ? ORDER BY sequence ASC`)
-      .bind(projectId)
-      .all<MessageRow>();
+    const rows = await this.orm
+      .select()
+      .from(messages)
+      .where(eq(messages.project_id, projectId))
+      .orderBy(asc(messages.sequence))
+      .all();
 
-    return result.results.map(toMessageRecord);
+    return rows.map(toMessageRecord);
   }
 }

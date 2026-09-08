@@ -2,43 +2,46 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, CirclePause, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import { isTerminalAgentRun } from "../../domain/agent-run";
 import type { AgentRunResponse, MessageResponse } from "../../shared/api";
-import type { AgentRuntimeId } from "../../shared/protocol";
+import {
+  type AgentRuntimeId,
+  isSupportedAgentRuntimeId,
+  type SupportedAgentRuntimeId,
+} from "../../shared/protocol";
 import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
 import { deriveProjectActivity } from "../project-activity";
 import {
   activeAgentRunQueryKey,
   agentRunQueryKey,
   agentRunsQueryKey,
-  projectDetailQueryKey,
+  platformCapabilitiesQueryKey,
   projectChangesQueryKey,
+  projectDetailQueryKey,
   projectFilesQueryKey,
   projectMessagesQueryKey,
   projectQueryKey,
-  platformCapabilitiesQueryKey,
   userUsageQueryKey,
 } from "../query-keys";
-import { ProjectInspector, type InspectorView } from "./project-inspector";
-import { ProjectPanelResizer } from "./project-panel-resizer";
+import { AppHeaderSlot } from "./app-header-slot";
+import { ProjectActionsMenu } from "./project-actions-menu";
 import { ProjectAssistantRuntimeProvider } from "./project-assistant-runtime";
+import { type InspectorView, ProjectInspector } from "./project-inspector";
+import { ProjectPanels } from "./project-panels";
 import {
   AgentComposer,
   ConversationTimeline,
+  type ProjectConsoleView,
   ProjectRunTabs,
   RunHistory,
   RunMetrics,
   RunStatusBar,
-  type ProjectConsoleView,
 } from "./run-console";
+import { Tabs, TabsContent } from "./ui/tabs";
 import { ErrorState, LoadingState } from "./ui-states";
-import { AppHeaderSlot } from "./app-header-slot";
-import { ProjectActionsMenu } from "./project-actions-menu";
 
 export function ProjectConsole({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
-  const consoleRef = useRef<HTMLElement>(null);
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -94,7 +97,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       agentRuntimeId,
       content,
     }: {
-      agentRuntimeId: AgentRuntimeId;
+      agentRuntimeId: SupportedAgentRuntimeId;
       content: string;
     }) => browserApi.createAgentRun(projectId, { agentRuntimeId, content }),
     onMutate: async ({ content }) => {
@@ -208,7 +211,7 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const assistantRuntimeIsRunning = createRun.isPending || assistantRuntimeRun !== undefined;
   const submitAssistantTask = useCallback(
     async (content: string) => {
-      if (!selectedAgentRuntimeId) {
+      if (!selectedAgentRuntimeId || !isSupportedAgentRuntimeId(selectedAgentRuntimeId)) {
         throw new Error("Select an available Agent.");
       }
 
@@ -259,24 +262,6 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     setView("conversation");
     uploadFile.reset();
   }, [projectId]);
-
-  useEffect(() => {
-    if (!inspectorOpen) {
-      return;
-    }
-
-    function handleInspectorKeyDown(event: KeyboardEvent) {
-      const target = event.target;
-      const terminalOwnsEscape =
-        target instanceof Element && target.closest(".project-terminal-view") !== null;
-      if (event.key === "Escape" && !event.defaultPrevented && !terminalOwnsEscape) {
-        closeInspector();
-      }
-    }
-
-    window.addEventListener("keydown", handleInspectorKeyDown);
-    return () => window.removeEventListener("keydown", handleInspectorKeyDown);
-  }, [closeInspector, inspectorOpen]);
 
   useEffect(() => {
     const recoveredRun = recoveredActiveRun;
@@ -394,39 +379,75 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           </div>
         </div>
       </AppHeaderSlot>
-      <section
-        className={
-          inspectorOpen ? "project-console project-console-inspector-open" : "project-console"
+      <ProjectPanels
+        onInspectorClose={closeInspector}
+        mobile={isMobileInspectorViewport}
+        open={inspectorOpen}
+        inspector={
+          <ProjectInspector
+            activity={activity}
+            changesEnabled={platformCapabilities.data?.changesEnabled === true}
+            filesRevision={filesRevision}
+            isStopping={stopSandbox.isPending}
+            onStopSandbox={() => stopSandbox.mutate()}
+            onViewChange={setInspectorView}
+            onPreviewActivityChange={setPreviewActive}
+            onPreviewStartingChange={setPreviewStarting}
+            onTerminalActivityChange={(active) => {
+              setTerminalActive(active);
+              if (!active) {
+                void queryClient.invalidateQueries({
+                  queryKey: projectChangesQueryKey(projectId),
+                });
+                void queryClient.invalidateQueries({
+                  queryKey: projectDetailQueryKey(projectId),
+                });
+              }
+            }}
+            project={project.data}
+            mobileOpen={mobileInspectorOpen}
+            onClose={closeInspector}
+            toggleRef={inspectorToggleRef}
+            open={inspectorOpen}
+            previewEnabled={platformCapabilities.data?.previewEnabled === true}
+            run={currentRun}
+            stopError={stopSandbox.error}
+            terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
+            view={inspectorView}
+          />
         }
-        ref={consoleRef}
       >
         <main className="project-console-main" id="project-console-main">
-          <ProjectRunTabs onViewChange={setView} view={view} />
-          <ProjectAssistantRuntimeProvider
-            isDisabled={composerDisabled}
-            isRunning={assistantRuntimeIsRunning}
-            key={projectId}
-            messages={messages.data ?? []}
-            onCancelRun={cancelAssistantTask}
-            onSubmitText={submitAssistantTask}
+          <Tabs
+            className="min-h-0 flex-1 gap-0"
+            value={view}
+            onValueChange={(value) => setView(value as ProjectConsoleView)}
           >
-            {platformCapabilities.isError ? (
-              <div className="run-availability">
-                <ErrorState
-                  compact
-                  error={platformCapabilities.error}
-                  onRetry={() => void platformCapabilities.refetch()}
-                />
-              </div>
-            ) : null}
-            {platformCapabilities.data?.runCreationEnabled === false ? (
-              <div className="run-availability run-availability-paused" role="status">
-                <CirclePause aria-hidden="true" size={15} />
-                <span>New Agent Runs are temporarily paused.</span>
-              </div>
-            ) : null}
-            {view === "conversation" ? (
-              <>
+            <ProjectRunTabs />
+            <ProjectAssistantRuntimeProvider
+              isDisabled={composerDisabled}
+              isRunning={assistantRuntimeIsRunning}
+              key={projectId}
+              messages={messages.data ?? []}
+              onCancelRun={cancelAssistantTask}
+              onSubmitText={submitAssistantTask}
+            >
+              {platformCapabilities.isError ? (
+                <div className="run-availability">
+                  <ErrorState
+                    compact
+                    error={platformCapabilities.error}
+                    onRetry={() => void platformCapabilities.refetch()}
+                  />
+                </div>
+              ) : null}
+              {platformCapabilities.data?.runCreationEnabled === false ? (
+                <div className="run-availability run-availability-paused" role="status">
+                  <CirclePause aria-hidden="true" size={15} />
+                  <span>New Agent Runs are temporarily paused.</span>
+                </div>
+              ) : null}
+              <TabsContent className="project-conversation-panel" value="conversation">
                 <RunStatusBar
                   cancelError={cancelRun.error}
                   isCancelling={cancelRun.isPending}
@@ -443,9 +464,11 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                   messages={messages.data}
                   onRetry={() => void messages.refetch()}
                 />
-              </>
-            ) : (
-              <div className="project-console-scroll project-console-runs-view">
+              </TabsContent>
+              <TabsContent
+                value="runs"
+                className="project-console-scroll project-console-runs-view"
+              >
                 <RunMetrics compact run={currentRun} />
                 <RunHistory
                   error={recentRuns.error}
@@ -458,67 +481,28 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
                   runs={recentRuns.data}
                   selectedRunId={currentRunId}
                 />
-              </div>
-            )}
-            <AgentComposer
-              agentRuntimeIds={agentRuntimeIds}
-              changesEnabled={platformCapabilities.data?.changesEnabled === true}
-              disabled={composerDisabled}
-              error={createRun.error}
-              fileUploadDisabled={!fileUploadAvailable}
-              isSubmitting={createRun.isPending}
-              isUploadingFile={uploadFile.isPending}
-              onAgentRuntimeChange={setAgentRuntimePreference}
-              onChangesOpen={() => openInspectorView("changes")}
-              onFilesOpen={() => openInspectorView("files")}
-              onTerminalOpen={() => openInspectorView("terminal")}
-              onUploadFile={(file) => uploadFile.mutateAsync(file)}
-              selectedAgentRuntimeId={selectedAgentRuntimeId}
-              terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
-              uploadError={uploadFile.error}
-            />
-          </ProjectAssistantRuntimeProvider>
+              </TabsContent>
+              <AgentComposer
+                agentRuntimeIds={agentRuntimeIds}
+                changesEnabled={platformCapabilities.data?.changesEnabled === true}
+                disabled={composerDisabled}
+                error={createRun.error}
+                fileUploadDisabled={!fileUploadAvailable}
+                isSubmitting={createRun.isPending}
+                isUploadingFile={uploadFile.isPending}
+                onAgentRuntimeChange={setAgentRuntimePreference}
+                onChangesOpen={() => openInspectorView("changes")}
+                onFilesOpen={() => openInspectorView("files")}
+                onTerminalOpen={() => openInspectorView("terminal")}
+                onUploadFile={(file) => uploadFile.mutateAsync(file)}
+                selectedAgentRuntimeId={selectedAgentRuntimeId}
+                terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
+                uploadError={uploadFile.error}
+              />
+            </ProjectAssistantRuntimeProvider>
+          </Tabs>
         </main>
-
-        <ProjectPanelResizer containerRef={consoleRef} open={inspectorOpen} />
-        {mobileInspectorOpen ? (
-          <button
-            aria-label="Dismiss project inspector"
-            className="project-inspector-backdrop"
-            onClick={closeInspector}
-            type="button"
-          />
-        ) : null}
-        <ProjectInspector
-          activity={activity}
-          changesEnabled={platformCapabilities.data?.changesEnabled === true}
-          filesRevision={filesRevision}
-          isStopping={stopSandbox.isPending}
-          onStopSandbox={() => stopSandbox.mutate()}
-          onViewChange={setInspectorView}
-          onPreviewActivityChange={setPreviewActive}
-          onPreviewStartingChange={setPreviewStarting}
-          onTerminalActivityChange={(active) => {
-            setTerminalActive(active);
-            if (!active) {
-              void queryClient.invalidateQueries({
-                queryKey: projectChangesQueryKey(projectId),
-              });
-              void queryClient.invalidateQueries({
-                queryKey: projectDetailQueryKey(projectId),
-              });
-            }
-          }}
-          project={project.data}
-          mobileOpen={mobileInspectorOpen}
-          open={inspectorOpen}
-          previewEnabled={platformCapabilities.data?.previewEnabled === true}
-          run={currentRun}
-          stopError={stopSandbox.error}
-          terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
-          view={inspectorView}
-        />
-      </section>
+      </ProjectPanels>
     </>
   );
 }

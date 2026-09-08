@@ -25,6 +25,7 @@
     "src",
     "tests",
     "worker",
+    "drizzle.config.ts",
     "playwright.config.ts",
     "playwright.preview.config.ts",
     "vite.config.ts",

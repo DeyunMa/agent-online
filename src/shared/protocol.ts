@@ -1,4 +1,13 @@
-export type AgentRuntimeId = "pi" | "goose" | "claude-code" | "codex-cli";
+export const agentRuntimeIds = ["pi", "goose", "claude-code", "codex-cli"] as const;
+
+export type AgentRuntimeId = (typeof agentRuntimeIds)[number];
+
+export type SupportedAgentRuntimeId = "pi" | "goose";
+
+/** Static protocol support; deployment policy still decides which runtime is enabled. */
+export function isSupportedAgentRuntimeId(id: AgentRuntimeId): id is SupportedAgentRuntimeId {
+  return id === "pi" || id === "goose";
+}
 
 export const agentRunStatuses = [
   "queued",
@@ -25,13 +34,18 @@ export const sandboxLeaseStatuses = [
 
 export type SandboxLeaseStatus = (typeof sandboxLeaseStatuses)[number];
 
-export type RuntimeKind = "fake" | "e2b" | "cloudflare-container";
+export const runtimeKinds = ["fake", "e2b", "cloudflare-container"] as const;
 
-export type SandboxChangeKind =
-  | "added"
-  | "conflicted"
-  | "deleted"
-  | "modified"
-  | "renamed"
-  | "type_changed"
-  | "untracked";
+export type RuntimeKind = (typeof runtimeKinds)[number];
+
+export const sandboxChangeKinds = [
+  "added",
+  "conflicted",
+  "deleted",
+  "modified",
+  "renamed",
+  "type_changed",
+  "untracked",
+] as const;
+
+export type SandboxChangeKind = (typeof sandboxChangeKinds)[number];

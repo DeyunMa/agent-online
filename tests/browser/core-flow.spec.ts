@@ -22,14 +22,14 @@ test("persists a cancelled Run and rejects deletion while the Project is active"
   await projectActions.press("Enter");
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await page
-    .getByRole("dialog", { name: "Delete project" })
+    .getByRole("alertdialog", { name: "Delete project" })
     .getByRole("button", {
       name: "Delete project",
     })
     .click();
   await expect(page.getByText("该项目已有正在执行的任务。")).toBeVisible();
   await page
-    .getByRole("dialog", { name: "Delete project" })
+    .getByRole("alertdialog", { name: "Delete project" })
     .getByRole("button", {
       name: "Cancel",
     })
@@ -124,14 +124,17 @@ test("selects an advertised Agent runtime for the next Run", async ({ page }) =>
   );
   await registerAndCreateProject(page, "browser-runtime");
 
-  const runtime = page.getByLabel("Agent runtime");
+  const runtime = page.getByRole("combobox", { name: "Agent runtime", exact: true });
   await expect(runtime).toBeEnabled();
   await expect(runtime).toHaveText("Pi");
-  await runtime.click();
-  const runtimeOptions = page.getByRole("menu", { name: "Agent runtime options" });
-  await expect(runtimeOptions.getByRole("menuitemradio")).toHaveText(["Pi", "Goose"]);
-  await runtimeOptions.getByRole("menuitemradio", { name: "Goose" }).click();
+  await runtime.focus();
+  await runtime.press("ArrowDown");
+  const runtimeOptions = page.getByRole("listbox", { name: "Agent runtime options" });
+  await expect(runtimeOptions.getByRole("option")).toHaveText(["Pi", "Goose"]);
+  await page.getByRole("option", { name: "Pi", exact: true }).press("ArrowDown");
+  await page.getByRole("option", { name: "Goose" }).press("Enter");
   await expect(runtime).toHaveText("Goose");
+  await expect(runtime).toBeFocused();
 
   await page.getByLabel("Agent task").fill("Use the selected runtime");
   const requestPromise = page.waitForRequest(
@@ -235,6 +238,54 @@ test("uploads one file and opens the Files, Terminal, and Changes inspector view
   ).toHaveAttribute("aria-selected", "true");
 });
 
+test("preserves the connected Terminal across inspector tabs, closing, and mobile layout", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ height: 900, width: 1440 });
+  await page.route("**/api/capabilities", async (route) => {
+    const response = await route.fetch();
+    const capabilities = await response.json();
+    await route.fulfill({ json: { ...capabilities, terminalEnabled: true }, response });
+  });
+  let connections = 0;
+  let closed = false;
+  const inputs: string[] = [];
+  await page.routeWebSocket("**/api/projects/*/terminal", (socket) => {
+    connections += 1;
+    socket.onClose(() => {
+      closed = true;
+    });
+    socket.onMessage((message) => {
+      const event = JSON.parse(String(message)) as { type: string; data?: string };
+      if (event.type === "attach")
+        socket.send(JSON.stringify({ type: "ready", expiresAt: "2099-01-01T00:00:00.000Z" }));
+      if (event.type === "input" && event.data) inputs.push(event.data);
+    });
+  });
+  await registerAndCreateProject(page, "browser-terminal-mount");
+  await page.getByRole("button", { name: "Open terminal" }).click();
+  const terminal = page.locator(".project-terminal-view");
+  await terminal.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(terminal.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Overview", exact: true }).click();
+  await page.getByRole("tab", { name: "Terminal", exact: true }).click();
+  await expect(terminal.getByText("Connected", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Close project inspector" }).click();
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.getByRole("button", { name: "Open project inspector" }).click();
+  await expect(page.getByRole("dialog", { name: "Project inspector" })).toBeVisible();
+  await expect(terminal.getByText("Connected", { exact: true })).toBeVisible();
+  await terminal.locator("textarea").press("Escape");
+  await expect(page.getByRole("dialog", { name: "Project inspector" })).toBeVisible();
+  await terminal.locator("textarea").press("x");
+  await expect.poll(() => inputs.join("")).toContain("x");
+  expect(connections).toBe(1);
+  expect(closed).toBe(false);
+  expect(pageErrors).toEqual([]);
+});
+
 test("renames and hard-deletes a Project from the mobile layout", async ({ page }) => {
   const { projectName } = await registerAndCreateProject(page, "browser-lifecycle");
   const renamedProject = `${projectName}-renamed`;
@@ -245,6 +296,11 @@ test("renames and hard-deletes a Project from the mobile layout", async ({ page 
   await page.getByRole("menuitem", { name: "Rename" }).click();
   const renameDialog = page.getByRole("dialog", { name: "Rename project" });
   await expect(renameDialog.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect(renameDialog.getByLabel("Project name")).toBeFocused();
+  await renameDialog.getByLabel("Project name").press("Shift+Tab");
+  await expect(renameDialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await renameDialog.getByRole("button", { name: "Cancel" }).press("Tab");
+  await expect(renameDialog.getByLabel("Project name")).toBeFocused();
   await renameDialog.getByLabel("Project name").fill(renamedProject);
   await renameDialog.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("link", { exact: true, name: renamedProject })).toBeVisible();
@@ -260,12 +316,15 @@ test("renames and hard-deletes a Project from the mobile layout", async ({ page 
   await expect(filesTab).toHaveAttribute("aria-selected", "true");
   await filesTab.press("Home");
   await expect(overviewTab).toBeFocused();
+  await overviewTab.press("Escape");
+  await expect(page.getByRole("button", { name: "Open project inspector" })).toBeFocused();
   await projectHeaderActions
     .getByRole("button", { name: `Project actions for ${renamedProject}` })
     .click();
   await page.getByRole("menuitem", { name: "Delete" }).click();
-  const deleteDialog = page.getByRole("dialog", { name: "Delete project" });
+  const deleteDialog = page.getByRole("alertdialog", { name: "Delete project" });
   await expect(deleteDialog).toBeInViewport({ ratio: 1 });
+  await expect(deleteDialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   await expect(deleteDialog).toContainText("Aggregate Run usage remains");
   await deleteDialog.getByRole("button", { name: "Delete project" }).click();
 
@@ -352,8 +411,7 @@ test("opens and resizes the Project inspector while making space in the core are
   await expect(mobileInspector).toBeVisible();
   await expect(
     mobileInspector.getByRole("button", { name: "Close project inspector" }),
-  ).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Dismiss project inspector" })).toBeVisible();
+  ).toBeVisible();
   await expect(separator).toBeHidden();
   await page.getByRole("button", { name: "Close project inspector" }).click();
   await expect(mobileInspector).toBeHidden();

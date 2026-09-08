@@ -51,10 +51,10 @@ describe("Run capability codec", () => {
       now: () => expiresAt,
       secret,
     });
-    const [payload, signature] = token.split(".");
+    const [header, payload, signature] = token.split(".");
 
     await expect(expiredVerifier.verify(token)).resolves.toBeNull();
-    await expect(issuer.verify(`${payload}x.${signature}`)).resolves.toBeNull();
+    await expect(issuer.verify(`${header}.${payload}x.${signature}`)).resolves.toBeNull();
     await expect(issuer.verify("not-a-capability")).resolves.toBeNull();
   });
 

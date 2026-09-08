@@ -22,7 +22,17 @@ test("defers Project and Usage code until authenticated navigation", async ({ pa
   expect(moduleRequests.some((url) => url.includes("/project-console.tsx"))).toBe(true);
   expect(moduleRequests.some((url) => url.includes("/usage-page.tsx"))).toBe(false);
 
-  await page.locator(".project-sidebar").getByRole("button", { name: "Open account menu" }).click();
+  const accountMenuTrigger = page
+    .locator(".project-sidebar")
+    .getByRole("button", { name: "Open account menu" });
+  await accountMenuTrigger.focus();
+  await accountMenuTrigger.press("Enter");
+  await expect(page.getByRole("menuitem", { name: "Usage", exact: true })).toBeFocused();
+  await page.getByRole("menuitem", { name: "Usage", exact: true }).press("End");
+  await expect(page.getByRole("menuitem", { name: "Sign out", exact: true })).toBeFocused();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).press("Escape");
+  await expect(accountMenuTrigger).toBeFocused();
+  await accountMenuTrigger.click();
   await page.getByRole("menuitem", { name: "Usage", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Usage", exact: true })).toBeVisible();
   expect(moduleRequests.some((url) => url.includes("/usage-page.tsx"))).toBe(true);

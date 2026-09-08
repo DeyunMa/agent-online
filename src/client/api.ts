@@ -1,24 +1,29 @@
-import type {
-  AgentRunResponse,
-  AgentRunStreamEvent,
-  ApiErrorResponse,
-  CreateAgentRunRequest,
-  CreateProjectRequest,
-  HealthResponse,
-  MessageResponse,
-  PlatformCapabilitiesResponse,
-  ProjectChangeDiffResponse,
-  ProjectChangesResponse,
-  ProjectDirectoryResponse,
-  ProjectFileResponse,
-  ProjectFileUploadResponse,
-  ProjectPreviewResponse,
-  ProjectResponse,
-  UpdateProjectRequest,
-  UserUsageResponse,
+import { z } from "zod";
+
+import {
+  type AgentRunStreamEvent,
+  agentRunResponseSchema,
+  agentRunStreamEventSchema,
+  apiErrorResponseSchema,
+  type CreateAgentRunRequest,
+  type CreateProjectRequest,
+  healthResponseSchema,
+  messageResponseSchema,
+  platformCapabilitiesResponseSchema,
+  projectChangeDiffResponseSchema,
+  projectChangesResponseSchema,
+  projectDirectoryResponseSchema,
+  projectFileResponseSchema,
+  projectFileUploadResponseSchema,
+  projectPreviewResponseSchema,
+  projectResponseSchema,
+  type UpdateProjectRequest,
+  userUsageResponseSchema,
 } from "../shared/api";
-import { isPublicErrorCode, type PublicErrorCode } from "../shared/error-codes";
-import { agentRunStatuses } from "../shared/protocol";
+import type { PublicErrorCode } from "../shared/error-codes";
+
+const emptyResponseSchema = z.undefined();
+const invalidJsonResponse = Symbol("invalid-json-response");
 
 export class BrowserApiError extends Error {
   readonly code: PublicErrorCode | "network_error";
@@ -47,7 +52,11 @@ type RunStreamHandlers = {
   onEvent: (event: AgentRunStreamEvent) => void;
 };
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function requestJson<T extends z.ZodType>(
+  path: string,
+  schema: T,
+  init: RequestInit = {},
+): Promise<z.output<T>> {
   const headers = new Headers(init.headers);
 
   if (init.body !== undefined && !headers.has("content-type") && !(init.body instanceof FormData)) {
@@ -72,58 +81,59 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
   const body = await readJson(response);
 
   if (!response.ok) {
-    throw toBrowserApiError(response.status, body);
+    throw toBrowserApiError(response, body);
   }
 
-  return body as T;
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    throw unrecognizedResponse(response);
+  }
+
+  return parsed.data;
 }
 
 async function readJson(response: Response): Promise<unknown> {
-  const body = await response.text();
+  let body: string;
+  try {
+    body = await response.text();
+  } catch {
+    throw unrecognizedResponse(response);
+  }
 
   if (!body) {
-    return undefined;
+    return response.status === 204 ? undefined : invalidJsonResponse;
   }
 
   try {
     return JSON.parse(body) as unknown;
   } catch {
-    return undefined;
+    return invalidJsonResponse;
   }
 }
 
-function toBrowserApiError(status: number, body: unknown) {
-  if (isApiErrorResponse(body)) {
+function toBrowserApiError(response: Response, body: unknown) {
+  const parsed = apiErrorResponseSchema.safeParse(body);
+  if (parsed.success) {
+    const body = parsed.data;
     return new BrowserApiError({
       code: body.error.code,
       message: messageForApiError(body.error.code),
       requestId: body.requestId,
       retryable: body.error.retryable,
-      status,
+      status: response.status,
     });
   }
 
+  return unrecognizedResponse(response);
+}
+
+function unrecognizedResponse(response: Response) {
   return new BrowserApiError({
     code: "network_error",
     message: "服务返回了无法识别的响应，请稍后重试。",
-    status,
+    requestId: response.headers.get("x-request-id"),
+    status: response.status,
   });
-}
-
-function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "error" in value &&
-    "requestId" in value &&
-    typeof value.error === "object" &&
-    value.error !== null &&
-    "code" in value.error &&
-    "retryable" in value.error &&
-    isPublicErrorCode(value.error.code) &&
-    typeof value.error.retryable === "boolean" &&
-    typeof value.requestId === "string"
-  );
 }
 
 function messageForApiError(error: PublicErrorCode) {
@@ -197,12 +207,15 @@ function projectChangesPath(projectId: string, path?: string) {
 
 export const browserApi = {
   cancelAgentRun(projectId: string, runId: string) {
-    return requestJson<AgentRunResponse>(`${runPath(projectId, runId)}/cancel`, { method: "POST" });
+    return requestJson(`${runPath(projectId, runId)}/cancel`, agentRunResponseSchema, {
+      method: "POST",
+    });
   },
 
   createAgentRun(projectId: string, input: CreateAgentRunRequest) {
-    return requestJson<AgentRunResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
+      agentRunResponseSchema,
       {
         body: JSON.stringify(input),
         method: "POST",
@@ -211,105 +224,112 @@ export const browserApi = {
   },
 
   createProject(input: CreateProjectRequest) {
-    return requestJson<ProjectResponse>("/api/projects", {
+    return requestJson("/api/projects", projectResponseSchema, {
       body: JSON.stringify(input),
       method: "POST",
     });
   },
 
   deleteProject(projectId: string) {
-    return requestJson<void>(`/api/projects/${encodeURIComponent(projectId)}`, {
+    return requestJson(`/api/projects/${encodeURIComponent(projectId)}`, emptyResponseSchema, {
       method: "DELETE",
     });
   },
 
   getAgentRun(projectId: string, runId: string) {
-    return requestJson<AgentRunResponse>(runPath(projectId, runId));
+    return requestJson(runPath(projectId, runId), agentRunResponseSchema);
   },
 
   getActiveAgentRun(projectId: string) {
-    return requestJson<AgentRunResponse | null>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/agent-runs/active`,
+      agentRunResponseSchema.nullable(),
     );
   },
 
   getHealth() {
-    return requestJson<HealthResponse>("/api/health");
+    return requestJson("/api/health", healthResponseSchema);
   },
 
   getPlatformCapabilities() {
-    return requestJson<PlatformCapabilitiesResponse>("/api/capabilities");
+    return requestJson("/api/capabilities", platformCapabilitiesResponseSchema);
   },
 
   getProject(projectId: string) {
-    return requestJson<ProjectResponse>(`/api/projects/${encodeURIComponent(projectId)}`);
+    return requestJson(`/api/projects/${encodeURIComponent(projectId)}`, projectResponseSchema);
   },
 
   getUsage() {
-    return requestJson<UserUsageResponse>("/api/usage");
+    return requestJson("/api/usage", userUsageResponseSchema);
   },
 
   listMessages(projectId: string) {
-    return requestJson<MessageResponse[]>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/messages`,
+      messageResponseSchema.array(),
     );
   },
 
   listAgentRuns(projectId: string) {
-    return requestJson<AgentRunResponse[]>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
+      agentRunResponseSchema.array(),
     );
   },
 
   listProjects() {
-    return requestJson<ProjectResponse[]>("/api/projects");
+    return requestJson("/api/projects", projectResponseSchema.array());
   },
 
   listProjectFiles(projectId: string, path: string) {
-    return requestJson<ProjectDirectoryResponse>(projectFilesPath(projectId, path));
+    return requestJson(projectFilesPath(projectId, path), projectDirectoryResponseSchema);
   },
 
   listProjectChanges(projectId: string) {
-    return requestJson<ProjectChangesResponse>(projectChangesPath(projectId));
+    return requestJson(projectChangesPath(projectId), projectChangesResponseSchema);
   },
 
   readProjectChange(projectId: string, path: string) {
-    return requestJson<ProjectChangeDiffResponse>(projectChangesPath(projectId, path));
+    return requestJson(projectChangesPath(projectId, path), projectChangeDiffResponseSchema);
   },
 
   readProjectFile(projectId: string, path: string) {
-    return requestJson<ProjectFileResponse>(projectFilesPath(projectId, path, true));
+    return requestJson(projectFilesPath(projectId, path, true), projectFileResponseSchema);
   },
 
   getProjectPreview(projectId: string) {
-    return requestJson<ProjectPreviewResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/preview`,
+      projectPreviewResponseSchema,
     );
   },
 
   startProjectPreview(projectId: string) {
-    return requestJson<ProjectPreviewResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/preview/start`,
+      projectPreviewResponseSchema,
       { method: "POST" },
     );
   },
 
   stopProjectPreview(projectId: string) {
-    return requestJson<ProjectPreviewResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/preview/stop`,
+      projectPreviewResponseSchema,
       { method: "POST" },
     );
   },
 
   stopProjectSandbox(projectId: string) {
-    return requestJson<ProjectResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/sandbox/stop`,
+      projectResponseSchema,
       { method: "POST" },
     );
   },
 
   updateProject(projectId: string, input: UpdateProjectRequest) {
-    return requestJson<ProjectResponse>(`/api/projects/${encodeURIComponent(projectId)}`, {
+    return requestJson(`/api/projects/${encodeURIComponent(projectId)}`, projectResponseSchema, {
       body: JSON.stringify(input),
       method: "PATCH",
     });
@@ -318,8 +338,9 @@ export const browserApi = {
   uploadProjectFile(projectId: string, file: File) {
     const body = new FormData();
     body.set("file", file);
-    return requestJson<ProjectFileUploadResponse>(
+    return requestJson(
       `/api/projects/${encodeURIComponent(projectId)}/files`,
+      projectFileUploadResponseSchema,
       {
         body,
         method: "POST",
@@ -369,41 +390,9 @@ function parseRunStreamEvent(value: unknown): AgentRunStreamEvent | null {
   }
 
   try {
-    const event: unknown = JSON.parse(value);
-    if (!isRecord(event) || !Number.isSafeInteger(event.sequence)) {
-      return null;
-    }
-    if (
-      event.type === "run.status" &&
-      typeof event.status === "string" &&
-      agentRunStatuses.some((status) => status === event.status)
-    ) {
-      return event as AgentRunStreamEvent;
-    }
-    if (event.type === "run.completed" && isAgentRunUsage(event.usage)) {
-      return event as AgentRunStreamEvent;
-    }
-    return null;
+    const parsed = agentRunStreamEventSchema.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
-}
-
-function isAgentRunUsage(value: unknown) {
-  return (
-    isRecord(value) &&
-    isNonNegativeInteger(value.inputTokens) &&
-    isNonNegativeInteger(value.outputTokens) &&
-    isNonNegativeInteger(value.totalTokens) &&
-    isNonNegativeInteger(value.modelRequestCount) &&
-    isNonNegativeInteger(value.sandboxDurationMs)
-  );
-}
-
-function isNonNegativeInteger(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

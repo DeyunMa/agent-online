@@ -1,3 +1,5 @@
+import { jwtVerify, SignJWT } from "jose";
+
 export const previewCapabilityAudience = "agent-online:project-preview" as const;
 
 export type PreviewCapabilityClaims = {
@@ -23,7 +25,6 @@ export function previewContentBasePath(projectId: string, token: string) {
 }
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: true });
 const maximumCapabilityLifetimeSeconds = 30 * 60;
 const maximumTokenLength = 2_048;
 const futureClockSkewSeconds = 30;
@@ -44,33 +45,30 @@ export function createPreviewCapabilityCodec(options: PreviewCapabilityCodecOpti
       projectId: string;
     }) {
       const claims = createClaims(input);
-      const payload = encodeBase64Url(encoder.encode(JSON.stringify(claims)));
-      const signature = await crypto.subtle.sign("HMAC", await signingKey, encoder.encode(payload));
-
-      return `${payload}.${encodeBase64Url(new Uint8Array(signature))}`;
+      const token = await new SignJWT(claims)
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .sign(await signingKey);
+      if (token.length > maximumTokenLength) {
+        throw new Error("Capability exceeds maximum token length");
+      }
+      return token;
     },
 
     async verify(token: string): Promise<PreviewCapabilityClaims | null> {
       if (!token || token.length > maximumTokenLength) {
         return null;
       }
-      const parts = token.split(".");
-      if (parts.length !== 2 || !parts[0] || !parts[1]) {
-        return null;
-      }
-
       try {
-        const verified = await crypto.subtle.verify(
-          "HMAC",
-          await signingKey,
-          decodeBase64Url(parts[1]),
-          encoder.encode(parts[0]),
-        );
-        if (!verified) {
-          return null;
-        }
-        const claims = JSON.parse(decoder.decode(decodeBase64Url(parts[0]))) as unknown;
-        return isValidClaims(claims, Math.floor(now().getTime() / 1_000)) ? claims : null;
+        const currentDate = now();
+        const { payload } = await jwtVerify(token, await signingKey, {
+          algorithms: ["HS256"],
+          audience: previewCapabilityAudience,
+          currentDate,
+          requiredClaims: ["iat", "exp"],
+          typ: "JWT",
+        });
+        // iat skew is independent of expiry: no grace period for expired capabilities.
+        return isValidClaims(payload, Math.floor(currentDate.getTime() / 1_000)) ? payload : null;
       } catch {
         return null;
       }
@@ -155,23 +153,6 @@ function toEpochSeconds(value: Date) {
     throw new Error("Preview capability timestamps must be valid dates");
   }
   return Math.floor(timestamp / 1_000);
-}
-
-function encodeBase64Url(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function decodeBase64Url(value: string) {
-  if (!/^[A-Za-z0-9_-]+$/.test(value)) {
-    throw new Error("Invalid base64url value");
-  }
-  const padding = "=".repeat((4 - (value.length % 4)) % 4);
-  const binary = atob(value.replace(/-/g, "+").replace(/_/g, "/") + padding);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function isNonEmptyString(value: unknown): value is string {

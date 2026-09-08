@@ -85,7 +85,7 @@ export function createWorkerModelGateway(
 }
 
 function readBearerToken(authorization: string | null) {
-  const match = authorization?.match(/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i);
+  const match = authorization?.match(/^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i);
   return match?.[1] ?? null;
 }
 

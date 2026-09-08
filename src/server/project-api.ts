@@ -1,16 +1,16 @@
 import { Hono } from "hono";
-import { z } from "zod";
 
+import { createProjectRequestSchema, updateProjectRequestSchema } from "../shared/api";
 import { registerAgentRunRoutes } from "./agent-run-api";
 import type { AppEnv } from "./env";
+import { validateJsonRequest } from "./http/json-validator";
 import {
   type ProjectApiDependencies,
   resolveProjectApiDependencies,
 } from "./project-api-dependencies";
-import { registerProjectFilesRoutes } from "./project-files-api";
 import {
+  authenticateProjectRequest,
   notFound,
-  parseRequest,
   projectBusy,
   requestDiagnosticContext,
   requireAuthenticatedUser,
@@ -19,13 +19,8 @@ import {
   toMessageResponse,
   toProjectResponse,
   unauthorized,
-  validationError,
 } from "./project-api-support";
-
-const createProjectSchema = z.object({
-  title: z.string().trim().min(1).max(120),
-});
-const updateProjectSchema = createProjectSchema;
+import { registerProjectFilesRoutes } from "./project-files-api";
 
 export type { ProjectApiDependencies } from "./project-api-dependencies";
 
@@ -45,26 +40,24 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     return c.json(projects.map(({ lease, project }) => toProjectResponse(project, lease)));
   });
 
-  api.post("/projects", async (c) => {
-    const user = await requireAuthenticatedUser(c, dependencies);
-    if (!user) {
-      return unauthorized(c);
-    }
+  api.post(
+    "/projects",
+    authenticateProjectRequest(dependencies),
+    validateJsonRequest(createProjectRequestSchema),
+    async (c) => {
+      const user = c.get("authenticatedUser");
+      const input = c.req.valid("json");
 
-    const input = await parseRequest(c, createProjectSchema);
-    if (!input) {
-      return validationError(c);
-    }
+      const project = await dependencies
+        .createServices(c.env, requestDiagnosticContext(c))
+        .projectManagement.create({
+          title: input.title,
+          userId: user.id,
+        });
 
-    const project = await dependencies
-      .createServices(c.env, requestDiagnosticContext(c))
-      .projectManagement.create({
-        title: input.title,
-        userId: user.id,
-      });
-
-    return c.json(toProjectResponse(project, null), 201);
-  });
+      return c.json(toProjectResponse(project, null), 201);
+    },
+  );
 
   api.get("/projects/:projectId", async (c) => {
     const user = await requireAuthenticatedUser(c, dependencies);
@@ -84,33 +77,31 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     return c.json(toProjectResponse(project.project, project.lease));
   });
 
-  api.patch("/projects/:projectId", async (c) => {
-    const user = await requireAuthenticatedUser(c, dependencies);
-    if (!user) {
-      return unauthorized(c);
-    }
+  api.patch(
+    "/projects/:projectId",
+    authenticateProjectRequest(dependencies),
+    validateJsonRequest(updateProjectRequestSchema),
+    async (c) => {
+      const user = c.get("authenticatedUser");
+      const input = c.req.valid("json");
 
-    const input = await parseRequest(c, updateProjectSchema);
-    if (!input) {
-      return validationError(c);
-    }
+      const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
+      const renamed = await services.projectManagement.rename({
+        projectId: c.req.param("projectId"),
+        title: input.title,
+        userId: user.id,
+      });
+      if (renamed.kind === "not_found") {
+        return notFound(c);
+      }
 
-    const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const renamed = await services.projectManagement.rename({
-      projectId: c.req.param("projectId"),
-      title: input.title,
-      userId: user.id,
-    });
-    if (renamed.kind === "not_found") {
-      return notFound(c);
-    }
-
-    const project = await services.projectReads.findOwnedProjectWithLease(
-      renamed.project.id,
-      user.id,
-    );
-    return c.json(toProjectResponse(renamed.project, project?.lease ?? null));
-  });
+      const project = await services.projectReads.findOwnedProjectWithLease(
+        renamed.project.id,
+        user.id,
+      );
+      return c.json(toProjectResponse(renamed.project, project?.lease ?? null));
+    },
+  );
 
   api.delete("/projects/:projectId", async (c) => {
     const user = await requireAuthenticatedUser(c, dependencies);

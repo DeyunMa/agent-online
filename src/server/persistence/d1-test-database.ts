@@ -19,6 +19,7 @@ export class TestD1Database {
   readonly allRows: unknown[][] = [];
   readonly batches: TestStatement[][] = [];
   readonly firstRows: unknown[] = [];
+  readonly rawRows: unknown[][][] = [];
   readonly prepared: TestStatement[] = [];
   batchError: unknown = null;
   batchResults: D1Result<unknown>[][] = [];
@@ -50,7 +51,7 @@ export class TestD1Database {
         return statementHandle;
       },
       first: async <T>() => (this.firstRows.shift() ?? null) as T | null,
-      raw: async () => [],
+      raw: async () => this.rawRows.shift() ?? [],
       run: async <T>() => result<T>(),
       testStatement: statement,
     } as unknown as TestStatementHandle;

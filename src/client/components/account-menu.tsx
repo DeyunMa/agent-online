@@ -1,6 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { ChartNoAxesColumn, ChevronUp, LoaderCircle, LogOut } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 export type AccountMenuProps = {
   email: string;
@@ -11,103 +20,59 @@ export type AccountMenuProps = {
 };
 
 export function AccountMenu({ email, isSigningOut, name, onSignOut, placement }: AccountMenuProps) {
-  const menuId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
   const displayName = name.trim() || email;
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const focusFrame = window.requestAnimationFrame(() => {
-      menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
-    });
-    const closeOnPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-
-    document.addEventListener("pointerdown", closeOnPointerDown);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("pointerdown", closeOnPointerDown);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
   return (
-    <div className={`account-menu account-menu-${placement}`} ref={rootRef}>
-      <button
-        aria-controls={open ? menuId : undefined}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="Open account menu"
-        className="account-menu-trigger"
-        onClick={() => setOpen((current) => !current)}
-        ref={triggerRef}
-        title={email}
-        type="button"
-      >
-        <span className="account-avatar" aria-hidden="true">
-          {initials(displayName)}
-        </span>
-        <span className="account-menu-trigger-copy">
-          <strong>{displayName}</strong>
-          <span>{email}</span>
-        </span>
-        <ChevronUp aria-hidden="true" className="account-menu-chevron" size={15} />
-      </button>
+    <div
+      className={cn("account-menu", {
+        "account-menu-header": placement === "header",
+        "account-menu-sidebar": placement === "sidebar",
+      })}
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label="Open account menu"
+          className="account-menu-trigger"
+          title={email}
+        >
+          <span className="account-avatar" aria-hidden="true">
+            {initials(displayName)}
+          </span>
+          <span className="account-menu-trigger-copy">
+            <strong>{displayName}</strong>
+            <span>{email}</span>
+          </span>
+          <ChevronUp aria-hidden="true" className="account-menu-chevron" size={15} />
+        </DropdownMenuTrigger>
 
-      {open ? (
-        <div
+        <DropdownMenuContent
+          align={placement === "header" ? "end" : "start"}
           aria-label="Account"
           className="account-menu-popover"
-          id={menuId}
-          ref={menuRef}
-          role="menu"
+          side={placement === "header" ? "bottom" : "top"}
+          sideOffset={8}
         >
           <div className="account-menu-identity">
             <strong>{displayName}</strong>
             <span>{email}</span>
           </div>
-          <Link
-            activeProps={{ className: "account-menu-item account-menu-item-active" }}
-            className="account-menu-item"
-            onClick={() => setOpen(false)}
-            role="menuitem"
-            to="/usage"
-          >
-            <ChartNoAxesColumn aria-hidden="true" size={16} />
-            <span>Usage</span>
-          </Link>
-          <button
-            className="account-menu-item"
-            disabled={isSigningOut}
-            onClick={onSignOut}
-            role="menuitem"
-            type="button"
-          >
-            {isSigningOut ? (
-              <LoaderCircle aria-hidden="true" className="spin" size={16} />
-            ) : (
-              <LogOut aria-hidden="true" size={16} />
-            )}
-            <span>{isSigningOut ? "Signing out" : "Sign out"}</span>
-          </button>
-        </div>
-      ) : null}
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem className="min-h-9" render={<Link to="/usage" />}>
+              <ChartNoAxesColumn aria-hidden="true" size={16} />
+              <span>Usage</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-9" disabled={isSigningOut} onClick={onSignOut}>
+              {isSigningOut ? (
+                <LoaderCircle aria-hidden="true" className="spin" size={16} />
+              ) : (
+                <LogOut aria-hidden="true" size={16} />
+              )}
+              <span>{isSigningOut ? "Signing out" : "Sign out"}</span>
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

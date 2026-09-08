@@ -1,9 +1,9 @@
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { LoaderCircle, Square } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
-
-import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { isActiveSandboxLease } from "../../domain/sandbox-lease";
-import type { ProjectActivity } from "../project-activity";
+import type { AgentRunResponse, ProjectResponse } from "../../shared/api";
+import { cn } from "../lib/utils";
 import {
   agentRunStatusLabel,
   agentRunStatusTone,
@@ -14,12 +14,13 @@ import {
   sandboxStatusTone,
   shortRunId,
 } from "../presentation";
-import { ErrorState } from "./ui-states";
-import { handleRovingTabKeyDown } from "../tab-navigation";
+import type { ProjectActivity } from "../project-activity";
 import { ProjectChanges } from "./project-changes";
 import { ProjectFiles } from "./project-files";
 import { ProjectPreview } from "./project-preview";
 import { ProjectTerminal } from "./project-terminal";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { ErrorState } from "./ui-states";
 
 export type InspectorView = "changes" | "files" | "overview" | "preview" | "terminal";
 
@@ -29,6 +30,8 @@ export function ProjectInspector({
   filesRevision,
   isStopping,
   mobileOpen,
+  onClose,
+  toggleRef,
   onViewChange,
   onStopSandbox,
   onPreviewActivityChange,
@@ -47,6 +50,8 @@ export function ProjectInspector({
   filesRevision: number;
   isStopping: boolean;
   mobileOpen: boolean;
+  onClose(): void;
+  toggleRef: RefObject<HTMLButtonElement | null>;
   onStopSandbox: () => void;
   onPreviewActivityChange(active: boolean): void;
   onPreviewStartingChange(starting: boolean): void;
@@ -60,7 +65,10 @@ export function ProjectInspector({
   view: InspectorView;
   open: boolean;
 }) {
-  const inspectorRef = useRef<HTMLElement>(null);
+  const inspectorRef = useRef<HTMLDivElement>(null);
+  // An explicit null container makes Base UI wait for the host. A ref whose current
+  // value is still null during child layout effects would fall back to document.body.
+  const [portalHost, setPortalHost] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!changesEnabled && view === "changes") {
       onViewChange("overview");
@@ -76,25 +84,6 @@ export function ProjectInspector({
       onViewChange("overview");
     }
   }, [onViewChange, previewEnabled, view]);
-  useEffect(() => {
-    if (!mobileOpen) {
-      return;
-    }
-
-    const focusFrame = window.requestAnimationFrame(() => {
-      inspectorRef.current
-        ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
-        ?.focus({ preventScroll: true });
-    });
-    function handleTab(event: KeyboardEvent) {
-      trapMobileInspectorFocus(event, inspectorRef.current);
-    }
-    document.addEventListener("keydown", handleTab);
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.removeEventListener("keydown", handleTab);
-    };
-  }, [mobileOpen]);
   const lease = project.sandboxLease;
   const hasActiveRun = activity.exclusive === "run";
   const terminalActive = activity.exclusive === "terminal";
@@ -107,166 +96,187 @@ export function ProjectInspector({
     !previewActive &&
     !terminalActive &&
     !isStopping;
-  const mobileDialogAttributes = mobileOpen
-    ? ({ "aria-modal": true, role: "dialog" } as const)
-    : {};
-
   return (
-    <aside
-      {...mobileDialogAttributes}
-      aria-hidden={!open}
-      aria-labelledby="project-inspector-title"
-      className={`project-inspector ${open ? "project-inspector-open" : ""}`}
-      id="project-inspector"
-      inert={!open}
-      ref={inspectorRef}
-    >
-      <header className="project-inspector-header">
-        <h2 id="project-inspector-title">Project inspector</h2>
-      </header>
-
-      <div
-        aria-label="Project inspector views"
-        className="inspector-tabs"
-        onKeyDown={handleRovingTabKeyDown}
-        role="tablist"
+    <div ref={setPortalHost} className="project-inspector-host">
+      <DialogPrimitive.Root
+        open={open}
+        modal={mobileOpen}
+        onOpenChange={(nextOpen, details) => {
+          if (nextOpen) return;
+          const target = details.event.target;
+          if (
+            (!mobileOpen && details.reason === "outside-press") ||
+            (details.reason === "escape-key" &&
+              target instanceof Element &&
+              target.closest(".project-terminal-view"))
+          ) {
+            details.cancel();
+            return;
+          }
+          onClose();
+        }}
       >
-        <button
-          aria-selected={view === "overview"}
-          className={`inspector-tab ${view === "overview" ? "inspector-tab-active" : ""}`}
-          onClick={() => onViewChange("overview")}
-          role="tab"
-          tabIndex={view === "overview" ? 0 : -1}
-          type="button"
+        <DialogPrimitive.Portal
+          container={portalHost}
+          keepMounted
+          className="project-inspector-portal"
         >
-          Overview
-        </button>
-        <button
-          aria-selected={view === "files"}
-          className={`inspector-tab ${view === "files" ? "inspector-tab-active" : ""}`}
-          onClick={() => onViewChange("files")}
-          role="tab"
-          tabIndex={view === "files" ? 0 : -1}
-          type="button"
-        >
-          Files
-        </button>
-        {changesEnabled ? (
-          <button
-            aria-selected={view === "changes"}
-            className={`inspector-tab ${view === "changes" ? "inspector-tab-active" : ""}`}
-            onClick={() => onViewChange("changes")}
-            role="tab"
-            tabIndex={view === "changes" ? 0 : -1}
-            type="button"
+          {mobileOpen ? <DialogPrimitive.Backdrop className="project-inspector-backdrop" /> : null}
+          {/* Keep one portal in a stable panel host across breakpoints and closing.
+          Changing its container would disconnect the terminal's live session. */}
+          <DialogPrimitive.Popup
+            className={cn("project-inspector", { "project-inspector-open": open })}
+            id="project-inspector"
+            inert={!open}
+            ref={inspectorRef}
+            role={mobileOpen ? "dialog" : "complementary"}
+            initialFocus={() =>
+              mobileOpen
+                ? (inspectorRef.current?.querySelector<HTMLElement>(
+                    '[role="tab"][aria-selected="true"]',
+                  ) ?? true)
+                : false
+            }
+            finalFocus={toggleRef}
           >
-            Changes
-          </button>
-        ) : (
-          <DisabledInspectorTab label="Changes" />
-        )}
-        {terminalEnabled ? (
-          <button
-            aria-selected={view === "terminal"}
-            className={`inspector-tab ${view === "terminal" ? "inspector-tab-active" : ""}`}
-            onClick={() => onViewChange("terminal")}
-            role="tab"
-            tabIndex={view === "terminal" ? 0 : -1}
-            type="button"
-          >
-            Terminal
-          </button>
-        ) : (
-          <DisabledInspectorTab label="Terminal" />
-        )}
-        {previewEnabled ? (
-          <button
-            aria-selected={view === "preview"}
-            className={`inspector-tab ${view === "preview" ? "inspector-tab-active" : ""}`}
-            onClick={() => onViewChange("preview")}
-            role="tab"
-            tabIndex={view === "preview" ? 0 : -1}
-            type="button"
-          >
-            Preview
-          </button>
-        ) : (
-          <DisabledInspectorTab label="Preview" />
-        )}
-      </div>
-
-      {view === "overview" ? (
-        <>
-          <ProjectOverview project={project} run={run} />
-
-          <section className="inspector-section">
-            <h3>Sandbox</h3>
-            <dl className="inspector-definition-list">
-              <Definition
-                label="Status"
-                value={
-                  <span className={`status-with-dot ${sandboxStatusTone(lease?.status)}`}>
-                    <span aria-hidden="true" />
-                    {lease ? sandboxStatusLabel(lease.status) : "Not started"}
-                  </span>
-                }
-              />
-              <Definition label="Runtime" value={lease ? runtimeLabel(lease.runtimeId) : "—"} />
-              <Definition label="Updated" value={lease ? formatDateTime(lease.updatedAt) : "—"} />
-            </dl>
-            {stopError ? <ErrorState compact error={stopError} /> : null}
-            {lease && lease.status !== "stopped" ? (
-              <button
-                className="stop-sandbox-action"
-                disabled={!canStop}
-                onClick={onStopSandbox}
-                type="button"
+            <header className="project-inspector-header">
+              <DialogPrimitive.Title id="project-inspector-title">
+                Project inspector
+              </DialogPrimitive.Title>
+              {mobileOpen ? (
+                <DialogPrimitive.Close aria-label="Close project inspector" className="icon-button">
+                  ×
+                </DialogPrimitive.Close>
+              ) : null}
+            </header>
+            <Tabs
+              className="inspector-tab-root gap-0"
+              value={view}
+              onValueChange={(value) => onViewChange(value as InspectorView)}
+            >
+              <TabsList
+                activateOnFocus
+                aria-label="Project inspector views"
+                className="inspector-tabs w-full group-data-[orientation=horizontal]/tabs:h-[52px]"
+                variant="line"
               >
-                {isStopping ? (
-                  <LoaderCircle aria-hidden="true" className="spin" size={15} />
-                ) : (
-                  <Square aria-hidden="true" size={13} />
-                )}
-                <span>{isStopping ? "Stopping" : "Stop sandbox"}</span>
-              </button>
-            ) : null}
-          </section>
+                <TabsTrigger className="inspector-tab" value="overview">
+                  Overview
+                </TabsTrigger>
+                <TabsTrigger className="inspector-tab" value="files">
+                  Files
+                </TabsTrigger>
+                <TabsTrigger
+                  className="inspector-tab"
+                  value="changes"
+                  disabled={!changesEnabled}
+                  aria-label={changesEnabled ? "Changes" : "Changes unavailable"}
+                >
+                  Changes
+                </TabsTrigger>
+                <TabsTrigger
+                  className="inspector-tab"
+                  value="terminal"
+                  disabled={!terminalEnabled}
+                  aria-label={terminalEnabled ? "Terminal" : "Terminal unavailable"}
+                >
+                  Terminal
+                </TabsTrigger>
+                <TabsTrigger
+                  className="inspector-tab"
+                  value="preview"
+                  disabled={!previewEnabled}
+                  aria-label={previewEnabled ? "Preview" : "Preview unavailable"}
+                >
+                  Preview
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="overview">
+                <ProjectOverview project={project} run={run} />
 
-          <CurrentRunUsage run={run} />
-        </>
-      ) : view === "files" ? (
-        <ProjectFiles
-          hasActiveRun={hasActiveRun || terminalActive}
-          key={`${project.id}:${filesRevision}`}
-          projectId={project.id}
-          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
-        />
-      ) : view === "changes" ? (
-        <ProjectChanges
-          projectBusy={hasActiveRun || terminalActive}
-          projectId={project.id}
-          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
-        />
-      ) : null}
-      {terminalEnabled ? (
-        <ProjectTerminal
-          active={view === "terminal"}
-          hasActiveRun={hasActiveRun || previewStarting}
-          onActivityChange={onTerminalActivityChange}
-          projectId={project.id}
-        />
-      ) : null}
-      {previewEnabled ? (
-        <ProjectPreview
-          active={view === "preview"}
-          onActivityChange={onPreviewActivityChange}
-          onStartingChange={onPreviewStartingChange}
-          projectBusy={hasActiveRun || terminalActive}
-          projectId={project.id}
-          sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
-        />
-      ) : null}
-    </aside>
+                <section className="inspector-section">
+                  <h3>Sandbox</h3>
+                  <dl className="inspector-definition-list">
+                    <Definition
+                      label="Status"
+                      value={
+                        <span className={`status-with-dot ${sandboxStatusTone(lease?.status)}`}>
+                          <span aria-hidden="true" />
+                          {lease ? sandboxStatusLabel(lease.status) : "Not started"}
+                        </span>
+                      }
+                    />
+                    <Definition
+                      label="Runtime"
+                      value={lease ? runtimeLabel(lease.runtimeId) : "—"}
+                    />
+                    <Definition
+                      label="Updated"
+                      value={lease ? formatDateTime(lease.updatedAt) : "—"}
+                    />
+                  </dl>
+                  {stopError ? <ErrorState compact error={stopError} /> : null}
+                  {lease && lease.status !== "stopped" ? (
+                    <button
+                      className="stop-sandbox-action"
+                      disabled={!canStop}
+                      onClick={onStopSandbox}
+                      type="button"
+                    >
+                      {isStopping ? (
+                        <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                      ) : (
+                        <Square aria-hidden="true" size={13} />
+                      )}
+                      <span>{isStopping ? "Stopping" : "Stop sandbox"}</span>
+                    </button>
+                  ) : null}
+                </section>
+
+                <CurrentRunUsage run={run} />
+              </TabsContent>
+              <TabsContent value="files">
+                <ProjectFiles
+                  hasActiveRun={hasActiveRun || terminalActive}
+                  key={`${project.id}:${filesRevision}`}
+                  projectId={project.id}
+                  sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
+                />
+              </TabsContent>
+              <TabsContent value="changes">
+                <ProjectChanges
+                  projectBusy={hasActiveRun || terminalActive}
+                  projectId={project.id}
+                  sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
+                />
+              </TabsContent>
+              {terminalEnabled ? (
+                <TabsContent value="terminal" keepMounted>
+                  <ProjectTerminal
+                    active={view === "terminal"}
+                    hasActiveRun={hasActiveRun || previewStarting}
+                    onActivityChange={onTerminalActivityChange}
+                    projectId={project.id}
+                  />
+                </TabsContent>
+              ) : null}
+              {previewEnabled ? (
+                <TabsContent value="preview" keepMounted>
+                  <ProjectPreview
+                    active={view === "preview"}
+                    onActivityChange={onPreviewActivityChange}
+                    onStartingChange={onPreviewStartingChange}
+                    projectBusy={hasActiveRun || terminalActive}
+                    projectId={project.id}
+                    sandboxAvailable={lease !== null && isActiveSandboxLease(lease.status)}
+                  />
+                </TabsContent>
+              ) : null}
+            </Tabs>
+          </DialogPrimitive.Popup>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
+    </div>
   );
 }
 
@@ -325,21 +335,6 @@ function Definition({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function DisabledInspectorTab({ label }: { label: string }) {
-  return (
-    <button
-      aria-label={`${label} unavailable`}
-      className="inspector-tab"
-      disabled
-      role="tab"
-      title={`${label} is not available`}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
 function runtimeLabel(value: string) {
   if (value === "pi") {
     return "Pi";
@@ -351,31 +346,4 @@ function runtimeLabel(value: string) {
     return "Fake";
   }
   return value;
-}
-
-function trapMobileInspectorFocus(event: KeyboardEvent, inspector: HTMLElement | null) {
-  if (event.key !== "Tab" || !inspector) {
-    return;
-  }
-
-  const focusable = Array.from(
-    inspector.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((element) => element.getClientRects().length > 0);
-  const first = focusable[0];
-  const last = focusable.at(-1);
-  if (!first || !last) {
-    event.preventDefault();
-    return;
-  }
-
-  const current = document.activeElement;
-  if (event.shiftKey && (current === first || !inspector.contains(current))) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && current === last) {
-    event.preventDefault();
-    first.focus();
-  }
 }

@@ -5,7 +5,7 @@ import type { IDisposable, Terminal as XTerm } from "@xterm/xterm";
 import { LoaderCircle, PlugZap, Square, TerminalSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { connectProjectTerminal, type BrowserTerminalConnection } from "../terminal-client";
+import { type BrowserTerminalConnection, connectProjectTerminal } from "../terminal-client";
 
 type TerminalPhase = "closed" | "closing" | "connecting" | "idle" | "loading" | "ready";
 
@@ -37,6 +37,7 @@ export function ProjectTerminal({
   useEffect(() => {
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
+    let resizeFrame: number | null = null;
 
     void Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")])
       .then(([xtermModule, fitModule]) => {
@@ -85,10 +86,16 @@ export function ProjectTerminal({
           connectionRef.current?.write(data);
         });
         resizeObserver = new ResizeObserver(() => {
-          const size = fitTerminal(terminal, fitAddon);
-          if (size) {
-            connectionRef.current?.resize(size.cols, size.rows);
-          }
+          // xterm writes layout while fitting. Defer it out of the observer's
+          // delivery loop and coalesce panel/viewport changes into one frame.
+          if (resizeFrame !== null) return;
+          resizeFrame = requestAnimationFrame(() => {
+            resizeFrame = null;
+            const size = fitTerminal(terminal, fitAddon);
+            if (size) {
+              connectionRef.current?.resize(size.cols, size.rows);
+            }
+          });
         });
         resizeObserver.observe(containerRef.current);
         setPhase("idle");
@@ -103,6 +110,7 @@ export function ProjectTerminal({
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       inputSubscriptionRef.current?.dispose();
       inputSubscriptionRef.current = null;
       connectionGenerationRef.current += 1;

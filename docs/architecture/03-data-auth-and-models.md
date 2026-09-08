@@ -34,6 +34,24 @@ Better Auth 负责 `user`、`account`、`session` 和 `verification`。第一版
 
 Better Auth 的认证表与应用表由迁移一并维护。新增 Better Auth 插件或自定义字段前，先生成并审阅对应迁移。
 
+`src/server/persistence/schema.ts` 使用 Drizzle SQLite schema 集中声明表、列、外键、索引和
+CHECK 约束，Repository 的 Row 类型与原生 D1 查询的列清单由此推导。普通 Project
+创建、归属查询、列表、重命名，以及 Message 查询使用 `drizzle-orm/d1`。Run、Lease、
+Terminal、Preview 的条件写入、成功回复事务、Project 删除归档和 Usage 聚合仍使用
+原生 D1 SQL/batch，保留现有互斥条件、数据库触发器和同批读取语义；Better Auth
+继续使用自己的 D1 adapter。
+
+`migrations/0001` 至 `0008` 是唯一迁移历史，本次接入 ORM 不修改物理表、不重置数据。
+后续表变更需要同时更新 SQL 迁移、Drizzle schema 与数据库文档。`pnpm test:d1` 在隔离
+Workers D1 中应用全部迁移，核对 schema 的列、默认值、主键、外键、唯一约束、索引与
+CHECK 表达式，并继续验证触发器和原子写入。SQLite 的 TEXT PRIMARY KEY 在 PRAGMA
+中允许空值标记，Drizzle 将应用生成的主键建模为非空；该差异不改变现有物理表。
+
+`rtk pnpm db:schema:export` 通过无凭据的 `drizzle.config.ts` 离线打印 schema DDL，
+仅供审阅，不连接或修改本地/远程数据库。导出没有领域触发器，约束名称与 SQLite
+隐式索引也可能不同，不能作为完整迁移、备份或重建脚本。迁移仍由 Wrangler 执行。
+
+
 | 表 | 关键字段 | 用途 |
 | --- | --- | --- |
 | `projects` | `id`, `user_id`, `title`, `default_agent_runtime_id`, `created_at`, `updated_at` | 持久 Project 元数据和对话归属。 |
@@ -153,6 +171,7 @@ Git。源码映射用于还原 stack，不改变前述数据清洗边界。
 
 - [Better Auth 安装与环境变量](https://better-auth.com/docs/installation) 和 [邮箱密码登录](https://better-auth.com/docs/authentication/email-password)
 - [Gemini API Key 指南](https://ai.google.dev/gemini-api/docs/api-key)
+- [Drizzle D1 adapter](https://orm.drizzle.team/docs/sqlite/connect-cloudflare-d1) 和 [Drizzle Kit 离线导出](https://orm.drizzle.team/docs/drizzle-kit-export)
 - [Cloudflare D1 Binding](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [Sentry Cloudflare SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/cloudflare/README.md)
 - [Sentry Hono SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/hono/README.md)

@@ -41,7 +41,7 @@ describe("Preview capability codec", () => {
       previewSessionId: "preview-1",
       projectId: "project-1",
     });
-    const [payload, signature] = token.split(".");
+    const [header, payload, signature] = token.split(".");
 
     await expect(
       createPreviewCapabilityCodec({
@@ -49,7 +49,7 @@ describe("Preview capability codec", () => {
         secret,
       }).verify(token),
     ).resolves.toBeNull();
-    await expect(issuer.verify(`${payload}x.${signature}`)).resolves.toBeNull();
+    await expect(issuer.verify(`${header}.${payload}x.${signature}`)).resolves.toBeNull();
     expect(() => createPreviewCapabilityCodec({ secret: "too-short" })).toThrow(
       "at least 32 characters",
     );

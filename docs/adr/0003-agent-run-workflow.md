@@ -191,3 +191,14 @@ Gemini Key 只存在于 Worker Secret。Workflow 为每个 Run 签发绑定 `pro
 - [DurableObjectState API](https://developers.cloudflare.com/durable-objects/api/state/)
 - [Pi RPC Mode](https://pi.dev/docs/latest/rpc)
 - [E2B Sandbox lifecycle](https://e2b.dev/docs/sandbox)
+
+## 2026-09-08 本地实现修订：标准 JWT capability
+
+Run 与 Preview capability 由 `jose` 签发和验证三段式 JWT，固定 `HS256` 与 `typ: JWT`。
+继续从 `BETTER_AUTH_SECRET` 经不同 salt/info 的 HKDF 派生用途隔离密钥；保留各自
+audience、scope、资源绑定、整数时间、最长寿命、未来 iat 最多 30 秒和 token 长度限制。
+Run 另外绑定模型和输出预算。过期时刻立即拒绝，不因 iat 容差延长有效期。
+
+不再接受旧两段式 token。本次只修改本地代码，没有部署或修改 Secret。后续获准部署前，
+应等待活动 Run 结束，并停止活动 Preview；部署后重新启动 Preview，使平台 Vite base
+和浏览器内容 URL 同时使用新 token。不要只刷新页面或在活动执行中直接切换格式。

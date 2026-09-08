@@ -53,6 +53,7 @@ export interface AppBindings {
 }
 
 export interface AppVariables {
+  authenticatedUser: AuthenticatedUser;
   requestId: string;
 }
 
@@ -60,3 +61,4 @@ export type AppEnv = {
   Bindings: AppBindings;
   Variables: AppVariables;
 };
+import type { AuthenticatedUser } from "./auth-context";

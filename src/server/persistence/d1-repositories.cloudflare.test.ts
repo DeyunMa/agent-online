@@ -1,12 +1,14 @@
 import { env } from "cloudflare:workers";
+import { getTableName, sql } from "drizzle-orm";
+import { getTableConfig, SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
 import { beforeEach, describe, expect, it } from "vitest";
-
 import {
   D1AgentRunRepository,
   D1MessageRepository,
   D1ProjectRepository,
   D1SandboxLeaseRepository,
 } from "./d1-repositories";
+import * as schema from "./schema";
 
 const createdAt = "2026-07-27T00:00:00.000Z";
 const finishedAt = "2026-07-27T00:00:10.000Z";
@@ -51,6 +53,170 @@ describe("D1 repositories in the Workers runtime", () => {
       ]),
     );
     expect(foreignKeyFailures.results).toEqual([]);
+  });
+
+  it("keeps the typed schema aligned with migrated D1 columns, keys, indexes and checks", async () => {
+    const dialect = new SQLiteSyncDialect();
+    const normalize = (value: string) =>
+      value
+        .toLowerCase()
+        .replace(/"[^"]+"\./g, "")
+        .replace(/["`\s]/g, "");
+    for (const table of Object.values(schema)) {
+      const config = getTableConfig(table);
+      const columns = await env.DB.prepare(`PRAGMA table_info("${config.name}")`).all<{
+        name: string;
+        type: string;
+        notnull: number;
+        pk: number;
+        dflt_value: string | null;
+      }>();
+      expect(
+        columns.results.map((column) => ({
+          name: column.name,
+          type: column.type.toLowerCase(),
+          // SQLite TEXT PRIMARY KEY reports notnull=0; Drizzle models the
+          // application key as non-null. Compare primary-key identity separately.
+          notNull: Boolean(column.notnull || column.pk),
+          primary: Boolean(column.pk),
+          default: column.dflt_value,
+        })),
+      ).toEqual(
+        config.columns.map((column) => ({
+          name: column.name,
+          type: column.getSQLType(),
+          notNull: column.notNull,
+          primary: column.primary,
+          default:
+            column.default === undefined
+              ? null
+              : typeof column.default === "string"
+                ? `'${column.default}'`
+                : String(column.default),
+        })),
+      );
+      const foreignKeys = await env.DB.prepare(`PRAGMA foreign_key_list("${config.name}")`).all<{
+        from: string;
+        to: string;
+        table: string;
+        on_delete: string;
+        on_update: string;
+      }>();
+      const keySignature = (key: {
+        from: string;
+        to: string;
+        table: string;
+        on_delete: string;
+        on_update: string;
+      }) =>
+        `${key.from}:${key.table}.${key.to}:${key.on_delete.toLowerCase()}:${key.on_update.toLowerCase()}`;
+      expect(foreignKeys.results.map(keySignature).sort()).toEqual(
+        config.foreignKeys
+          .flatMap((key) => {
+            const reference = key.reference();
+            return reference.columns.map((column, index) =>
+              keySignature({
+                from: column.name,
+                to: reference.foreignColumns[index]?.name ?? "",
+                table: getTableName(reference.foreignTable),
+                on_delete: key.onDelete ?? "no action",
+                on_update: key.onUpdate ?? "no action",
+              }),
+            );
+          })
+          .sort(),
+      );
+      const definition = await env.DB.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
+        .bind(config.name)
+        .first<{ sql: string }>();
+      const normalizedDefinition = normalize(definition?.sql ?? "");
+      expect(normalizedDefinition.match(/check\(/g) ?? []).toHaveLength(config.checks.length);
+      for (const constraint of config.checks) {
+        expect(normalizedDefinition).toContain(
+          `check(${normalize(dialect.sqlToQuery(constraint.value).sql)})`,
+        );
+      }
+      const indexes = await env.DB.prepare(`PRAGMA index_list("${config.name}")`).all<{
+        name: string;
+        unique: number;
+        origin: string;
+        partial: number;
+      }>();
+      expect(
+        indexes.results
+          .filter((index) => index.origin === "c")
+          .map((index) => index.name)
+          .sort(),
+      ).toEqual(config.indexes.map((index) => index.config.name).sort());
+      for (const { config: index } of config.indexes) {
+        const definition = await env.DB.prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+        )
+          .bind(index.name)
+          .first<{ sql: string }>();
+        const indexSql = normalize(definition?.sql ?? "");
+        const columnsSql = index.columns
+          .map((column) => normalize(dialect.sqlToQuery(sql`${column}`).sql))
+          .join(",");
+        expect(indexSql).toContain(`on${config.name}(${columnsSql})`);
+        expect(indexes.results.find((item) => item.name === index.name)).toMatchObject({
+          unique: Number(index.unique),
+          partial: Number(Boolean(index.where)),
+        });
+        if (index.where)
+          expect(indexSql).toContain(`where${normalize(dialect.sqlToQuery(index.where).sql)}`);
+      }
+      const uniqueColumns = [];
+      for (const index of indexes.results.filter((item) => item.origin === "u")) {
+        const columns = await env.DB.prepare(`PRAGMA index_info("${index.name}")`).all<{
+          name: string;
+        }>();
+        uniqueColumns.push(columns.results.map((column) => column.name).join(","));
+      }
+      expect(uniqueColumns.sort()).toEqual(
+        [
+          ...config.columns.filter((column) => column.isUnique).map((column) => column.name),
+          ...config.uniqueConstraints.map((constraint) =>
+            constraint.columns.map((column) => column.name).join(","),
+          ),
+        ].sort(),
+      );
+    }
+  });
+
+  it("uses Drizzle for owner-scoped Project CRUD and message reads", async () => {
+    const projects = new D1ProjectRepository(env.DB);
+    const messages = new D1MessageRepository(env.DB);
+    const created = await projects.create({
+      id: "project_2",
+      userId: "user_1",
+      title: "Second",
+      defaultAgentRuntimeId: "pi",
+      now: finishedAt,
+    });
+    expect(await projects.findOwnedById("project_2", "user_1")).toEqual(created);
+    expect(await projects.findOwnedById("project_2", "other_user")).toBeNull();
+    expect(
+      await projects.renameOwned({
+        projectId: "project_2",
+        userId: "other_user",
+        title: "Wrong",
+        updatedAt: createdAt,
+      }),
+    ).toBeNull();
+    expect((await projects.listOwned("user_1")).map((project) => project.id)).toEqual([
+      "project_2",
+      "project_1",
+    ]);
+    expect(await projects.listOwned("other_user")).toEqual([]);
+    await createRunningRun(new D1AgentRunRepository(env.DB));
+    const input = await messages.findById("message_user_1", "project_1");
+    expect(input).toMatchObject({ content: "Create a file", role: "user", sequence: 0 });
+    expect(await messages.findById("message_user_1", "project_2")).toBeNull();
+    expect(await messages.listByProjectId("project_1")).toEqual([input]);
+    expect(await messages.listByProjectId("project_2")).toEqual([]);
   });
 
   it("bounds context reads and excludes the current input and later messages", async () => {
