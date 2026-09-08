@@ -269,6 +269,23 @@ test("preserves the connected Terminal across inspector tabs, closing, and mobil
   const terminal = page.locator(".project-terminal-view");
   await terminal.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(terminal.getByText("Connected", { exact: true })).toBeVisible();
+  // Observe successive fit/layout frames: an unconstrained parent can let xterm
+  // grow its own available height on every frame and flood the remote resize queue.
+  const heights = await terminal.evaluate(async (element) => {
+    const canvas = element.querySelector(".project-terminal-canvas");
+    const inspector = element.closest("#project-inspector");
+    if (!canvas || !inspector) throw new Error("Terminal layout elements are missing");
+    const samples: Array<{ canvas: number; inspector: number }> = [];
+    for (let frame = 0; frame < 30; frame += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      samples.push({
+        canvas: canvas.getBoundingClientRect().height,
+        inspector: inspector.getBoundingClientRect().height,
+      });
+    }
+    return samples;
+  });
+  expect(heights.every(({ canvas, inspector }) => canvas <= inspector)).toBe(true);
   await page.getByRole("tab", { name: "Overview", exact: true }).click();
   await page.getByRole("tab", { name: "Terminal", exact: true }).click();
   await expect(terminal.getByText("Connected", { exact: true })).toBeVisible();

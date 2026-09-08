@@ -713,7 +713,13 @@ textarea:disabled {
 }
 
 .inspector-tab-root {
-  display: block;
+  flex: 1;
+  min-height: 0;
+}
+
+.inspector-tab-root > [role="tabpanel"] {
+  min-height: 0;
+  overflow: auto;
 }
 
 .inspector-tab-root > [role="tabpanel"][hidden] {
@@ -1421,6 +1427,8 @@ textarea:disabled {
 }
 
 .project-inspector {
+  display: flex;
+  flex-direction: column;
   position: relative;
   z-index: 1;
   width: auto;
@@ -1449,6 +1457,7 @@ textarea:disabled {
 }
 
 .project-inspector-header {
+  flex-shrink: 0;
   display: flex;
   height: 50px;
   align-items: center;
@@ -1463,6 +1472,7 @@ textarea:disabled {
 }
 
 .inspector-tabs {
+  flex-shrink: 0;
   width: 100%;
   display: grid;
   height: 52px;
@@ -1512,7 +1522,7 @@ textarea:disabled {
 
 .project-terminal-view {
   min-height: 0;
-  height: calc(100% - 102px);
+  height: 100%;
   background: #151715;
 }
 
@@ -1523,7 +1533,7 @@ textarea:disabled {
 
 .project-preview-view {
   min-height: 0;
-  height: calc(100% - 102px);
+  height: 100%;
   background: #ececea;
 }
 
@@ -1731,7 +1741,7 @@ textarea:disabled {
 
 .project-terminal-canvas {
   min-width: 0;
-  min-height: 320px;
+  min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
   padding: 9px 7px 7px 10px;
@@ -3006,16 +3016,6 @@ textarea:disabled {
     top: 50px;
     height: 42px;
     background: var(--surface-subtle);
-  }
-
-  .project-terminal-view {
-    height: min(68dvh, 560px);
-    min-height: 420px;
-  }
-
-  .project-preview-view {
-    height: min(68dvh, 560px);
-    min-height: 420px;
   }
 
   .project-index,
