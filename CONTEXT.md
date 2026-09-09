@@ -1,6 +1,6 @@
 # Agent Online 领域术语
 
-> 状态：D2、D3 和 Goose 真实链路已完成既定验收；2026-09-08 已部署标准库接入与 Inspector Terminal 布局修复。领域所有权与沙箱边界保持不变；当前技术选型见 [架构基准](./docs/reference/current-architecture.md)。
+> 状态：D2、D3 和 Goose 真实链路已完成既定验收；2026-09-09 已部署对话界面与开发依赖简化。领域所有权与沙箱边界保持不变；当前技术选型见 [架构基准](./docs/reference/current-architecture.md)。
 
 ## 产品定义
 

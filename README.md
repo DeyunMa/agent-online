@@ -1,6 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-09-08 已部署标准库接入与 Inspector Terminal 布局修复，保留 v4 Workspace 模板、脱敏 Sentry、受控 Project 能力和 Pi/Goose 选择；配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-09-09 已部署对话界面与开发依赖简化，保留 v4 Workspace 模板、脱敏 Sentry、受控 Project 能力和 Pi/Goose 选择；配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -73,11 +73,11 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面独立 Inspector 面板、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi/Goose 选择均已部署；历次登录态浏览器验收覆盖 Inspector 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。
 
-2026-09-08 已将标准库接入和 Terminal 布局修复部署到私有 Cloudflare Preview，
-部署代码为 `716f8dc`，Worker 版本为 `5781f94f-f4f3-4b54-a4c0-23ba9cdf74f8`。
-当前试用入口仍为 allowlist 私有环境。最新发布验收覆盖 Pi 成功与取消、文件上传、
-Preview、终端连续性及移动端 Project 生命周期；本轮未追加 Goose Provider 执行或
-长时间 TTL 验收。详见[发布记录](./docs/status/2026-09-08-standard-library-adoption.md)与
+2026-09-09 已将对话界面与开发依赖简化部署到私有 Cloudflare Preview，
+部署代码为 `4bb0fdf`，Worker 版本为 `ac6dc824-6d9e-4389-a481-895596b6c9cb`。
+当前试用入口仍为 allowlist 私有环境。最新 ego 发布验收覆盖 Pi 成功与取消、Goose
+启动与取消、文件上传、Preview 交互、终端连续性及移动端 Project 生命周期。
+本轮未追加长时间 TTL 验收。详见[发布记录](./docs/status/2026-09-09-conversation-simplification.md)与
 [资源台账](./docs/setup/cloudflare-preview-resources.md)。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)，最近 Sentry 与架构收敛结果见 [2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。

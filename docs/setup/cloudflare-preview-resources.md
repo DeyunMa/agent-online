@@ -1,12 +1,12 @@
 # Cloudflare Preview 资源台账
 
-> 状态：本文记录截至 2026-09-08 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
+> 状态：本文记录截至 2026-09-09 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
 > 受控 Preview 预检、覆盖式可调桌面检查器、受控文件上传和能力驱动的 Pi/Goose 选择已部署；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql`、`0008_archived_run_usage.sql` 均已应用。
 > 本文只记录资源标识、变量名和查看路径，不记录 Secret 值或 owner 邮箱。
 
-最新发布代码为 `716f8dc`，标准库接入和 Terminal 布局修复均已部署；
-验收与清理结果见 [2026-09-08 发布记录](../status/2026-09-08-standard-library-adoption.md)。
+最新发布代码为 `4bb0fdf`，对话界面与开发依赖简化已部署；
+验收与清理结果见 [2026-09-09 发布记录](../status/2026-09-09-conversation-simplification.md)。
 
 ## 1. Account
 
@@ -33,7 +33,7 @@ env -u CLOUDFLARE_API_TOKEN \
 | --- | --- |
 | Worker 名称 | `agent-online-preview` |
 | 公开 URL | [agent-online-preview.mdy1145141.workers.dev](https://agent-online-preview.mdy1145141.workers.dev) |
-| 当前部署版本 | `5781f94f-f4f3-4b54-a4c0-23ba9cdf74f8` |
+| 当前部署版本 | `ac6dc824-6d9e-4389-a481-895596b6c9cb` |
 | Dashboard 概述 | [Worker Overview](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production) |
 | 变量与 Secret | [Worker Settings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/settings#variables) |
 | Binding | [Worker Bindings](https://dash.cloudflare.com/66a06222aa0acd9ea509abad73fa02fb/workers/services/view/agent-online-preview/production/bindings) |
@@ -106,7 +106,7 @@ R2、KV、Durable Object 或文件快照。
 
 不要在 Dashboard 单独修改这些纯文本值；下一次 Wrangler 部署会以仓库配置为准。
 
-截至 2026-09-08，本表记录的是当前已部署 Preview。v4 组合模板显式安装并探测
+截至 2026-09-09，本表记录的是当前已部署 Preview。v4 组合模板显式安装并探测
 Node/npm/pnpm、Pi/Goose、Python/pip、Git/Bash、rg/jq、归档、进程诊断、编译器和
 平台固定 Vite；只读 `/opt/agent-online` 与默认非 root 用户拥有的可写
 `/workspace` 保持分离。`GOOSE_RUNTIME_MODE=public` 已上线，

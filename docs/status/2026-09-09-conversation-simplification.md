@@ -33,7 +33,33 @@ Better Auth 1.6.25 将 Drizzle Kit 声明为可选 peer，pnpm 删除直接依�
 移动端使用 document scroller，桌面使用容器 scroller；390px 回归先复现了未跟随底部，
 改为按实际 CSS overflow 选择滚动对象后，两个布局的跟随与保留阅读位置均通过。
 最终 `rtk pnpm check` 全部通过：387 unit、15 D1、16 browser；冻结锁文件安装也通过。
-线上验收结果在发布后补充。
+代码提交 `4bb0fdf9d913e5b30b1bceb555e5d13ba432d0d8` 的 GitHub CI 通过。
 
 Hosted Playwright 脚本的 Runtime 选项与终端关闭定位已同步当前 Base UI 语义；本轮真实
 环境验收使用 ego 和已有登录态，未运行需要专用登录凭据的 Hosted Playwright 命令。
+
+## 线上 ego 验收
+
+2026-09-09 已部署至私有 Cloudflare Preview，Worker 版本为
+`ac6dc824-6d9e-4389-a481-895596b6c9cb`。本次未更改远程 schema、Secret 或 E2B 模板。
+
+- 实际页面加载新资源；健康检查和公开 Pi/Goose capability 通过。
+- 空白发送禁用、Enter 换行、真实 Ctrl+Enter 提交、成功清空草稿、活动 Run 锁定输入
+  和临时工作提示通过；Pi 完成文件生成与长 Markdown 回复，刷新后消息保留。
+- Pi 成功 Run `f2f9497f`：21,862 tokens、6 次模型请求；Goose Run `ef7f403f`
+  真实启动后通过 UI 取消，最终 `cancelled`，2,145 tokens、1 次模型请求。
+- 上传文件可在 Files 读回；Changes 显示三项 untracked 文件。Preview 返回 200，
+  页面按钮实际点击后显示 `BROWSER_INTERACTION_OK`，响应具有 sandbox CSP。
+- Preview 运行时 Terminal 连接并执行 `pwd`，读到 `/workspace`；切换检查器标签、
+  关闭再打开及切换到 390px 布局后，终端节点与连接保留。随后显式关闭 Terminal、
+  停止 Preview 和沙箱，Lease 确认为 `stopped`。
+- 移动端重命名和删除临时 Project 通过，删除后 API 返回 404；原有两个 Project
+  保留且均已停止。删除前后 Usage totals 完全一致，本轮四个 Run 的聚合用量为
+  58,627 tokens、18 次模型请求，删除后仍进入最小用量归档。
+- 清理后远程只读完整性预检 9 项通过，ego 任务空间已关闭。
+
+线上故障注入未成功制造提交失败：离线模式令 TanStack Query 暂停请求，恢复网络后
+请求继续执行；该 Pi Run `bdeb080d` 已取消。另一次 URL 阻断未生效，对应 Pi Run
+`a41720b4` 正常完成。两次均发生在临时 Project，已随本轮清理，未将其计作失败草稿
+验收通过。提交失败保留草稿、IME 防误提交、重复提交和 Project 草稿隔离由本地浏览器
+测试覆盖；未等待完整 30 分钟 Terminal TTL，未运行专用 Hosted Playwright 命令。
