@@ -83,9 +83,19 @@ for (const width of [1440, 390]) {
     const bottomGap = () =>
       viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
     await expect.poll(bottomGap).toBeLessThan(2);
-    await viewport.evaluate((el) => {
-      el.scrollTop = 100;
-    });
+    const scrollTo = (position: number | "bottom") =>
+      viewport.evaluate(async (el, target) => {
+        const top = target === "bottom" ? el.scrollHeight - el.clientHeight : target;
+        if (el.scrollTop === top) return;
+        // Geometry updates synchronously, but the component learns scroll intent
+        // from the later scroll event. Finish that event before refetching.
+        const events = el === document.scrollingElement ? document : el;
+        await new Promise<void>((resolve) => {
+          events.addEventListener("scroll", () => resolve(), { once: true });
+          el.scrollTop = top;
+        });
+      }, position);
+    await scrollTo(100);
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(100);
     // Reconnection refetches the authoritative messages through TanStack Query.
     count += 1;
@@ -93,9 +103,7 @@ for (const width of [1440, 390]) {
     await page.context().setOffline(false);
     await expect(page.locator(".timeline-message")).toHaveCount(count);
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBe(100);
-    await viewport.evaluate((el) => {
-      el.scrollTop = el.scrollHeight;
-    });
+    await scrollTo("bottom");
     await expect.poll(bottomGap).toBeLessThan(2);
     count += 1;
     await page.context().setOffline(true);
