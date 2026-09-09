@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现基准
 >
-> 校准日期：2026-07-30
+> 校准日期：2026-09-09（代码基准；最新远程验收为 2026-09-08）
 >
 > 适用范围：仓库当前代码、下一次 Cloudflare Preview 配置和 E2B 组合模板；远程已部署事实以资源台账为准
 
@@ -76,6 +76,26 @@ flowchart LR
 - Hono、Better Auth、ModelGateway 和 Workflow 入口属于同一个可信 Worker 边界。
 - D1 是唯一产品数据库。
 - E2B 是当前真实 Sandbox Provider，不是第二个业务后端。
+
+### 2.1 当前技术选型
+
+| 层面 | 技术 | 当前职责 |
+| --- | --- | --- |
+| 前端与构建 | React、TypeScript、Vite、pnpm | 浏览器控制台与单 Worker 产物。 |
+| 路由与数据 | TanStack Router / Query | 页面导航、服务端数据缓存与刷新；持久事实以 D1 为准。 |
+| 对话 UI | React 消息列表与受控表单 | 直接展示 Message 与活动 Run；草稿按 Project 隔离，提交失败保留，支持 Ctrl/Cmd+Enter 和跟随底部滚动。 |
+| 通用交互 | shadcn / Base UI、Tailwind CSS | Menu、Dialog、AlertDialog、Select、Tabs 的焦点、键盘与模态行为。 |
+| 布局与终端 | react-resizable-panels、xterm.js | 桌面面板布局与偏好、真实终端的浏览器展示。 |
+| 表单与合同 | React Hook Form、Zod、Hono Zod validator | 认证/创建表单、共享请求响应与 SSE schema；服务端仍单独执行授权。 |
+| Markdown | react-markdown、remark-gfm | 最终回复的安全 GFM 展示；原始 HTML 和远程图片不渲染。 |
+| API 与认证 | Hono、Better Auth | 同源边界、会话认证、Project 授权和公开 DTO。 |
+| 数据访问 | D1、Drizzle、条件 SQL/batch | Drizzle 映射现有 11 张表并访问 Project/Message；复杂生命周期保留原子 SQL。迁移仍是物理 schema 真相源。 |
+| 执行 | Cloudflare Workflows、E2B、Pi/Goose adapter | Workflow 拥有 Run；Agent 进程及用户代码只在沙箱。 |
+| 模型协议与令牌 | ModelGateway、eventsource-parser、jose | 上游 SSE 边界解析、Gemini 协议转换、实际 usage 与短时 HS256 JWT。 |
+| 验证与观测 | Vitest、Workers D1 tests、Playwright、Biome、Sentry | 工程门禁和脱敏 Error Monitoring。 |
+
+实际依赖版本以 [package.json](../../package.json) 和锁文件为准。
+标准库接入与真实环境验证见 [2026-09-08 发布记录](../status/2026-09-08-standard-library-adoption.md)。
 
 ## 3. 资源模型
 
@@ -207,6 +227,8 @@ Provider reference、Key、capability、异常 message 或 stack。
 - 启动前由 Runtime 检查普通文件 `index.html` 和常规项目依赖状态；缺少入口或已声明
   依赖未安装属于产品前置条件，不创建 PreviewSession，也不进入 Sentry。
 - 浏览器拿到的是短时签名的同源内容 URL，不是 Provider host、端口或 traffic token。
+  Run 与 Preview capability 均由 `jose` 签发/验证 HS256 JWT，使用不同的 HKDF 用途
+  派生密钥，并校验 audience、scope、资源标识与期限；JWT 签名不提供 payload 加密。
 - Worker 仅代理 `GET`/`HEAD`，过滤请求/响应头，注入 CSP 并改写 HTML 根路径。
 - PreviewSession 只记录当前进程所有权；不保存页面内容、日志、截图或访问历史。
 
@@ -239,15 +261,18 @@ Provider reference、Key、capability、异常 message 或 stack。
 
 - 桌面端左侧 Project 导航固定为 240 px，窄桌面为 220 px；Project Inspector 打开后
   作为右侧独立面板压缩核心工作区。
-- Project Inspector 默认关闭。面板的原生垂直 separator 支持 Pointer Events、方向键、Home/End 和双击复位；
-  宽度通常为 360 至 720 px，受限视口可收敛到 280 px。
+- Project Inspector 默认关闭。`react-resizable-panels` 的 Group/Panel/Separator
+  负责拖拽、键盘调整和约束；默认宽度 480 px，最小 280 px、最大 720 px，核心面板
+  最少占 Group 的 40%。实际宽度同时受可用空间约束。
 - 对话内容和输入框在核心区内保持居中的同一可读最大宽度。用户消息按原文显示；持久化的
   assistant 最终消息在浏览器中使用安全 GFM Markdown 渲染，原始 HTML 与远程图片不进入
   DOM。Conversation 仅显示活动 Run 的可取消状态；终态 Run 的状态、时间和用量以紧凑
   摘要显示在 `Runs` 页。
-- 用户 Drawer 宽度偏好只保存在当前浏览器 localStorage，不进入 D1，也不构成产品
-  数据。桌面端收起只改变 CSS 可见性和占用宽度，移动端保留位移动画；两端均不卸载当前
-  Inspector view。
+- 布局偏好由库的 `useDefaultLayout` 保存在当前浏览器 localStorage，不进入 D1。
+  只记录用户调整，开关面板和切换视口不会覆盖桌面偏好；再次打开时恢复保存的布局。
+- Base UI Tabs 与固定容器的 `keepMounted` Dialog Portal 保留 Terminal/Preview 实例。
+  Inspector、Tabs 和 Panel 使用有界 flex 高度链，xterm fit 合并到下一动画帧，避免
+  画布持续撑高及远程 resize 请求洪泛。移动端同样使用剩余视口高度。
 - `760px` 以下隐藏桌面 separator，Inspector 使用带遮罩、焦点约束和焦点恢复的移动端
   Drawer。
 

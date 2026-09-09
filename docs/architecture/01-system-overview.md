@@ -1,6 +1,6 @@
 # 系统总览：单 Worker、临时沙箱与 AgentRun
 
-> 状态：D2/D3 与 Goose 真实链路已完成；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
+> 状态：D2/D3 与 Goose 真实链路已完成；2026-09-08 已部署标准库接入与 Terminal 布局修复，保留私有 allowlist 和受控能力边界。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [领域术语](../../CONTEXT.md) · [运行时](./02-sandbox-runtime.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 产品边界
@@ -35,11 +35,15 @@ flowchart LR
     CS --> SR
     AR -->|"run-scoped process session"| SR
     SR --> SB["Linux Sandbox\nAgent process + shell + Project files"]
-    SB -->|"opaque run-scoped model access"| MG
+    SB -->|"Run-scoped JWT model access"| MG
     MG --> GM["Gemini API"]
 ```
 
 React 静态资源与 Hono API 同域，由同一个 Worker 部署单元提供。`AgentRuntime` 和 `SandboxRuntime` 是 Worker 代码中的模块边界，不是两个后端项目；第一版不需要 TanStack Start 或单独 API 服务。
+
+前端使用 TanStack Router/Query、React 消息列表与受控输入、shadcn/Base UI 和
+react-resizable-panels；表单与共享 API 合同由 React Hook Form/Zod 管理。
+当前库的职责、存储边界和浏览器布局见[架构基准](../reference/current-architecture.md)。
 
 ## 3. 浏览器、平台与沙箱的职责
 
@@ -106,7 +110,7 @@ sequenceDiagram
     WF->>DB: 回读 Message/Run/Lease
     WF->>SR: 取得或创建当前 SandboxLease
     WF->>AG: 用 AgentRuntime 启动受控进程
-    AG->>MG: 通过短时不透明通道请求模型
+    AG->>MG: 通过短时 Run JWT 请求模型
     MG->>GM: 使用 Worker 内 GEMINI_API_KEY
     GM-->>MG: 响应与实际 usage
     MG->>DB: 累加 AgentRun usage
@@ -116,7 +120,7 @@ sequenceDiagram
     API-->>UI: D1 状态与最终 usage
 ```
 
-浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再通过 SandboxRuntime 的私有进程引用只终止当前 Agent 进程并写入终态；无法精确终止时才停止整个沙箱。
+浏览器断线不取消 Run。显式取消先将 Run 变为 `cancelling`，再通过 SandboxRuntime 的私有进程引用只终止当前 Agent 进程并写入终态。已有进程引用但终止失败时保留非终态硬锁；仅启动/所有者恢复尚无进程引用时才停止整个沙箱。
 
 当前 SSE 在订阅请求内轮询 D1，只发布 `run.status` 和 `run.completed`。它不传递 raw Agent 输出、工具参数或私有推理；终态后页面重新读取可信的 Message 和 usage。执行所有权和恢复规则见 [ADR-0003](../adr/0003-agent-run-workflow.md)。
 

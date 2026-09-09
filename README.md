@@ -1,6 +1,6 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-07-30 已接入脱敏 Sentry Error Monitoring，并完成 v4 Workspace 模板、平台 Preview 工具链、桌面核心区与可调 Inspector Drawer，以及能力驱动的 Pi/Goose Run 选择；配额、BYOK 和公开注册仍不在当前实现中。
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-09-08 已部署标准库接入与 Inspector Terminal 布局修复，保留 v4 Workspace 模板、脱敏 Sentry、受控 Project 能力和 Pi/Goose 选择；配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -10,7 +10,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 [![Agent Online 当前系统架构图](./docs/architecture/agent-online-system-architecture.png)](./docs/architecture/agent-online-system-architecture.html)
 
-点击预览图打开交互式架构图；它包含源码证据、节点搜索、关系追踪和深浅主题。
+点击预览图打开交互式架构图；它包含源码证据、节点搜索、关系追踪和深浅主题。该生成图保留原快照，当前技术选型和布局实现以[当前架构基准](./docs/reference/current-architecture.md)为准。
 
 ## V1 架构结论
 
@@ -71,15 +71,14 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
   模态检查器 Drawer。
 - Sentry 只启用 Error Monitoring。React、Hono 和 Workflow 异常经过严格 allowlist 清洗后上报；Logs、Tracing、Replay、Metrics 和用户内容采集均关闭。Preview 部署上传隐藏源码映射，上传后从 `dist` 删除 `.map`。
 
-Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面覆盖 Drawer、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi/Goose 选择均已部署；最新登录态浏览器验收覆盖 Drawer 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。
+Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面独立 Inspector 面板、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi/Goose 选择均已部署；历次登录态浏览器验收覆盖 Inspector 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。
 
-2026-07-30 的 v4 Preview 平台底座与可调检查器版本已部署到私有 Cloudflare Preview；
-当前 Worker 版本为 `4351a021-9e37-4882-adcc-3b767de40639`，已包含标签页 favicon、
-覆盖式可调 Project Inspector Drawer、Project 删除用量归档、左下账号菜单、对话区
-Run history 精简、受控单文件上传和能力驱动的 Pi/Goose 选择。该版本由当前未提交
-工作树构建，因此尚无新的提交 SHA。
-当前试用入口仍为 allowlist 私有环境，不代表已经开放公共注册；最新完整验收结果记录在
-[2026-07-30 Preview 平台底座与可调检查器](./docs/status/2026-07-30-preview-platform-and-resizable-inspector.md)。
+2026-09-08 已将标准库接入和 Terminal 布局修复部署到私有 Cloudflare Preview，
+部署代码为 `716f8dc`，Worker 版本为 `5781f94f-f4f3-4b54-a4c0-23ba9cdf74f8`。
+当前试用入口仍为 allowlist 私有环境。最新发布验收覆盖 Pi 成功与取消、文件上传、
+Preview、终端连续性及移动端 Project 生命周期；本轮未追加 Goose Provider 执行或
+长时间 TTL 验收。详见[发布记录](./docs/status/2026-09-08-standard-library-adoption.md)与
+[资源台账](./docs/setup/cloudflare-preview-resources.md)。
 
 D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结在 [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md)。不扩展功能的正确性与工程门禁调整见 [2026-07-27 架构与工程门禁加固](./docs/status/2026-07-27-architecture-hardening.md)，交付收敛见 [2026-07-28 交付加固](./docs/status/2026-07-28-delivery-hardening.md)，Project 生命周期结果见 [2026-07-28 Project 生命周期](./docs/status/2026-07-28-project-lifecycle.md)，最近 Sentry 与架构收敛结果见 [2026-07-30 Sentry 与交付优化](./docs/status/2026-07-30-sentry-and-delivery-optimization.md)。这些 `status` 文档是阶段验收证据；判断当前事实时按 [文档使用说明](./docs/README.md) 的优先级，以代码、迁移、测试和 `reference` 文档为准。
 
@@ -158,3 +157,6 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 ## 审计顺序
 
 先审阅 [ADR-0002](./docs/adr/0002-run-agent-process-and-lease-lifecycle.md) 和 [CONTEXT.md](./CONTEXT.md)，再审阅运行时、数据和环境变量文档。后续实现以这套合同为准；本地开发数据和迁移可以重建，不为历史 R2/Revision 骨架保留兼容路径。
+
+对话界面直接渲染 Message 与 Run 状态，已移除 assistant-ui 桥接和 Drizzle Kit
+导出工具；范围与验收见 [2026-09-09 对话简化](./docs/status/2026-09-09-conversation-simplification.md)。

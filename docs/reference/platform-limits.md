@@ -332,9 +332,9 @@ Cloudflare、E2B、Gemini 和 Sentry 的免费额度、并发、CPU、存储、�
 | Project/Message 无分页 | 个人数据量阶段接受；规模化前必须补。 |
 | 无应用级 rate limit/abuse control | 只适合私有 allowlist Preview；公开注册前必须补。 |
 | Project 文件无备份 | 当前明确接受；停止沙箱前用户需自行理解数据可丢失。 |
-| import boundary 检查不覆盖未来 path alias/计算式动态导入 | 当前 tsconfig 无 alias，现有生产代码满足边界；引入 alias 时需同步门禁。 |
+| import boundary 检查不解析 path alias/计算式动态导入 | 当前 `@/*` 仅映射 `src/client/*`，AST 门禁仍只解析相对导入；新增或扩大 alias 时必须同步门禁，现有 alias 不构成跨层检查覆盖。 |
 | 浏览器自动化不覆盖完整辅助技术组合 | 已覆盖 roving tab 的方向键/Home/End 与焦点保持，但未自动验证所有屏幕阅读器。 |
-| 浏览器自动化只覆盖核心 smoke | 当前覆盖注册、Project 生命周期、fake Run 取消、刷新恢复和 tab 键盘导航；真实 Terminal/Preview/Changes 仍依赖显式 E2B E2E。 |
+| 浏览器自动化只覆盖核心 smoke | 当前还覆盖表单、Markdown 安全、上传、面板拖拽与刷新恢复、Terminal 单实例及逐帧高度、Preview 隔离；真实 Provider 行为仍依赖显式 E2B/线上验收。 |
 | Sentry 事件清洗依赖 allowlist 持续维护 | 新增诊断字段或 SDK integration 时必须先补脱敏测试；不能靠 Dashboard 规则替代代码边界。 |
 | 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；Run 终止无法确认时保留非终态锁，重试耗尽后按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
 

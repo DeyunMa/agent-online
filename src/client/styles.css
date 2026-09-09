@@ -956,14 +956,6 @@ textarea:disabled {
   scrollbar-gutter: stable both-edges;
 }
 
-.assistant-conversation-thread {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
 .assistant-run-placeholder {
   display: inline-flex;
   align-items: center;

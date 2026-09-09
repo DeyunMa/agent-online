@@ -25,7 +25,6 @@ import {
 } from "../query-keys";
 import { AppHeaderSlot } from "./app-header-slot";
 import { ProjectActionsMenu } from "./project-actions-menu";
-import { ProjectAssistantRuntimeProvider } from "./project-assistant-runtime";
 import { type InspectorView, ProjectInspector } from "./project-inspector";
 import { ProjectPanels } from "./project-panels";
 import {
@@ -202,13 +201,13 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
           agentRuntimeIds.includes(platformCapabilities.data.defaultAgentRuntimeId)
         ? platformCapabilities.data.defaultAgentRuntimeId
         : null;
-  const assistantRuntimeRun =
+  const activeConversationRun =
     currentRun && !isTerminalAgentRun(currentRun.status)
       ? currentRun
       : recoveredActiveRun && !isTerminalAgentRun(recoveredActiveRun.status)
         ? recoveredActiveRun
         : undefined;
-  const assistantRuntimeIsRunning = createRun.isPending || assistantRuntimeRun !== undefined;
+  const conversationIsRunning = createRun.isPending || activeConversationRun !== undefined;
   const submitAssistantTask = useCallback(
     async (content: string) => {
       if (!selectedAgentRuntimeId || !isSupportedAgentRuntimeId(selectedAgentRuntimeId)) {
@@ -424,82 +423,74 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
             onValueChange={(value) => setView(value as ProjectConsoleView)}
           >
             <ProjectRunTabs />
-            <ProjectAssistantRuntimeProvider
-              isDisabled={composerDisabled}
-              isRunning={assistantRuntimeIsRunning}
-              key={projectId}
-              messages={messages.data ?? []}
-              onCancelRun={cancelAssistantTask}
-              onSubmitText={submitAssistantTask}
-            >
-              {platformCapabilities.isError ? (
-                <div className="run-availability">
-                  <ErrorState
-                    compact
-                    error={platformCapabilities.error}
-                    onRetry={() => void platformCapabilities.refetch()}
-                  />
-                </div>
-              ) : null}
-              {platformCapabilities.data?.runCreationEnabled === false ? (
-                <div className="run-availability run-availability-paused" role="status">
-                  <CirclePause aria-hidden="true" size={15} />
-                  <span>New Agent Runs are temporarily paused.</span>
-                </div>
-              ) : null}
-              <TabsContent className="project-conversation-panel" value="conversation">
-                <RunStatusBar
-                  cancelError={cancelRun.error}
-                  isCancelling={cancelRun.isPending}
-                  loadError={activeAgentRun.error ?? agentRun.error}
-                  onCancel={() => {
-                    void cancelAssistantTask().catch(() => undefined);
-                  }}
-                  run={currentRun}
-                  streamError={streamError}
+            {platformCapabilities.isError ? (
+              <div className="run-availability">
+                <ErrorState
+                  compact
+                  error={platformCapabilities.error}
+                  onRetry={() => void platformCapabilities.refetch()}
                 />
-                <ConversationTimeline
-                  error={messages.error}
-                  isPending={messages.isPending}
-                  messages={messages.data}
-                  onRetry={() => void messages.refetch()}
-                />
-              </TabsContent>
-              <TabsContent
-                value="runs"
-                className="project-console-scroll project-console-runs-view"
-              >
-                <RunMetrics compact run={currentRun} />
-                <RunHistory
-                  error={recentRuns.error}
-                  isPending={recentRuns.isPending}
-                  messages={messages.data}
-                  onRetry={() => void recentRuns.refetch()}
-                  onSelect={(runId) => {
-                    setActiveRunId(runId);
-                  }}
-                  runs={recentRuns.data}
-                  selectedRunId={currentRunId}
-                />
-              </TabsContent>
-              <AgentComposer
-                agentRuntimeIds={agentRuntimeIds}
-                changesEnabled={platformCapabilities.data?.changesEnabled === true}
-                disabled={composerDisabled}
-                error={createRun.error}
-                fileUploadDisabled={!fileUploadAvailable}
-                isSubmitting={createRun.isPending}
-                isUploadingFile={uploadFile.isPending}
-                onAgentRuntimeChange={setAgentRuntimePreference}
-                onChangesOpen={() => openInspectorView("changes")}
-                onFilesOpen={() => openInspectorView("files")}
-                onTerminalOpen={() => openInspectorView("terminal")}
-                onUploadFile={(file) => uploadFile.mutateAsync(file)}
-                selectedAgentRuntimeId={selectedAgentRuntimeId}
-                terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
-                uploadError={uploadFile.error}
+              </div>
+            ) : null}
+            {platformCapabilities.data?.runCreationEnabled === false ? (
+              <div className="run-availability run-availability-paused" role="status">
+                <CirclePause aria-hidden="true" size={15} />
+                <span>New Agent Runs are temporarily paused.</span>
+              </div>
+            ) : null}
+            <TabsContent className="project-conversation-panel" value="conversation">
+              <RunStatusBar
+                cancelError={cancelRun.error}
+                isCancelling={cancelRun.isPending}
+                loadError={activeAgentRun.error ?? agentRun.error}
+                onCancel={() => {
+                  void cancelAssistantTask().catch(() => undefined);
+                }}
+                run={currentRun}
+                streamError={streamError}
               />
-            </ProjectAssistantRuntimeProvider>
+              <ConversationTimeline
+                key={projectId}
+                isRunning={conversationIsRunning}
+                error={messages.error}
+                isPending={messages.isPending}
+                messages={messages.data}
+                onRetry={() => void messages.refetch()}
+              />
+            </TabsContent>
+            <TabsContent value="runs" className="project-console-scroll project-console-runs-view">
+              <RunMetrics compact run={currentRun} />
+              <RunHistory
+                error={recentRuns.error}
+                isPending={recentRuns.isPending}
+                messages={messages.data}
+                onRetry={() => void recentRuns.refetch()}
+                onSelect={(runId) => {
+                  setActiveRunId(runId);
+                }}
+                runs={recentRuns.data}
+                selectedRunId={currentRunId}
+              />
+            </TabsContent>
+            <AgentComposer
+              key={projectId}
+              onSubmitText={submitAssistantTask}
+              agentRuntimeIds={agentRuntimeIds}
+              changesEnabled={platformCapabilities.data?.changesEnabled === true}
+              disabled={composerDisabled}
+              error={createRun.error}
+              fileUploadDisabled={!fileUploadAvailable}
+              isSubmitting={createRun.isPending}
+              isUploadingFile={uploadFile.isPending}
+              onAgentRuntimeChange={setAgentRuntimePreference}
+              onChangesOpen={() => openInspectorView("changes")}
+              onFilesOpen={() => openInspectorView("files")}
+              onTerminalOpen={() => openInspectorView("terminal")}
+              onUploadFile={(file) => uploadFile.mutateAsync(file)}
+              selectedAgentRuntimeId={selectedAgentRuntimeId}
+              terminalEnabled={platformCapabilities.data?.terminalEnabled === true}
+              uploadError={uploadFile.error}
+            />
           </Tabs>
         </main>
       </ProjectPanels>

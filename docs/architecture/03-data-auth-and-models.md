@@ -1,6 +1,6 @@
 # 数据、认证、模型与基础用量
 
-> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-07-30 已接入严格脱敏的 Sentry Error Monitoring。当前没有维护者角色或管理视图。
+> 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-09-08 已部署 Drizzle 类型映射、Zod 合同和 jose JWT，保留严格脱敏的 Sentry Error Monitoring。当前没有维护者角色或管理视图。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [ADR-0010](../adr/0010-deleted-project-usage-archive.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
 ## 1. 存储与秘密边界
@@ -47,9 +47,8 @@ Workers D1 中应用全部迁移，核对 schema 的列、默认值、主键、�
 CHECK 表达式，并继续验证触发器和原子写入。SQLite 的 TEXT PRIMARY KEY 在 PRAGMA
 中允许空值标记，Drizzle 将应用生成的主键建模为非空；该差异不改变现有物理表。
 
-`rtk pnpm db:schema:export` 通过无凭据的 `drizzle.config.ts` 离线打印 schema DDL，
-仅供审阅，不连接或修改本地/远程数据库。导出没有领域触发器，约束名称与 SQLite
-隐式索引也可能不同，不能作为完整迁移、备份或重建脚本。迁移仍由 Wrangler 执行。
+不再使用 Drizzle Kit 或单独的 schema 导出命令。SQL 迁移负责完整物理表和领域触发器，
+Drizzle ORM 继续负责类型与普通查询；两者的一致性由隔离 Workers D1 测试核对。
 
 
 | 表 | 关键字段 | 用途 |
@@ -108,9 +107,13 @@ END;
 - Worker 的 `ModelGateway` 代表当前用户调用 Gemini，并从实际 API 响应提取 token 与请求数，累加到对应 `agent_runs` 行。
 - 单次 Gemini POST 最长 120 秒，deadline 到期使用固定诊断码并返回通用错误；网关不自动重试非幂等模型请求。
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
+- `jose` 负责 Run/Preview 的 HS256 JWT 签发与验证；两种用途使用隔离的 HKDF 派生
+  密钥，校验各自 audience、scope、资源标识及期限。JWT payload 可解码，不承载模型密钥。
+- ModelGateway 上游 SSE 使用 `eventsource-parser` 解析事件边界，平台仍负责有界缓冲、
+  Gemini 协议修正及真实 usage。浏览器 SSE 仍只发布 Run 状态和终态用量。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
-短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi/Goose + Gemini 和 Cloudflare 远程 Workflow 均已完成代表性验收；两种 Runtime 复用同一网关，沙箱没有 Gemini Key。公开 Goose 前仍需复核 capability 的工具继承与输出脱敏；复杂任务下的免费层 CPU/subrequest 上限也需持续观察。
+短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi/Goose + Gemini 和 Cloudflare 远程 Workflow 均已完成代表性验收；两种 Runtime 复用同一网关，沙箱没有 Gemini Key。Goose 已在私有 Preview 公开；capability 的工具继承是持续受控的残余风险，输出脱敏仍须维持；复杂任务下的免费层 CPU/subrequest 上限也需持续观察。
 
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 
@@ -171,7 +174,7 @@ Git。源码映射用于还原 stack，不改变前述数据清洗边界。
 
 - [Better Auth 安装与环境变量](https://better-auth.com/docs/installation) 和 [邮箱密码登录](https://better-auth.com/docs/authentication/email-password)
 - [Gemini API Key 指南](https://ai.google.dev/gemini-api/docs/api-key)
-- [Drizzle D1 adapter](https://orm.drizzle.team/docs/sqlite/connect-cloudflare-d1) 和 [Drizzle Kit 离线导出](https://orm.drizzle.team/docs/drizzle-kit-export)
+- [Drizzle D1 adapter](https://orm.drizzle.team/docs/sqlite/connect-cloudflare-d1)
 - [Cloudflare D1 Binding](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [Sentry Cloudflare SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/cloudflare/README.md)
 - [Sentry Hono SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/hono/README.md)

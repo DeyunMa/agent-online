@@ -19,7 +19,7 @@ test.afterEach(async ({ page }) => {
     const terminalTab = page.getByRole("tab", { name: "Terminal" });
     if (await terminalTab.isVisible({ timeout: 1_000 })) {
       await terminalTab.click();
-      const closeTerminal = page.getByRole("button", { name: "Close terminal" });
+      const closeTerminal = page.getByRole("button", { name: "Close", exact: true });
       if (await closeTerminal.isVisible({ timeout: 1_000 })) {
         await closeTerminal.click();
         await page.getByText("Closed", { exact: true }).waitFor({ timeout: 30_000 });
@@ -83,8 +83,8 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
   const agentRuntime = page.getByLabel("Agent runtime");
   await expect(agentRuntime).toHaveText("Pi");
   await agentRuntime.click();
-  await expect(page.getByRole("menu", { name: "Agent runtime options" })).toBeVisible();
-  await page.getByRole("menuitemradio", { name: "Pi" }).press("Escape");
+  await expect(page.getByRole("listbox", { name: "Agent runtime options" })).toBeVisible();
+  await page.getByRole("option", { name: "Pi" }).press("Escape");
   await page
     .getByLabel("Agent task")
     .fill(
@@ -124,7 +124,7 @@ test("runs the hosted Pi/Goose product path without exposing provider state", as
 
   const assistantMessagesBeforeCancel = await page.locator(".timeline-message-assistant").count();
   await agentRuntime.click();
-  await page.getByRole("menuitemradio", { name: "Goose" }).click();
+  await page.getByRole("option", { name: "Goose" }).click();
   await page
     .getByLabel("Agent task")
     .fill("Run the shell command `sleep 120`, wait for it to finish, and only then reply.");
@@ -198,7 +198,7 @@ test("renames and hard-deletes a Project with an idle hosted sandbox", async ({ 
   await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await projectInspector.getByRole("button", { name: "Close", exact: true }).click();
   await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -268,7 +268,7 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await expect(projectInspector.getByText("Connected", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await projectInspector.getByRole("button", { name: "Close", exact: true }).click();
   await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -303,7 +303,7 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await expect(projectInspector.locator(".xterm-rows")).toContainText(fixtureReady, {
     timeout: 120_000,
   });
-  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await projectInspector.getByRole("button", { name: "Close", exact: true }).click();
   await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -327,7 +327,7 @@ test("runs Files, Changes, Terminal, and Preview in one hosted sandbox", async (
   await expect(projectInspector.locator(".xterm-rows")).toContainText(terminalMarker, {
     timeout: 30_000,
   });
-  await projectInspector.getByRole("button", { name: "Close terminal" }).click();
+  await projectInspector.getByRole("button", { name: "Close", exact: true }).click();
   await expect(projectInspector.getByText("Closed", { exact: true })).toBeVisible({
     timeout: 30_000,
   });

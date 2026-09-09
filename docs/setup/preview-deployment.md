@@ -1,6 +1,6 @@
 # Cloudflare 私有 Preview 部署
 
-> 状态：2026-07-30 已部署并验证 v4 组合模板、平台 Preview 底座与可调桌面检查器；
+> 状态：2026-09-08 已部署标准库接入与 Terminal 布局修复，v4 组合模板与受控能力保持不变；
 > 当前 Worker 版本和 Hosted E2E 证据见资源台账；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
 > `0008_archived_run_usage.sql` 已先于依赖它的 Worker 版本应用并完成远程验证。
@@ -18,6 +18,10 @@ Preview 是用于验证真实 Cloudflare Workflow、E2B 和 Pi 链路的受控�
 - Preview 与本地配置不共享 Binding、变量或 Secret；所有远程值都必须显式配置。
 - 顶层 production 配置仍是占位状态，当前唯一允许的远程目标是 `env.preview`。
   `pnpm deploy` 会先执行 production guard 并拒绝误部署。
+
+当前 Run/Preview capability 使用 HS256 JWT。升级自旧两段令牌格式时，发布前须等待
+活动 Run 结束并停止 Preview，发布后重启 Preview 获取新内容 URL；不提供旧格式兼容。
+最近部署与验收见 [2026-09-08 发布记录](../status/2026-09-08-standard-library-adoption.md)。
 
 ## 2. 提交前本地检查
 

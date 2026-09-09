@@ -1,10 +1,4 @@
 import {
-  ComposerPrimitive,
-  MessagePrimitive,
-  ThreadPrimitive,
-  useAuiState,
-} from "@assistant-ui/react";
-import {
   CheckCircle2,
   CircleDashed,
   Folder,
@@ -17,7 +11,7 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Select,
@@ -182,78 +176,100 @@ export function RunMetrics({
 export function ConversationTimeline({
   error,
   isPending,
+  isRunning,
   messages,
   onRetry,
 }: {
   error: Error | null;
   isPending: boolean;
+  isRunning: boolean;
   messages: MessageResponse[] | undefined;
   onRetry: () => void;
 }) {
-  const visibleMessages = messages ?? [];
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    let followBottom = true;
+    // Mobile lays the conversation in the document; desktop has its own scroller.
+    const scrollContainer = () =>
+      getComputedStyle(viewport).overflowY === "visible"
+        ? (document.scrollingElement ?? viewport)
+        : viewport;
+    const onScroll = () => {
+      const container = scrollContainer();
+      followBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+    };
+    const observer = new ResizeObserver(() => {
+      if (followBottom && viewport.getClientRects().length > 0) {
+        const container = scrollContainer();
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    observer.observe(content);
+    observer.observe(viewport);
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
+  const visibleMessages = messages ?? [];
   return (
-    <ThreadPrimitive.Root className="assistant-conversation-thread">
-      <ThreadPrimitive.Viewport autoScroll className="project-console-scroll">
+    <div className="project-console-scroll" ref={viewportRef}>
+      <div ref={contentRef}>
         {isPending ? <LoadingState label="Loading conversation" /> : null}
         {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
-        {!isPending && !error && visibleMessages.length === 0 ? (
+        {!isPending && !error && visibleMessages.length === 0 && !isRunning ? (
           <div className="conversation-empty">
             <TerminalSquare aria-hidden="true" size={24} strokeWidth={1.5} />
             <p>No messages in this project.</p>
           </div>
         ) : null}
-        {!isPending && !error && visibleMessages.length > 0 ? (
+        {!isPending && !error && (visibleMessages.length > 0 || isRunning) ? (
           <ol className="conversation-timeline" aria-label="Project conversation">
-            <ThreadPrimitive.Messages components={{ Message: ConversationMessage }} />
+            {visibleMessages.map((message) => (
+              <ConversationMessage key={message.id} message={message} />
+            ))}
+            {isRunning ? (
+              <li className="timeline-message timeline-message-assistant">
+                <p role="status" className="assistant-run-placeholder">
+                  <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                  Agent is working on the project…
+                </p>
+              </li>
+            ) : null}
           </ol>
         ) : null}
-      </ThreadPrimitive.Viewport>
-    </ThreadPrimitive.Root>
+      </div>
+    </div>
   );
 }
 
-function ConversationMessage() {
-  const createdAt = useAuiState((state) => state.message.createdAt);
-  const hasParts = useAuiState((state) => state.message.parts.length > 0);
-  const isRunning = useAuiState((state) => state.message.status?.type === "running");
-  const role = useAuiState((state) => state.message.role);
-  const assistant = role === "assistant";
-
+function ConversationMessage({ message }: { message: MessageResponse }) {
+  const { role, createdAt, content } = message;
   return (
-    <MessagePrimitive.Root asChild>
-      <li className={`timeline-message timeline-message-${role}`}>
-        <article>
-          <header>
-            <span className="timeline-avatar" aria-hidden="true">
-              {role === "user" ? "YOU" : <TerminalSquare size={15} />}
-            </span>
-            <strong>{role === "user" ? "You" : "Agent"}</strong>
-            <time dateTime={createdAt.toISOString()}>{formatTime(createdAt.toISOString())}</time>
-          </header>
-          {assistant && !hasParts && isRunning ? (
-            <p aria-live="polite" className="assistant-run-placeholder">
-              <LoaderCircle aria-hidden="true" className="spin" size={15} />
-              Agent is working on the project…
-            </p>
-          ) : (
-            <MessagePrimitive.Parts>
-              {({ part }) => {
-                if (part.type !== "text") {
-                  return null;
-                }
-
-                return assistant ? (
-                  <AgentMessageMarkdown content={part.text} />
-                ) : (
-                  <p className="timeline-message-copy">{part.text}</p>
-                );
-              }}
-            </MessagePrimitive.Parts>
-          )}
-        </article>
-      </li>
-    </MessagePrimitive.Root>
+    <li className={`timeline-message timeline-message-${role}`}>
+      <article>
+        <header>
+          <span className="timeline-avatar" aria-hidden="true">
+            {role === "user" ? "YOU" : <TerminalSquare size={15} />}
+          </span>
+          <strong>{role === "user" ? "You" : "Agent"}</strong>
+          <time dateTime={createdAt}>{formatTime(createdAt)}</time>
+        </header>
+        {role === "assistant" ? (
+          <AgentMessageMarkdown content={content} />
+        ) : (
+          <p className="timeline-message-copy">{content}</p>
+        )}
+      </article>
+    </li>
   );
 }
 
@@ -331,6 +347,7 @@ export function AgentComposer({
   onFilesOpen,
   onTerminalOpen,
   onUploadFile,
+  onSubmitText,
   selectedAgentRuntimeId,
   terminalEnabled,
   uploadError,
@@ -347,27 +364,54 @@ export function AgentComposer({
   onFilesOpen: () => void;
   onTerminalOpen: () => void;
   onUploadFile: (file: File) => Promise<unknown>;
+  onSubmitText: (content: string) => Promise<unknown>;
   selectedAgentRuntimeId: AgentRuntimeId | null;
   terminalEnabled: boolean;
   uploadError: Error | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState("");
+  const submittingRef = useRef(false);
+  const submit = async () => {
+    const content = draft.trim();
+    if (disabled || isSubmitting || submittingRef.current || !content) return;
+    submittingRef.current = true;
+    try {
+      await onSubmitText(content);
+      setDraft("");
+    } catch {
+      // The mutation owns the visible error. Keep the draft for a deliberate retry.
+    } finally {
+      submittingRef.current = false;
+    }
+  };
 
   return (
-    <ComposerPrimitive.Root className="agent-composer">
-      <ComposerPrimitive.Input
-        addAttachmentOnPaste={false}
+    <form
+      className="agent-composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <Textarea
         aria-label="Agent task"
-        asChild
-        cancelOnEscape={false}
+        disabled={disabled || isSubmitting}
         maxLength={64_000}
         name="content"
         placeholder="Ask the agent to work on this project..."
         rows={3}
-        submitMode="ctrlEnter"
-      >
-        <Textarea className="agent-composer-input min-h-[50px] max-h-40 resize-y border-0 bg-transparent px-3.5 pt-2.5 pb-0 leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0" />
-      </ComposerPrimitive.Input>
+        value={draft}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void submit();
+          }
+        }}
+        className="agent-composer-input min-h-[50px] max-h-40 resize-y border-0 bg-transparent px-3.5 pt-2.5 pb-0 leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0"
+      />
       {error ? <ErrorState compact error={error} /> : null}
       {uploadError ? <ErrorState compact error={uploadError} /> : null}
       <div className="agent-composer-toolbar">
@@ -429,7 +473,9 @@ export function AgentComposer({
             runtimeIds={agentRuntimeIds}
             selectedRuntimeId={selectedAgentRuntimeId}
           />
-          <ComposerPrimitive.Send
+          <button
+            type="submit"
+            disabled={disabled || isSubmitting || !draft.trim()}
             aria-label="Start run"
             className={cn(buttonVariants({ size: "icon" }), "composer-submit")}
             title="Start run"
@@ -439,10 +485,10 @@ export function AgentComposer({
             ) : (
               <Play aria-hidden="true" fill="currentColor" size={16} />
             )}
-          </ComposerPrimitive.Send>
+          </button>
         </div>
       </div>
-    </ComposerPrimitive.Root>
+    </form>
   );
 }
 

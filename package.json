@@ -35,11 +35,9 @@
     "test:e2e:e2b-agent-runtimes": "RUN_E2E=1 vitest run --config vitest.config.ts src/integration/e2b-agent-runtimes-gemini.e2e.test.ts",
     "test:e2e:preview": "playwright test --config playwright.preview.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "db:schema:export": "drizzle-kit export --config drizzle.config.ts",
     "cf-typegen": "wrangler types"
   },
   "dependencies": {
-    "@assistant-ui/react": "0.15.17",
     "@base-ui/react": "1.7.0",
     "@hono/zod-validator": "0.9.1",
     "@hookform/resolvers": "5.9.1",
@@ -80,7 +78,6 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
-    "drizzle-kit": "0.31.10",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
