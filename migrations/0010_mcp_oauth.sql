@@ -88,4 +88,3 @@ CREATE TABLE "oauthConsent" (
 );
 CREATE INDEX "oauthConsent_clientId_idx" ON "oauthConsent"("clientId");
 CREATE INDEX "oauthConsent_userId_idx" ON "oauthConsent"("userId");
-
