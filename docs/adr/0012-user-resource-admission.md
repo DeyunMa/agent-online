@@ -1,6 +1,6 @@
 # ADR-0012：用户级执行与模型请求准入
 
-- 状态：Accepted（本地实现；远程迁移与发布未授权）
+- 状态：Accepted（已按用户授权发布到私有 Preview）
 - 日期：2026-09-20
 - 关联：[平台限制](../reference/platform-limits.md) · [实施记录](../status/2026-09-20-project-optimization.md)
 

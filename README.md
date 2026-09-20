@@ -161,9 +161,9 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 对话界面直接渲染 Message 与 Run 状态，已移除 assistant-ui 桥接和 Drizzle Kit
 导出工具；范围与验收见 [2026-09-09 对话简化](./docs/status/2026-09-09-conversation-simplification.md)。
 
-### 2026-09-20 本地优化
+### 2026-09-20 项目优化
 
 Project/Run/Message 游标分页、消息增量同步、活动与历史 Run 分离、SSE 健康时低频校验、
 阶段提示与禁用原因、受控文本下载、脱敏性能记录、用户执行准入和 CI 失败产物保留已接入。
 决策见 [ADR-0012](./docs/adr/0012-user-resource-admission.md)，分批验证与未完成事项见
-[实施记录](./docs/status/2026-09-20-project-optimization.md)。0009 迁移只在本地验证，未发布。
+[实施记录](./docs/status/2026-09-20-project-optimization.md)。0009 已按维护窗口、完整性预检、迁移和解锁流程发布到私有 Preview。

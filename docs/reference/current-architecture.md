@@ -358,10 +358,10 @@ Provider reference、Key、capability、异常 message 或 stack。
 - [Changes ADR](../adr/0007-controlled-project-changes.md)
 - [协调状态恢复](../operations/coordination-recovery.md)
 
-## 2026-09-20 本地优化补充
+## 2026-09-20 优化补充
 
 Project/Run/Message 已使用每页 50 条游标分页，消息刷新只取 sequence 增量；查看历史 Run
 与当前活动 Run 分离。SSE 健康时每 30 秒校验详情，错误后每 2 秒查询；终态回读完整事实后
 集中刷新一次。Files 可下载当前显示文本，不是项目备份。结构化性能测量不包含用户内容。
 用户级执行护栏由 [ADR-0012](../adr/0012-user-resource-admission.md) 和 migration 0009 定义。
-这些本地变更尚未发布，不能据此推断当前远程 Preview 行为。
+这些变更已发布到私有 Preview；验收范围和限制见对应实施记录。

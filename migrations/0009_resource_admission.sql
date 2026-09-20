@@ -19,35 +19,35 @@ CREATE TRIGGER agent_runs_resource_admission
 AFTER INSERT ON agent_runs
 WHEN NEW.status IN ('queued', 'starting', 'running', 'cancelling')
 BEGIN
-  SELECT CASE WHEN (
+  SELECT RAISE(ABORT, 'user_resource_concurrency') WHERE (
     (SELECT COUNT(*) FROM agent_runs WHERE user_id = NEW.user_id
       AND status IN ('queued', 'starting', 'running', 'cancelling')) +
     (SELECT COUNT(*) FROM terminal_sessions JOIN projects ON projects.id = terminal_sessions.project_id
       WHERE projects.user_id = NEW.user_id)
-  ) > 2 THEN RAISE(ABORT, 'user_resource_concurrency') END;
+  ) > 2;
   INSERT INTO user_resource_counters (user_id, admission_hour, admission_count)
     VALUES (NEW.user_id, CAST(strftime('%s', 'now') AS INTEGER) / 3600, 1)
     ON CONFLICT(user_id) DO UPDATE SET
-      admission_count = CASE WHEN admission_hour = excluded.admission_hour THEN admission_count + 1 ELSE 1 END,
+      admission_count = iif(admission_hour = excluded.admission_hour, admission_count + 1, 1),
       admission_hour = excluded.admission_hour;
 END;
 
 CREATE TRIGGER terminal_sessions_resource_admission
 AFTER INSERT ON terminal_sessions
 BEGIN
-  SELECT CASE WHEN (
+  SELECT RAISE(ABORT, 'user_resource_concurrency') WHERE (
     (SELECT COUNT(*) FROM agent_runs WHERE user_id = (SELECT user_id FROM projects WHERE id = NEW.project_id)
       AND status IN ('queued', 'starting', 'running', 'cancelling')) +
     (SELECT COUNT(*) FROM terminal_sessions JOIN projects ON projects.id = terminal_sessions.project_id
       WHERE projects.user_id = (SELECT user_id FROM projects WHERE id = NEW.project_id))
-  ) > 2 THEN RAISE(ABORT, 'user_resource_concurrency') END;
+  ) > 2;
   INSERT INTO user_resource_counters (user_id, admission_hour, admission_count)
     VALUES ((SELECT user_id FROM projects WHERE id = NEW.project_id), CAST(strftime('%s', 'now') AS INTEGER) / 3600, 1)
     ON CONFLICT(user_id) DO UPDATE SET
-      admission_count = CASE WHEN admission_hour = excluded.admission_hour THEN admission_count + 1 ELSE 1 END,
+      admission_count = iif(admission_hour = excluded.admission_hour, admission_count + 1, 1),
       admission_hour = excluded.admission_hour;
   -- The outer Terminal INSERT OR IGNORE must not suppress a counter constraint.
-  SELECT CASE WHEN changes() = 0 THEN RAISE(ABORT, 'user_resource_admission_rate') END;
+  SELECT RAISE(ABORT, 'user_resource_admission_rate') WHERE changes() = 0;
 END;
 
 CREATE TRIGGER agent_runs_model_admission
@@ -57,6 +57,6 @@ BEGIN
   INSERT INTO user_resource_counters (user_id, model_day, model_count)
     VALUES (NEW.user_id, CAST(strftime('%s', 'now') AS INTEGER) / 86400, 1)
     ON CONFLICT(user_id) DO UPDATE SET
-      model_count = CASE WHEN model_day = excluded.model_day THEN model_count + 1 ELSE 1 END,
+      model_count = iif(model_day = excluded.model_day, model_count + 1, 1),
       model_day = excluded.model_day;
 END;

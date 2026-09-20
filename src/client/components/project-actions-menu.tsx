@@ -51,6 +51,7 @@ export function ProjectActionsMenu({
   const inputId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<"delete" | "rename" | null>(null);
   const [title, setTitle] = useState(project.title);
   const renameProject = useMutation({
@@ -211,7 +212,7 @@ export function ProjectActionsMenu({
           if (!open && !deleteProject.isPending) setDialog(null);
         }}
       >
-        <AlertDialogContent finalFocus={triggerRef}>
+        <AlertDialogContent finalFocus={triggerRef} initialFocus={deleteCancelRef}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete project</AlertDialogTitle>
             <AlertDialogDescription>
@@ -222,7 +223,9 @@ export function ProjectActionsMenu({
           </AlertDialogHeader>
           {deleteProject.isError ? <ErrorState compact error={deleteProject.error} /> : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteProject.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteProject.isPending} ref={deleteCancelRef}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleteProject.isPending}
