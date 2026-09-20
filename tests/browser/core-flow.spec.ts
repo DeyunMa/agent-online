@@ -336,6 +336,11 @@ test("preserves the connected Terminal across inspector tabs, closing, and mobil
 test("renames and hard-deletes a Project from the mobile layout", async ({ page }) => {
   const { projectName } = await registerAndCreateProject(page, "browser-lifecycle");
   const renamedProject = `${projectName}-renamed`;
+  // Keep exit cleanup pending while the next dialog takes focus, as on slower CI runners.
+  await page.addStyleTag({
+    content:
+      "#project-inspector:not(.project-inspector-open) { transition-duration: 1s, 0s; transition-delay: 0s, 1s; }",
+  });
   const projectHeaderActions = page.locator(".project-console-header-actions");
   await projectHeaderActions
     .getByRole("button", { name: `Project actions for ${projectName}` })
@@ -371,6 +376,7 @@ test("renames and hard-deletes a Project from the mobile layout", async ({ page 
   await page.getByRole("menuitem", { name: "Delete" }).click();
   const deleteDialog = page.getByRole("alertdialog", { name: "Delete project" });
   await expect(deleteDialog).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#project-inspector")).toHaveCSS("visibility", "hidden");
   await expect(deleteDialog.getByRole("button", { name: "Cancel" })).toBeFocused();
   await expect(deleteDialog).toContainText("Aggregate Run usage remains");
   await deleteDialog.getByRole("button", { name: "Delete project" }).click();

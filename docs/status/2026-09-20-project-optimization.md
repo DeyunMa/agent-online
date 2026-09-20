@@ -152,7 +152,9 @@ Workers D1 全部 17 项通过，git diff --check 通过。Sentry 另补性能�
   本地拆分器的空白修复仍不能通过远程，最终改成等价的 WHERE RAISE 和 iif 表达式。
   23 项 Workers D1 测试通过，远程迁移成功；新表、三个触发器、登记及九项完整性检查通过。
 - 首次远程 CI 发现移动端删除确认框没有稳定聚焦 Cancel。显式指定初始焦点后，
-  该浏览器用例连续 3 次通过，静态门禁通过。最终提交会重新执行 CI。
+  该浏览器用例连续 3 次通过，静态门禁通过；但下一次远程 CI 再次失败，单独指定初始焦点不足。
+  最终定位到 Inspector 退出动画后的第二次焦点恢复。增加延长退出动画的回归用例，
+  在本地复现相同失败；关闭清理仅在焦点仍属于 Inspector 时恢复，避免抢走新弹窗焦点。
 - 已执行 `pnpm deploy:preview`，维护模式解除；Sentry 源码映射上传和构建产物检查通过。
   线上 health/capabilities 返回 200，Run/Terminal 开关恢复；未登录 Projects 返回 401。
 - 本次浏览器没有登录会话，未重跑线上 Pi/Goose、Terminal、Preview 的认证后真实链路；

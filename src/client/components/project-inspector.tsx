@@ -137,7 +137,15 @@ export function ProjectInspector({
                   ) ?? true)
                 : false
             }
-            finalFocus={toggleRef}
+            finalFocus={() => {
+              // Exit-transition cleanup may run after another dialog has opened.
+              // Restore only while focus still belongs to this inspector.
+              const active = document.activeElement;
+              if (active && active !== document.body && !inspectorRef.current?.contains(active)) {
+                return false;
+              }
+              return toggleRef.current;
+            }}
           >
             <header className="project-inspector-header">
               <DialogPrimitive.Title id="project-inspector-title">
