@@ -149,6 +149,53 @@ export const agentRunResponseSchema = z.object({
 });
 export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
 
+export const listPageSize = 50;
+const timestampCursorSchema = z
+  .object({ at: z.string().datetime(), id: z.string().min(1).max(200) })
+  .strict();
+export type TimestampCursor = z.infer<typeof timestampCursorSchema>;
+export const listPageQuerySchema = z
+  .object({
+    cursor: z
+      .string()
+      .max(500)
+      .transform((value, context) => {
+        try {
+          const parsed = timestampCursorSchema.safeParse(JSON.parse(value));
+          if (parsed.success) return parsed.data;
+        } catch {
+          /* Report only a public validation failure. */
+        }
+        context.addIssue({ code: "custom", message: "Invalid cursor" });
+        return z.NEVER;
+      })
+      .optional(),
+  })
+  .strict();
+export const messagePageQuerySchema = z
+  .object({
+    before: z.coerce.number().int().positive().safe().optional(),
+    after: z.coerce.number().int().nonnegative().safe().optional(),
+  })
+  .strict()
+  .refine((value) => value.before === undefined || value.after === undefined);
+export type MessagePageQuery = z.infer<typeof messagePageQuerySchema>;
+export const projectPageResponseSchema = z.object({
+  items: z.array(projectResponseSchema),
+  nextCursor: timestampCursorSchema.nullable(),
+});
+export const agentRunPageResponseSchema = z.object({
+  items: z.array(agentRunResponseSchema),
+  nextCursor: timestampCursorSchema.nullable(),
+});
+export const messagePageResponseSchema = z.object({
+  items: z.array(messageResponseSchema),
+  nextCursor: nonNegativeIntegerSchema.nullable(),
+});
+export type ProjectPageResponse = z.infer<typeof projectPageResponseSchema>;
+export type AgentRunPageResponse = z.infer<typeof agentRunPageResponseSchema>;
+export type MessagePageResponse = z.infer<typeof messagePageResponseSchema>;
+
 export const createProjectRequestSchema = z.object({
   title: z.string().trim().min(1).max(120),
 });

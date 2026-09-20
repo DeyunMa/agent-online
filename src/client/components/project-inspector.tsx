@@ -216,6 +216,19 @@ export function ProjectInspector({
                     />
                   </dl>
                   {stopError ? <ErrorState compact error={stopError} /> : null}
+                  <p className="inspector-empty">
+                    Workspace files are temporary. Save a copy before stopping; idle expiry or
+                    sandbox failure can also remove them. Conversation history remains available.
+                  </p>
+                  {!canStop && lease && lease.status !== "stopped" && !isStopping ? (
+                    <p role="status" className="inspector-empty">
+                      {hasActiveRun
+                        ? "Finish or cancel the active Run before stopping."
+                        : terminalActive
+                          ? "Close Terminal before stopping."
+                          : "Stop Preview before stopping the sandbox."}
+                    </p>
+                  ) : null}
                   {lease && lease.status !== "stopped" ? (
                     <button
                       className="stop-sandbox-action"

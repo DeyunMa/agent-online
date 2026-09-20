@@ -137,7 +137,7 @@ sequenceDiagram
 | `/api/projects/:id/files/content` | 读取受限相对路径指向的 UTF-8 文本文件。 |
 | `/api/projects/:id/changes` | 读取现有 E2B `/workspace` 当前 Git working tree/index 的有界 status；不创建沙箱或 repository。 |
 | `/api/projects/:id/changes/content` | 只为当前 status 中的精确相对路径读取 staged/unstaged 有界 unified diff。 |
-| `/api/projects/:id/agent-runs` | 创建 AgentRun，或读取当前用户该 Project 最近 50 条 Run 事实。 |
+| `/api/projects/:id/agent-runs` | 创建 AgentRun，或按游标分页读取当前用户该 Project 的 Run 事实（每页 50 条）。 |
 | `/api/projects/:id/agent-runs/active` | 读取该 Project 当前的非终态 Run，供页面恢复。 |
 | `/api/projects/:id/agent-runs/:runId` | 读取 Run 状态和已聚合用量。 |
 | `/api/projects/:id/agent-runs/:runId/events` | 订阅 D1 轮询出的状态和终态，不公开 raw Agent 输出。 |

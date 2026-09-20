@@ -40,7 +40,7 @@ describe("ProjectReadService", () => {
       project.id,
       secondProject.id,
     ]);
-    expect(projects).toEqual([
+    expect(projects.items).toEqual([
       { lease, project },
       { lease: null, project: secondProject },
     ]);

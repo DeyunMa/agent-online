@@ -1,20 +1,21 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Folder, Plus } from "lucide-react";
 
 import type { ProjectResponse } from "../../shared/api";
-import { browserApi } from "../api";
 import { formatDateTime, sandboxStatusLabel, sandboxStatusTone } from "../presentation";
-import { projectQueryKey } from "../query-keys";
+import { useProjects } from "../project-queries";
 import { AppHeaderSlot } from "./app-header-slot";
 import { ProjectActionsMenu } from "./project-actions-menu";
 import { ErrorState, LoadingState } from "./ui-states";
 
 export function ProjectDashboard() {
-  const projects = useQuery({
-    queryFn: browserApi.listProjects,
-    queryKey: projectQueryKey,
-  });
+  const projects = useProjects();
+  const items = [
+    ...new Map(
+      projects.data?.pages.flatMap((page) => page.items).map((project) => [project.id, project]) ??
+        [],
+    ).values(),
+  ];
 
   return (
     <section className="project-index">
@@ -39,9 +40,17 @@ export function ProjectDashboard() {
         {projects.isError ? (
           <ErrorState error={projects.error} onRetry={() => void projects.refetch()} />
         ) : null}
-        {projects.isSuccess && projects.data.length === 0 ? <ProjectEmptyState /> : null}
-        {projects.isSuccess && projects.data.length > 0 ? (
-          <ProjectList projects={projects.data} />
+        {projects.isSuccess && items.length === 0 ? <ProjectEmptyState /> : null}
+        {projects.isSuccess && items.length > 0 ? <ProjectList projects={items} /> : null}
+        {projects.hasNextPage ? (
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={projects.isFetchingNextPage}
+            onClick={() => void projects.fetchNextPage()}
+          >
+            Load more projects
+          </button>
         ) : null}
       </div>
     </section>

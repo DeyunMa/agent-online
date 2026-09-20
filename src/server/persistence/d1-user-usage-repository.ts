@@ -1,3 +1,5 @@
+import { type DiagnosticReporter, noopDiagnosticReporter } from "../../observability/contract";
+import { measureD1 } from "./measure-d1";
 import type { UserUsageRepository, UserUsageSummary } from "../../application/user-usage";
 import {
   type AgentRuntimeUsageRow,
@@ -45,13 +47,17 @@ const userUsageRowsCte = `
 `;
 
 export class D1UserUsageRepository implements UserUsageRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly diagnostics: DiagnosticReporter = noopDiagnosticReporter,
+  ) {}
 
   async summarizeByUser(userId: string): Promise<UserUsageSummary> {
-    const results = await this.db.batch([
-      this.db
-        .prepare(
-          `${userUsageRowsCte}
+    const results = await measureD1(this.diagnostics, "usage_summary", () =>
+      this.db.batch([
+        this.db
+          .prepare(
+            `${userUsageRowsCte}
           SELECT
             COUNT(*) AS run_count,
             COALESCE(SUM(input_tokens), 0) AS input_tokens,
@@ -60,11 +66,11 @@ export class D1UserUsageRepository implements UserUsageRepository {
             COALESCE(SUM(model_request_count), 0) AS model_request_count,
             COALESCE(SUM(sandbox_duration_ms), 0) AS sandbox_duration_ms
           FROM user_usage_rows`,
-        )
-        .bind(userId, userId),
-      this.db
-        .prepare(
-          `${userUsageRowsCte}
+          )
+          .bind(userId, userId),
+        this.db
+          .prepare(
+            `${userUsageRowsCte}
           SELECT
             project_id,
             project_title,
@@ -78,11 +84,11 @@ export class D1UserUsageRepository implements UserUsageRepository {
           FROM user_usage_rows
           GROUP BY project_id, project_title, project_deleted
           ORDER BY total_tokens DESC, run_count DESC, project_title ASC, project_id ASC`,
-        )
-        .bind(userId, userId),
-      this.db
-        .prepare(
-          `${userUsageRowsCte}
+          )
+          .bind(userId, userId),
+        this.db
+          .prepare(
+            `${userUsageRowsCte}
           SELECT
             agent_runtime_id,
             COUNT(*) AS run_count,
@@ -94,9 +100,10 @@ export class D1UserUsageRepository implements UserUsageRepository {
           FROM user_usage_rows
           GROUP BY agent_runtime_id
           ORDER BY total_tokens DESC, run_count DESC, agent_runtime_id ASC`,
-        )
-        .bind(userId, userId),
-    ]);
+          )
+          .bind(userId, userId),
+      ]),
+    );
 
     const totals = requireBatchRow<UsageAggregateRow>(results, 0, "summarize user usage");
     const projects = (results[1]?.results ?? []) as ProjectUsageRow[];

@@ -1,6 +1,5 @@
-import { and, asc, desc, eq, getTableColumns, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, lt, or, sql } from "drizzle-orm";
 import { type DrizzleD1Database, drizzle } from "drizzle-orm/d1";
-
 import type {
   MessageContextRecord,
   MessageContextRepository,
@@ -10,6 +9,7 @@ import type {
   ProjectRepository,
 } from "../../application/ports";
 import { maxHistoryBytes, maxHistoryMessages } from "../../application/run-context";
+import { listPageSize, type MessagePageQuery, type TimestampCursor } from "../../shared/api";
 import { toMessageRecord, toProjectRecord } from "./d1-records";
 import { messages, projects } from "./schema";
 
@@ -114,12 +114,23 @@ export class D1ProjectRepository implements ProjectRepository {
     return row === undefined ? null : toProjectRecord(row);
   }
 
-  async listOwned(userId: string): Promise<ProjectRecord[]> {
+  async listOwned(userId: string, cursor?: TimestampCursor): Promise<ProjectRecord[]> {
     const rows = await this.orm
       .select()
       .from(projects)
-      .where(eq(projects.user_id, userId))
+      .where(
+        and(
+          eq(projects.user_id, userId),
+          cursor
+            ? or(
+                lt(projects.updated_at, cursor.at),
+                and(eq(projects.updated_at, cursor.at), lt(projects.id, cursor.id)),
+              )
+            : undefined,
+        ),
+      )
       .orderBy(desc(projects.updated_at), desc(projects.id))
+      .limit(listPageSize + 1)
       .all();
 
     return rows.map(toProjectRecord);
@@ -180,12 +191,19 @@ export class D1MessageRepository implements MessageRepository, MessageContextRep
     return row === undefined ? null : toMessageRecord(row);
   }
 
-  async listByProjectId(projectId: string): Promise<MessageRecord[]> {
+  async listByProjectId(projectId: string, query: MessagePageQuery = {}): Promise<MessageRecord[]> {
     const rows = await this.orm
       .select()
       .from(messages)
-      .where(eq(messages.project_id, projectId))
-      .orderBy(asc(messages.sequence))
+      .where(
+        and(
+          eq(messages.project_id, projectId),
+          query.before !== undefined ? lt(messages.sequence, query.before) : undefined,
+          query.after !== undefined ? gt(messages.sequence, query.after) : undefined,
+        ),
+      )
+      .orderBy(query.after !== undefined ? asc(messages.sequence) : desc(messages.sequence))
+      .limit(listPageSize + 1)
       .all();
 
     return rows.map(toMessageRecord);

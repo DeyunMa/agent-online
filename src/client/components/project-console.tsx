@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRight, CirclePause, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTerminalAgentRun } from "../../domain/agent-run";
-import type { AgentRunResponse, MessageResponse } from "../../shared/api";
+import type { AgentRunResponse } from "../../shared/api";
 import {
   type AgentRuntimeId,
   isSupportedAgentRuntimeId,
@@ -11,6 +11,7 @@ import {
 } from "../../shared/protocol";
 import { type BrowserApiError, browserApi, subscribeToAgentRun } from "../api";
 import { deriveProjectActivity } from "../project-activity";
+import { useProjectMessages, useRunHistory } from "../project-queries";
 import {
   activeAgentRunQueryKey,
   agentRunQueryKey,
@@ -44,6 +45,9 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const isMobileInspectorViewport = useMediaQuery("(max-width: 760px)");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [healthyStreamRunId, setHealthyStreamRunId] = useState<string | null>(null);
+  const synchronizedTerminalRuns = useRef(new Set<string>());
   const [streamError, setStreamError] = useState<BrowserApiError | null>(null);
   const [previewActive, setPreviewActive] = useState(false);
   const [previewStarting, setPreviewStarting] = useState(false);
@@ -68,27 +72,34 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     queryKey: platformCapabilitiesQueryKey,
     staleTime: 30_000,
   });
-  const messages = useQuery({
-    enabled: project.isSuccess,
-    queryFn: () => browserApi.listMessages(projectId),
-    queryKey: projectMessagesQueryKey(projectId),
-  });
+  const messages = useProjectMessages(projectId, project.isSuccess);
   const activeAgentRun = useQuery({
     enabled: project.isSuccess,
     queryFn: () => browserApi.getActiveAgentRun(projectId),
     queryKey: activeAgentRunQueryKey(projectId),
   });
-  const recentRuns = useQuery({
-    enabled: project.isSuccess,
-    queryFn: () => browserApi.listAgentRuns(projectId),
-    queryKey: agentRunsQueryKey(projectId),
-  });
+  const recentRuns = useRunHistory(projectId, project.isSuccess);
+  const runHistory = [
+    ...new Map(
+      recentRuns.data?.pages.flatMap((page) => page.items).map((run) => [run.id, run]) ?? [],
+    ).values(),
+  ];
   const agentRun = useQuery({
     enabled: activeRunId !== null,
     queryFn: () => browserApi.getAgentRun(projectId, activeRunId ?? ""),
     queryKey: agentRunQueryKey(projectId, activeRunId ?? ""),
     refetchInterval: (query) =>
-      query.state.data && isTerminalAgentRun(query.state.data.status) ? false : 2_000,
+      query.state.data && isTerminalAgentRun(query.state.data.status)
+        ? false
+        : healthyStreamRunId === activeRunId
+          ? 30_000
+          : 2_000,
+  });
+
+  const selectedRun = useQuery({
+    enabled: selectedRunId !== null && selectedRunId !== activeRunId,
+    queryFn: () => browserApi.getAgentRun(projectId, selectedRunId ?? ""),
+    queryKey: agentRunQueryKey(projectId, selectedRunId ?? ""),
   });
 
   const createRun = useMutation({
@@ -99,45 +110,9 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
       agentRuntimeId: SupportedAgentRuntimeId;
       content: string;
     }) => browserApi.createAgentRun(projectId, { agentRuntimeId, content }),
-    onMutate: async ({ content }) => {
-      const queryKey = projectMessagesQueryKey(projectId);
-      await queryClient.cancelQueries({ queryKey });
-
-      const previousMessages = queryClient.getQueryData<MessageResponse[]>(queryKey);
-      const sequence =
-        (previousMessages ?? []).reduce(
-          (highest, message) => Math.max(highest, message.sequence),
-          0,
-        ) + 1;
-      const optimisticMessage: MessageResponse = {
-        agentRunId: null,
-        content,
-        createdAt: new Date().toISOString(),
-        id: `optimistic-${crypto.randomUUID()}`,
-        role: "user",
-        sequence,
-      };
-
-      queryClient.setQueryData<MessageResponse[]>(queryKey, (current) => [
-        ...(current ?? []),
-        optimisticMessage,
-      ]);
-
-      return { previousMessages };
-    },
-    onError: (_error, _variables, context) => {
-      queryClient.setQueryData<MessageResponse[]>(
-        projectMessagesQueryKey(projectId),
-        context?.previousMessages ?? [],
-      );
-    },
-    onSettled: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: projectMessagesQueryKey(projectId),
-      });
-    },
     onSuccess: async (run) => {
       setActiveRunId(run.id);
+      setSelectedRunId(null);
       setStreamError(null);
       setView("conversation");
       queryClient.setQueryData(agentRunQueryKey(projectId, run.id), run);
@@ -149,7 +124,10 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
     mutationFn: (runId: string) => browserApi.cancelAgentRun(projectId, runId),
     onSuccess: async (run) => {
       queryClient.setQueryData(agentRunQueryKey(projectId, run.id), run);
-      await invalidateProjectState(queryClient, projectId);
+      queryClient.setQueryData(
+        activeAgentRunQueryKey(projectId),
+        isTerminalAgentRun(run.status) ? null : run,
+      );
     },
   });
   const uploadFile = useMutation({
@@ -182,6 +160,14 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
 
   const currentRun = agentRun.data;
   const currentRunId = currentRun?.id ?? null;
+  const streamingRunId =
+    currentRun && !isTerminalAgentRun(currentRun.status) ? currentRun.id : null;
+  const displayedRun =
+    selectedRunId === null
+      ? (currentRun ?? runHistory[0])
+      : selectedRunId === currentRunId
+        ? currentRun
+        : selectedRun.data;
   const recoveredActiveRun = activeAgentRun.data;
   const activeRunIsBlocking =
     activeAgentRun.isPending ||
@@ -250,6 +236,9 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: Project identity intentionally resets console-local state.
   useEffect(() => {
     setActiveRunId(null);
+    setSelectedRunId(null);
+    setHealthyStreamRunId(null);
+    synchronizedTerminalRuns.current.clear();
     setStreamError(null);
     setPreviewActive(false);
     setPreviewStarting(false);
@@ -273,67 +262,46 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
   }, [projectId, queryClient, recoveredActiveRun]);
 
   useEffect(() => {
-    if (activeRunId !== null || !activeAgentRun.isSuccess || activeAgentRun.data !== null) {
+    if (
+      !currentRun ||
+      !isTerminalAgentRun(currentRun.status) ||
+      synchronizedTerminalRuns.current.has(currentRun.id)
+    )
       return;
-    }
-
-    const latestRun = recentRuns.data?.[0];
-    if (latestRun) {
-      queryClient.setQueryData(agentRunQueryKey(projectId, latestRun.id), latestRun);
-      setActiveRunId(latestRun.id);
-    }
-  }, [
-    activeAgentRun.data,
-    activeAgentRun.isSuccess,
-    activeRunId,
-    projectId,
-    queryClient,
-    recentRuns.data,
-  ]);
-
-  useEffect(() => {
-    if (!currentRun || !isTerminalAgentRun(currentRun.status)) {
-      return;
-    }
-
+    synchronizedTerminalRuns.current.add(currentRun.id);
     setStreamError(null);
     void invalidateProjectState(queryClient, projectId);
   }, [currentRun, projectId, queryClient]);
 
   useEffect(() => {
-    if (!currentRunId || isTerminalAgentRun(currentRun?.status ?? "succeeded")) {
-      return;
-    }
-
-    return subscribeToAgentRun(projectId, currentRunId, {
-      onError: setStreamError,
+    if (!streamingRunId) return;
+    setHealthyStreamRunId(null);
+    return subscribeToAgentRun(projectId, streamingRunId, {
+      onError: (error) => {
+        setHealthyStreamRunId(null);
+        setStreamError(error);
+      },
       onEvent: (event) => {
-        if (event.type === "run.status") {
+        setHealthyStreamRunId(streamingRunId);
+        setStreamError(null);
+        if (event.type === "run.status" && !isTerminalAgentRun(event.status)) {
           queryClient.setQueryData<AgentRunResponse>(
-            agentRunQueryKey(projectId, currentRunId),
+            agentRunQueryKey(projectId, streamingRunId),
             (run) => (run ? { ...run, status: event.status } : run),
           );
-          if (isTerminalAgentRun(event.status)) {
-            setStreamError(null);
-            void invalidateProjectState(queryClient, projectId);
-          }
           return;
         }
-
-        if (event.type === "run.completed") {
-          queryClient.setQueryData<AgentRunResponse>(
-            agentRunQueryKey(projectId, currentRunId),
-            (run) => (run ? { ...run, usage: event.usage } : run),
-          );
-          setStreamError(null);
-          void queryClient.invalidateQueries({
-            queryKey: agentRunQueryKey(projectId, currentRunId),
-          });
-          void invalidateProjectState(queryClient, projectId);
-        }
+        // Fetch complete terminal facts before triggering the one-time refresh.
+        // Both terminal events share an in-flight read instead of cancelling it.
+        void queryClient.invalidateQueries(
+          {
+            queryKey: agentRunQueryKey(projectId, streamingRunId),
+          },
+          { cancelRefetch: false },
+        );
       },
     });
-  }, [currentRun?.status, currentRunId, projectId, queryClient]);
+  }, [streamingRunId, projectId, queryClient]);
 
   if (project.isPending) {
     return <LoadingState label="Loading project" />;
@@ -452,24 +420,37 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
               <ConversationTimeline
                 key={projectId}
                 isRunning={conversationIsRunning}
+                runStatus={activeConversationRun?.status ?? null}
+                hasOlder={messages.data?.nextCursor != null}
+                loadingOlder={messages.older.isPending}
+                onLoadOlder={() => messages.older.mutate()}
+                olderError={messages.older.error}
                 error={messages.error}
                 isPending={messages.isPending}
-                messages={messages.data}
+                messages={messages.data?.items}
                 onRetry={() => void messages.refetch()}
               />
             </TabsContent>
             <TabsContent value="runs" className="project-console-scroll project-console-runs-view">
-              <RunMetrics compact run={currentRun} />
+              <RunMetrics compact run={displayedRun} />
+              {recentRuns.hasNextPage ? (
+                <button
+                  className="secondary-action"
+                  type="button"
+                  disabled={recentRuns.isFetchingNextPage}
+                  onClick={() => void recentRuns.fetchNextPage()}
+                >
+                  Load more runs
+                </button>
+              ) : null}
               <RunHistory
-                error={recentRuns.error}
+                error={recentRuns.error ?? selectedRun.error}
                 isPending={recentRuns.isPending}
-                messages={messages.data}
+                messages={messages.data?.items}
                 onRetry={() => void recentRuns.refetch()}
-                onSelect={(runId) => {
-                  setActiveRunId(runId);
-                }}
-                runs={recentRuns.data}
-                selectedRunId={currentRunId}
+                onSelect={setSelectedRunId}
+                runs={runHistory}
+                selectedRunId={displayedRun?.id ?? null}
               />
             </TabsContent>
             <AgentComposer
@@ -478,6 +459,21 @@ export function ProjectConsole({ projectId }: { projectId: string }) {
               agentRuntimeIds={agentRuntimeIds}
               changesEnabled={platformCapabilities.data?.changesEnabled === true}
               disabled={composerDisabled}
+              disabledReason={
+                createRun.isPending
+                  ? "Submitting your task…"
+                  : runCreationUnavailable
+                    ? "Task submission is unavailable while service capabilities are loading or paused."
+                    : activity.exclusive === "terminal"
+                      ? "Close Terminal before starting another task."
+                      : activity.exclusive === "preview_starting"
+                        ? "Wait for Preview to finish starting."
+                        : activeRunIsBlocking
+                          ? "Wait for the active task to finish, or cancel it."
+                          : selectedAgentRuntimeId === null
+                            ? "No Agent runtime is currently available."
+                            : null
+              }
               error={createRun.error}
               fileUploadDisabled={!fileUploadAvailable}
               isSubmitting={createRun.isPending}

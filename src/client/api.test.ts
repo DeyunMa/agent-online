@@ -109,6 +109,28 @@ describe("browser API response contracts", () => {
 });
 
 describe("Run stream contracts", () => {
+  it("reports permanently closed streams so HTTP polling can recover", () => {
+    const source = {
+      close: vi.fn(),
+      onmessage: null,
+      onerror: null as (() => void) | null,
+      readyState: 2,
+    };
+    vi.stubGlobal(
+      "EventSource",
+      Object.assign(
+        vi.fn(function MockEventSource() {
+          return source;
+        }),
+        { CLOSED: 2 },
+      ),
+    );
+    const onError = vi.fn();
+    subscribeToAgentRun("project", "run", { onError, onEvent: vi.fn() });
+    source.onerror?.();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "network_error" }));
+  });
+
   it("ignores malformed events and delivers validated events with unknown fields removed", () => {
     const source = {
       close: vi.fn(),

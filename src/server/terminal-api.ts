@@ -316,12 +316,15 @@ function parseTerminalClientMessage(raw: MessageEvent["data"]): TerminalClientMe
 function toTerminalErrorCode(
   kind:
     | "invalid_size"
+    | "resource_limited"
     | "project_busy"
     | "provider_error"
     | "runtime_mismatch"
     | "sandbox_unavailable",
 ): TerminalServerErrorCode {
   switch (kind) {
+    case "resource_limited":
+      return "resource_limited";
     case "project_busy":
       return "project_busy";
     case "provider_error":

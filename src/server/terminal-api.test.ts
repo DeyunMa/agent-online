@@ -60,32 +60,35 @@ describe("Terminal API", () => {
     expect(JSON.stringify(socket.sent)).not.toContain("9001");
   });
 
-  it("returns a normalized project_busy control error after upgrade", async () => {
-    const fixture = createFixture({
-      openResult: { kind: "project_busy" },
-    });
-    await fixture.request();
-    const socket = createSocket();
+  it.each(["project_busy", "resource_limited"] as const)(
+    "returns a normalized %s control error after upgrade",
+    async (kind) => {
+      const fixture = createFixture({
+        openResult: { kind },
+      });
+      await fixture.request();
+      const socket = createSocket();
 
-    fixture.events?.onMessage?.(
-      messageEvent(
-        JSON.stringify({
-          cols: 80,
-          rows: 24,
-          type: "attach",
-        }),
-      ),
-      socket.context,
-    );
+      fixture.events?.onMessage?.(
+        messageEvent(
+          JSON.stringify({
+            cols: 80,
+            rows: 24,
+            type: "attach",
+          }),
+        ),
+        socket.context,
+      );
 
-    await vi.waitFor(() => {
-      expect(socket.close).toHaveBeenCalledWith(1008, "project_busy");
-    });
-    expect(JSON.parse(socket.sent[0] as string)).toEqual({
-      code: "project_busy",
-      type: "error",
-    });
-  });
+      await vi.waitFor(() => {
+        expect(socket.close).toHaveBeenCalledWith(1008, kind);
+      });
+      expect(JSON.parse(socket.sent[0] as string)).toEqual({
+        code: kind,
+        type: "error",
+      });
+    },
+  );
 
   it("rejects malformed messages and never starts a Terminal", async () => {
     const fixture = createFixture({

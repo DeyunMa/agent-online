@@ -2,21 +2,25 @@ import { z } from "zod";
 
 import {
   type AgentRunStreamEvent,
+  agentRunPageResponseSchema,
   agentRunResponseSchema,
   agentRunStreamEventSchema,
   apiErrorResponseSchema,
   type CreateAgentRunRequest,
   type CreateProjectRequest,
   healthResponseSchema,
-  messageResponseSchema,
+  type MessagePageQuery,
+  messagePageResponseSchema,
   platformCapabilitiesResponseSchema,
   projectChangeDiffResponseSchema,
   projectChangesResponseSchema,
   projectDirectoryResponseSchema,
   projectFileResponseSchema,
   projectFileUploadResponseSchema,
+  projectPageResponseSchema,
   projectPreviewResponseSchema,
   projectResponseSchema,
+  type TimestampCursor,
   type UpdateProjectRequest,
   userUsageResponseSchema,
 } from "../shared/api";
@@ -144,6 +148,8 @@ function messageForApiError(error: PublicErrorCode) {
       return "登录状态已失效，请重新登录。";
     case "request.forbidden":
       return "你没有访问此项目的权限。";
+    case "resource.limited":
+      return "当前用户的并发或启动额度已用尽，请结束其他项目活动或稍后重试。";
     case "resource.not_found":
       return "未找到请求的项目或执行记录。";
     case "project_path.not_found":
@@ -263,22 +269,22 @@ export const browserApi = {
     return requestJson("/api/usage", userUsageResponseSchema);
   },
 
-  listMessages(projectId: string) {
+  listMessages(projectId: string, query: MessagePageQuery = {}) {
     return requestJson(
-      `/api/projects/${encodeURIComponent(projectId)}/messages`,
-      messageResponseSchema.array(),
+      `/api/projects/${encodeURIComponent(projectId)}/messages${queryString(query)}`,
+      messagePageResponseSchema,
     );
   },
 
-  listAgentRuns(projectId: string) {
+  listAgentRuns(projectId: string, cursor?: TimestampCursor) {
     return requestJson(
-      `/api/projects/${encodeURIComponent(projectId)}/agent-runs`,
-      agentRunResponseSchema.array(),
+      `/api/projects/${encodeURIComponent(projectId)}/agent-runs${queryString({ cursor })}`,
+      agentRunPageResponseSchema,
     );
   },
 
-  listProjects() {
-    return requestJson("/api/projects", projectResponseSchema.array());
+  listProjects(cursor?: TimestampCursor) {
+    return requestJson(`/api/projects${queryString({ cursor })}`, projectPageResponseSchema);
   },
 
   listProjectFiles(projectId: string, path: string) {
@@ -369,7 +375,7 @@ export function subscribeToAgentRun(projectId: string, runId: string, handlers: 
   source.onmessage = handleMessage;
 
   source.onerror = () => {
-    if (receivedCompletion || source.readyState === EventSource.CLOSED) {
+    if (receivedCompletion) {
       return;
     }
 
@@ -395,4 +401,13 @@ function parseRunStreamEvent(value: unknown): AgentRunStreamEvent | null {
   } catch {
     return null;
   }
+}
+
+function queryString(query: Record<string, unknown>) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined)
+      params.set(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+  }
+  return params.size ? `?${params.toString()}` : "";
 }

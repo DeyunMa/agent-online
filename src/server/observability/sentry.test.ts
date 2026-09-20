@@ -129,6 +129,18 @@ describe("server Sentry adapter", () => {
     expect(sanitized.fingerprint).toBeUndefined();
   });
 
+  it("does not turn failed performance measurements into Sentry errors", () => {
+    expect(
+      shouldReportDiagnosticToSentry({
+        event: "performance.measured",
+        outcome: "failed",
+        operation: "http",
+        httpStatus: 500,
+        durationMs: 12,
+      }),
+    ).toBe(false);
+  });
+
   it("maps only error diagnostics and avoids duplicating unhandled request errors", () => {
     expect(
       shouldReportDiagnosticToSentry({

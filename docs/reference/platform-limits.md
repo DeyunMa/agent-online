@@ -2,7 +2,7 @@
 
 > 文档状态：当前实现限制基准
 >
-> 校准日期：2026-07-30
+> 校准日期：2026-09-20（当前工作区；0009 尚未发布）
 >
 > 目标：说明每一类限制约束什么对象、当前值、由哪一层执行，以及达到限制后的行为
 
@@ -62,7 +62,7 @@ Run 与 Terminal 的互斥同时存在于应用层和 D1。Files/Changes 的活�
 
 allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控制，不是 Team invite 系统。
 
-当前没有应用级 IP/User 速率限制、验证码、封禁、并发用户额度或滥用检测；只能继承 Better Auth、Cloudflare 和上游 Provider 的平台行为。这是公开部署前必须重新评估的边界。
+已实现 [ADR-0012](../adr/0012-user-resource-admission.md) 的用户执行准入：Run/Terminal 合计并发 2，UTC 固定小时最多启动 60 次，UTC 固定日最多准入 512 次模型请求。缺少 IP/全 API 限流、验证码、封禁和注册滥用检测；公开部署前仍需评估。
 
 ## 3. Project、消息和列表
 
@@ -75,13 +75,13 @@ allowlist 同时检查邮箱注册和邮箱登录。它是私有部署入口控�
 | Agent JSONL | 单记录最多 1 MiB；最终回复最多 256 KiB | Pi/Goose adapter，超限失败并终止 |
 | Agent 进程输出 | stdout/stderr 合计最多 32 MiB；待消费最多 2 MiB 或 4096 事件 | E2B adapter，超限断流并终止 |
 | 普通产品请求体 | 最多 256 KiB | Hono body limit；超限返回 `413 request.too_large` |
-| Project 列表 | 无分页、无应用级条数上限 | D1 查询 |
-| Message 列表 | 无分页，返回 Project 全部可见消息 | D1 查询 |
-| AgentRun 列表 | 只返回最新 50 条 | D1 `LIMIT 50` |
+| Project 列表 | 每页 50 条、时间/ID 游标；无总条数配额 | D1 查询 |
+| Message 列表 | 每页 50 条，sequence 历史/增量游标 | D1 查询 |
+| AgentRun 列表 | 每页 50 条，时间/ID 游标 | D1 有界读取 |
 | Usage 范围 | 当前 User 的现存 AgentRun 与删除归档，固定 `all_time`；无日期筛选 | D1 聚合 |
 | 默认模型 ID | 最长 200，只允许 `[A-Za-z0-9._:/-]` | Worker 配置解析 |
 
-当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 无分页适合个人阶段，但数据变大后会增加响应和 D1 扫描成本。
+当前没有 Project 数量、Message 数量或 D1 总存储的产品配额。Project/Message 已有界分页；长期积累仍会增加存储和 Usage 聚合成本。
 
 普通产品 mutation 在鉴权和业务 JSON 解析前统一执行同源检查与 256 KiB body limit。
 Better Auth 和内部 ModelGateway 不经过该 guard，分别使用自身来源/协议校验与
@@ -260,7 +260,9 @@ Provider URL、日志、截图或部署。它用于手动刷新查看前端 Vite
 | usage | 上游必须提供；先写 D1，再把结果返回 Agent。 |
 | 缓存 | 所有 gateway 响应 `no-store`。 |
 
-当前没有 BYOK、Key 轮换 UI、Key 按用户隔离、模型价格表或预算强制。`input_tokens` 等字段是 Provider usage 的累计事实，不保证等于最终账单。
+模型请求硬上限为每 Run 64 次、每 User 每 UTC 日 512 次；单 Run 已记录 total_tokens 达到 500000 后拒绝后续请求，同 Run 仅 1 个模型请求在途。失败请求消耗准入次数，实际 usage 仍按已记录 Provider 响应统计。token 最后一次响应可超出阈值，不保证精确账单封顶。
+
+当前没有 BYOK、Key 轮换 UI、Key 按用户隔离或模型价格表。`input_tokens` 等字段是 Provider usage 的累计事实，不保证等于最终账单。
 
 ### 10.1 错误观测边界
 
@@ -286,6 +288,8 @@ Provider URL、日志、截图或部署。它用于手动刷新查看前端 Vite
 | 终端滚屏 | 仅当前浏览器内存 | 断开后不可恢复。 |
 | Preview 页面/日志/截图 | 不保存 | 不可恢复。 |
 | Git Changes 历史 | 不保存 | 只能重新读取当前状态。 |
+
+Files 可下载当前显示的受控文本文件，保存到用户本机；这不是完整项目导出，不能保存不可读取的二进制、超大文件或目录。
 
 没有 R2、对象存储快照、备份恢复、版本历史或多副本一致性。对个人学习项目这是有意的轻量边界，不应宣传成生产级代码托管。
 
@@ -329,13 +333,24 @@ Cloudflare、E2B、Gemini 和 Sentry 的免费额度、并发、CPU、存储、�
 | Files/Changes 检查与 Provider 读取非原子 | 个人阶段接受；UI 不宣称严格一致。 |
 | Git config 校验与命令执行存在 TOCTOU | 接受为当前只读观察面限制，不作为安全审计证明。 |
 | D1 状态和外部 Provider 可能短暂漂移 | Workflow、条件更新和 Provider timeout 尽力收敛。 |
-| Project/Message 无分页 | 个人数据量阶段接受；规模化前必须补。 |
-| 无应用级 rate limit/abuse control | 只适合私有 allowlist Preview；公开注册前必须补。 |
-| Project 文件无备份 | 当前明确接受；停止沙箱前用户需自行理解数据可丢失。 |
-| import boundary 检查不解析 path alias/计算式动态导入 | 当前 `@/*` 仅映射 `src/client/*`，AST 门禁仍只解析相对导入；新增或扩大 alias 时必须同步门禁，现有 alias 不构成跨层检查覆盖。 |
+| 实时分页期间并发更新 | Project 按 updatedAt 排序，更新可改变页归属；客户端按 ID 去重，刷新重读，不承诺跨请求快照。 |
+| 执行额度不等于完整 abuse control | 已有用户级执行/模型准入；IP、全 API 和注册滥用控制仍缺失，保持私有 allowlist 部署边界。 |
+| Project 文件无备份 | 可主动下载当前文本文件；未导出的文件仍可能随沙箱丢失，不能视为完整项目备份。 |
+| import boundary 不解析计算式动态导入 | 已解析 tsconfig 中相对和 alias 路径，覆盖静态导入、再导出与字符串动态导入；不支持运行时计算的模块路径。 |
 | 浏览器自动化不覆盖完整辅助技术组合 | 已覆盖 roving tab 的方向键/Home/End 与焦点保持，但未自动验证所有屏幕阅读器。 |
 | 浏览器自动化只覆盖核心 smoke | 当前还覆盖表单、Markdown 安全、上传、面板拖拽与刷新恢复、Terminal 单实例及逐帧高度、Preview 隔离；真实 Provider 行为仍依赖显式 E2B/线上验收。 |
 | Sentry 事件清洗依赖 allowlist 持续维护 | 新增诊断字段或 SDK integration 时必须先补脱敏测试；不能靠 Dashboard 规则替代代码边界。 |
 | 临时协调状态可能因外部故障漂移 | Workflow/Provider timeout 是正常收敛路径；Run 终止无法确认时保留非终态锁，重试耗尽后按[协调状态恢复](../operations/coordination-recovery.md)诊断，不能仅凭过期时间删锁。 |
 
 接口结构见 [HTTP、SSE 与 WebSocket 接口](./http-api.md)，数据所有权见 [D1 表设计](./database-schema.md)。
+
+## 15. 执行准入与性能测量（本地 0009）
+
+用户额度保存在 user_resource_counters，删除 Project 不重置；用户删除级联清理。
+Run/Terminal 超限回滚创建，Run 返回 429 resource.limited，Terminal 返回 resource_limited
+控制错误。模型准入失败不访问上游；数据库异常时拒绝转发，许可释放失败保留该 Run 锁。
+固定窗口在边界附近可能产生双窗口突发；额度不包含已运行 Preview 或空闲沙箱的总数。
+
+performance.measured 只进入结构化日志，不进入 Sentry Error Monitoring。HTTP duration
+测量响应建立，upstream_fetch 测量模型响应头，均不代表完整流生命周期。Run 历史及 Usage
+聚合报告 D1 实际 rows_read/rows_written，缺失时省略，不保存 SQL、绑定值或返回行。

@@ -4,6 +4,7 @@ export const publicErrorCodes = [
   "request.invalid",
   "request.too_large",
   "resource.not_found",
+  "resource.limited",
   "project.busy",
   "run.creation_disabled",
   "agent_runtime.unavailable",

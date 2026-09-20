@@ -1,8 +1,8 @@
 import type { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-
-import { createAgentRunRequestSchema } from "../shared/api";
+import { createAgentRunRequestSchema, listPageQuerySchema } from "../shared/api";
 import type { AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import { validateJsonRequest } from "./http/json-validator";
 import type { ProjectApiDependencies } from "./project-api-dependencies";
 import {
@@ -52,6 +52,7 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
         userId: user.id,
       });
 
+      if (created.kind === "resource_limited") return renderApiError(c, "resource.limited");
       if (created.kind === "project_busy") {
         return projectBusy(c);
       }
@@ -72,13 +73,15 @@ export function registerAgentRunRoutes(api: Hono<AppEnv>, dependencies: ProjectA
       return unauthorized(c);
     }
 
+    const query = listPageQuerySchema.safeParse(c.req.query());
+    if (!query.success) return renderApiError(c, "request.invalid");
     const runs = await dependencies
       .createServices(c.env, requestDiagnosticContext(c))
-      .projectReads.listRecentOwnedRuns(c.req.param("projectId"), user.id);
+      .projectReads.listRecentOwnedRuns(c.req.param("projectId"), user.id, query.data.cursor);
     if (!runs) {
       return notFound(c);
     }
-    return c.json(runs.map(toAgentRunResponse));
+    return c.json({ items: runs.items.map(toAgentRunResponse), nextCursor: runs.nextCursor });
   });
 
   api.get("/projects/:projectId/agent-runs/active", async (c) => {

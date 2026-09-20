@@ -41,7 +41,7 @@ Terminal、Preview 的条件写入、成功回复事务、Project 删除归档�
 原生 D1 SQL/batch，保留现有互斥条件、数据库触发器和同批读取语义；Better Auth
 继续使用自己的 D1 adapter。
 
-`migrations/0001` 至 `0008` 是唯一迁移历史，本次接入 ORM 不修改物理表、不重置数据。
+`migrations/0001` 至 `0009` 是唯一迁移历史；0009 增量加入用户执行准入，不重置已有数据。
 后续表变更需要同时更新 SQL 迁移、Drizzle schema 与数据库文档。`pnpm test:d1` 在隔离
 Workers D1 中应用全部迁移，核对 schema 的列、默认值、主键、外键、唯一约束、索引与
 CHECK 表达式，并继续验证触发器和原子写入。SQLite 的 TEXT PRIMARY KEY 在 PRAGMA
@@ -58,6 +58,7 @@ Drizzle ORM 继续负责类型与普通查询；两者的一致性由隔离 Work
 | `sandbox_leases` | `id`, `project_id`, `sandbox_runtime_id`, `provider_ref`, `status`, `created_at`, `updated_at` | 每个 Project 一条当前逻辑 Lease；`provider_ref` 私有、可覆盖。 |
 | `agent_runs` | `id`, `user_id`, `project_id`, `input_message_id`, `sandbox_lease_id`, `agent_runtime_id`, `sandbox_runtime_id`, `model_id`, `status`, `failure_code`, `provider_process_ref`, 用量与时间字段 | 一次 Agent 执行的状态、稳定失败分类、关联、当前私有进程引用和基础计量。 |
 | `archived_run_usage` | `run_id`, `user_id`, Project/Runtime/Model 快照、终态、用量与时间字段 | Project 删除前按 Run 归档最小计量事实；不保存消息、失败详情或 Provider 引用。 |
+| `user_resource_counters` | `user_id`, 小时/日期窗口和准入次数 | 每用户一行执行护栏，不是计费账本；Project 删除不重置。 |
 | `terminal_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 PTY 的硬互斥与私有终止引用；关闭即删除，不是历史表。`expires_at` 只供 Workflow 调度，不能自动解锁。 |
 | `preview_sessions` | `id`, `project_id`, `sandbox_lease_id`, `provider_sandbox_ref`, `provider_process_ref`, `status`, `port`, `expires_at`, `created_at`, `updated_at` | 一个 Project 当前临时 Preview 的所有权与私有终止引用；固定端口 3000，停止即删除，不是页面或访问历史。 |
 
@@ -179,3 +180,7 @@ Git。源码映射用于还原 stack，不改变前述数据清洗边界。
 - [Sentry Cloudflare SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/cloudflare/README.md)
 - [Sentry Hono SDK](https://github.com/getsentry/sentry-javascript/blob/develop/packages/hono/README.md)
 - [Sentry JavaScript Source Maps](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/)
+
+用户执行和模型请求准入见 [ADR-0012](../adr/0012-user-resource-admission.md)：新建 Run/Terminal
+通过 D1 原子触发器限制用户并发与启动频率；模型转发先取得单 Run 许可并消耗用户日次数。
+AgentRun 的私有 model_admission_count/model_request_active 不进入公开 DTO 或 usage 归档。

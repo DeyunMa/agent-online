@@ -9,9 +9,7 @@ test("persists a cancelled Run and rejects deletion while the Project is active"
   await page.getByLabel("Agent task").fill("Browser smoke task");
   await page.getByRole("button", { name: "Start run" }).click();
   await expect(
-    page
-      .getByRole("list", { name: "Project conversation" })
-      .getByText("Agent is working on the project…"),
+    page.getByRole("list", { name: "Project conversation" }).locator(".assistant-run-placeholder"),
   ).toBeVisible();
 
   const projectHeaderActions = page.locator(".project-console-header-actions");
@@ -57,34 +55,66 @@ test("persists a cancelled Run and rejects deletion while the Project is active"
   await expect(page.getByLabel("Selected run metrics")).toBeVisible();
 });
 
+test("keeps cancellation attached to the active Run while viewing history", async ({ page }) => {
+  await registerAndCreateProject(page, "history-active");
+  const input = page.getByLabel("Agent task");
+  const send = page.getByRole("button", { name: "Start run" });
+  await input.fill("First historical task");
+  await send.click();
+  await page.getByRole("button", { name: "Cancel run" }).click();
+  await expect(input).toBeEnabled({ timeout: 15_000 });
+  await input.fill("Second active task");
+  const created = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith("/agent-runs"),
+  );
+  await send.click();
+  const active = (await (await created).json()) as { id: string };
+  await page.getByRole("tab", { name: "Runs", exact: true }).click();
+  await page.getByRole("button").filter({ hasText: "First historical task" }).click();
+  await expect(page.getByRole("region", { name: "Selected run summary" })).toContainText("已取消");
+  await expect(input).toBeDisabled();
+  await page.getByRole("tab", { name: "Conversation", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Cancel run" })).toBeVisible();
+  const cancelled = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" && request.url().endsWith(`/agent-runs/${active.id}/cancel`),
+  );
+  await page.getByRole("button", { name: "Cancel run" }).click();
+  await cancelled;
+  await expect(input).toBeEnabled({ timeout: 15_000 });
+});
+
 test("renders Assistant Markdown safely in the conversation column", async ({ page }) => {
   await page.setViewportSize({ height: 900, width: 1_440 });
-  await page.route("**/api/projects/*/messages", async (route) => {
+  await page.route("**/api/projects/*/messages*", async (route) => {
     if (route.request().method() !== "GET") {
       await route.continue();
       return;
     }
 
     await route.fulfill({
-      json: [
-        {
-          agentRunId: null,
-          content: "请介绍当前沙箱环境。",
-          createdAt: "2026-07-31T08:00:00.000Z",
-          id: "message-user",
-          role: "user",
-          sequence: 1,
-        },
-        {
-          agentRunId: "run-markdown",
-          content:
-            '### 沙箱概览\n\n- **系统：** `Debian 12`\n- **工作目录：** `/workspace`\n\n![remote image](https://example.com/tracker.png)\n\n<iframe src="https://example.com"></iframe>',
-          createdAt: "2026-07-31T08:00:01.000Z",
-          id: "message-assistant",
-          role: "assistant",
-          sequence: 2,
-        },
-      ],
+      json: {
+        items: [
+          {
+            agentRunId: null,
+            content: "请介绍当前沙箱环境。",
+            createdAt: "2026-07-31T08:00:00.000Z",
+            id: "message-user",
+            role: "user",
+            sequence: 1,
+          },
+          {
+            agentRunId: "run-markdown",
+            content:
+              '### 沙箱概览\n\n- **系统：** `Debian 12`\n- **工作目录：** `/workspace`\n\n![remote image](https://example.com/tracker.png)\n\n<iframe src="https://example.com"></iframe>',
+            createdAt: "2026-07-31T08:00:01.000Z",
+            id: "message-assistant",
+            role: "assistant",
+            sequence: 2,
+          },
+        ],
+        nextCursor: null,
+      },
     });
   });
 

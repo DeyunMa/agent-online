@@ -76,7 +76,7 @@ export function createServerServices(
   diagnosticContext: DiagnosticContext = {},
 ): ServerServices {
   const diagnostics = createDiagnosticReporter(diagnosticContext);
-  const agentRuns = new D1AgentRunRepository(env.DB);
+  const agentRuns = new D1AgentRunRepository(env.DB, diagnostics);
   const messages = new D1MessageRepository(env.DB);
   const projects = new D1ProjectRepository(env.DB);
   const sandboxLeases = new D1SandboxLeaseRepository(env.DB);

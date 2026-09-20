@@ -1,7 +1,7 @@
+import { listPageSize, type MessagePageQuery, type TimestampCursor } from "../shared/api";
 import type {
   AgentRunRecord,
   AgentRunRepository,
-  MessageRecord,
   MessageRepository,
   ProjectRecord,
   ProjectRepository,
@@ -31,17 +31,22 @@ export type ProjectReadServiceDependencies = {
 export class ProjectReadService {
   constructor(private readonly dependencies: ProjectReadServiceDependencies) {}
 
-  async listOwnedProjects(userId: string): Promise<ProjectReadModel[]> {
-    const projects = await this.dependencies.projects.listOwned(userId);
+  async listOwnedProjects(userId: string, cursor?: TimestampCursor) {
+    const rows = await this.dependencies.projects.listOwned(userId, cursor);
+    const projects = rows.slice(0, listPageSize);
     const leases = await this.dependencies.sandboxLeases.findByProjectIds(
       projects.map((project) => project.id),
     );
     const leasesByProjectId = new Map(leases.map((lease) => [lease.projectId, lease]));
 
-    return projects.map((project) => ({
-      lease: leasesByProjectId.get(project.id) ?? null,
-      project,
-    }));
+    const last = projects.at(-1);
+    return {
+      items: projects.map((project) => ({
+        lease: leasesByProjectId.get(project.id) ?? null,
+        project,
+      })),
+      nextCursor: rows.length > listPageSize && last ? { at: last.updatedAt, id: last.id } : null,
+    };
   }
 
   async findOwnedProject(projectId: string, userId: string): Promise<ProjectRecord | null> {
@@ -63,16 +68,30 @@ export class ProjectReadService {
     };
   }
 
-  async listOwnedMessages(projectId: string, userId: string): Promise<MessageRecord[] | null> {
+  async listOwnedMessages(projectId: string, userId: string, query: MessagePageQuery = {}) {
     const project = await this.findOwnedProject(projectId, userId);
-    return project ? this.dependencies.messages.listByProjectId(project.id) : null;
+    if (!project) return null;
+    const rows = await this.dependencies.messages.listByProjectId(project.id, query);
+    const items = rows.slice(0, listPageSize);
+    const nextCursor = rows.length > listPageSize ? (items.at(-1)?.sequence ?? null) : null;
+    if (query.after === undefined) items.reverse();
+    return { items, nextCursor };
   }
 
-  async listRecentOwnedRuns(projectId: string, userId: string): Promise<AgentRunRecord[] | null> {
+  async listRecentOwnedRuns(projectId: string, userId: string, cursor?: TimestampCursor) {
     const project = await this.findOwnedProject(projectId, userId);
-    return project
-      ? this.dependencies.agentRuns.listRecentOwnedByProjectId(project.id, userId)
-      : null;
+    if (!project) return null;
+    const rows = await this.dependencies.agentRuns.listRecentOwnedByProjectId(
+      project.id,
+      userId,
+      cursor,
+    );
+    const items = rows.slice(0, listPageSize);
+    const last = items.at(-1);
+    return {
+      items,
+      nextCursor: rows.length > listPageSize && last ? { at: last.createdAt, id: last.id } : null,
+    };
   }
 
   async findActiveOwnedRun(

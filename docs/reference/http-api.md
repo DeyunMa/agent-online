@@ -53,6 +53,7 @@ type ApiErrorResponse = {
 | `request.forbidden` | `403` | false | 同源或权限检查失败。 |
 | `request.too_large` | `413` | false | 普通产品请求体或文件上传请求体超过对应上限。 |
 | `request.invalid` | `400` | false | JSON 或字段不合法。 |
+| `resource.limited` | `429` | true | 当前用户跨 Project 并发或启动频率额度耗尽。 |
 | `resource.not_found` | `404` | false | 路由或所有权过滤后的资源不存在。 |
 | `project.busy` | `409` | true | 当前 Run、Terminal 或 Preview 启动占用 Project。 |
 | `run.creation_disabled` | `503` | false | 维护者关闭了新 Run。 |
@@ -189,19 +190,19 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 
 | 方法 | 路径 | 请求 | 成功响应 | 主要错误 |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/projects` | 无 | `200 ProjectResponse[]` | `401` |
+| `GET` | `/api/projects` | 可选 `cursor` | `200 ProjectPageResponse` | `401` |
 | `POST` | `/api/projects` | `{ "title": string }` | `201 ProjectResponse` | `400`、`401` |
 | `GET` | `/api/projects/:projectId` | 无 | `200 ProjectResponse` | `401`、`404` |
 | `PATCH` | `/api/projects/:projectId` | `{ "title": string }` | `200 ProjectResponse` | `400`、`401`、`404` |
 | `DELETE` | `/api/projects/:projectId` | 无 | `204` | `401`、`404`、`409`、`503` |
-| `GET` | `/api/projects/:projectId/messages` | 无 | `200 MessageResponse[]` | `401`、`404` |
+| `GET` | `/api/projects/:projectId/messages` | 可选 `before` 或 `after` | `200 MessagePageResponse` | `401`、`404` |
 | `POST` | `/api/projects/:projectId/sandbox/stop` | 无 | `200 ProjectResponse` | `401`、`404`、`409`、`503` |
 
 行为说明：
 
 - 新 Project 的 `defaultAgentRuntimeId` 固定为 `pi`。
-- 列表按 `updated_at DESC, id DESC` 返回，当前没有分页。
-- Message 按 `sequence ASC` 返回，当前没有分页。
+- Project 列表按 `updated_at DESC, id DESC` 游标分页，每页 50 条，返回 items/nextCursor。
+- Message 默认读取最新 50 条；before 读取历史、after 增量同步，items 始终按 sequence ASC 返回。
 - Rename 与 Create 共用 trim 后 1 至 120 字符的标题合同；标题变化会 touch
   `updated_at`，相同标题不写 D1。
 - Delete 是不可恢复的硬删除。活动 Run、Terminal 或 Preview 返回
@@ -216,7 +217,7 @@ Better Auth 可能提供其他内部标准路径，但它们不是 Agent Online 
 | 方法 | 路径 | 请求 | 成功响应 | 主要错误 |
 | --- | --- | --- | --- | --- |
 | `POST` | `/api/projects/:projectId/agent-runs` | `{ "content": string, "agentRuntimeId"?: string }` | `201 AgentRunResponse` | `400`、`401`、`404`、`409`、`503` |
-| `GET` | `/api/projects/:projectId/agent-runs` | 无 | `200 AgentRunResponse[]` | `401`、`404` |
+| `GET` | `/api/projects/:projectId/agent-runs` | 可选 `cursor` | `200 AgentRunPageResponse` | `401`、`404` |
 | `GET` | `/api/projects/:projectId/agent-runs/active` | 无 | `200 AgentRunResponse \| null` | `401`、`404` |
 | `GET` | `/api/projects/:projectId/agent-runs/:runId` | 无 | `200 AgentRunResponse` | `401`、`404` |
 | `POST` | `/api/projects/:projectId/agent-runs/:runId/cancel` | 无 | `200 AgentRunResponse` | `401`、`404`、`500` |
@@ -425,6 +426,7 @@ type TerminalServerMessage =
       type: "error";
       code:
         | "invalid_message"
+        | "resource_limited"
         | "project_busy"
         | "provider_error"
         | "sandbox_unavailable";
@@ -509,3 +511,29 @@ ModelGateway 使用 OpenAI 风格错误体：
 - BYOK、套餐、支付、余额、配额和账单。
 
 限制值和互斥矩阵见 [平台限制与限制对象](./platform-limits.md)。
+
+## 分页合同（2026-09-20，本地实现）
+
+Project、Message、Run 列表统一返回 `{ items, nextCursor }`，每页最多 50 条。
+这替换旧数组响应，不保留兼容模式；本地应用、测试和部署产物需一起更新。
+
+- `GET /api/projects?cursor=...`：按 `updated_at DESC, id DESC`；cursor 为 URL 编码的
+  JSON `{ "at": "ISO timestamp", "id": "application id" }`。列表在更新期间为实时视图，
+  前端按 ID 去重，刷新重新查询各页，不承诺跨请求数据库快照。
+- `GET /api/projects/:id/agent-runs?cursor=...`：同形游标，按 `created_at DESC, id DESC`；
+  不再仅提供最新 50 条，nextCursor 可继续读取更早 Run。
+- `GET /api/projects/:id/messages`：默认最近 50 条，items 始终按 sequence 升序；
+  nextCursor 是向前加载的 before 值。`?before=N` 读取更早消息。
+- `?after=N` 读取严格晚于 N 的最多 50 条消息；此模式 nextCursor 为继续向后的 after 值。
+  before/after 不能同时使用。客户端连续补齐新增页，并保留用户主动加载的历史。
+- nextCursor 为 null 表示本方向已无下一页。不接收客户端自定页大小或未知查询参数；
+  非法游标、负数或冲突方向统一为 `400 request.invalid`。
+- 每次请求独立认证和授权，游标仅是排序边界，不赋予资源访问权限。
+
+## 用户资源准入（2026-09-20，本地实现）
+
+创建 Run 与打开 Terminal 共用用户级并发和小时启动额度，规则见
+[ADR-0012](../adr/0012-user-resource-admission.md)。拒绝创建 Run 时返回 429
+resource.limited，不新增输入 Message；Terminal 已升级连接时返回 resource_limited
+控制消息并关闭。模型请求超限返回 OpenAI 风格 429 resource_limit，不向 Gemini 转发。
+准入基础设施异常返回 503 admission_unavailable。此模型错误合同独立于普通产品 API。

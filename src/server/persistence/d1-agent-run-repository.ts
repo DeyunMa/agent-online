@@ -1,22 +1,26 @@
+import { isResourceAdmissionError } from "./resource-admission-error";
+import { type DiagnosticReporter, noopDiagnosticReporter } from "../../observability/contract";
+import { measureD1 } from "./measure-d1";
+import type { AgentRuntimeId } from "../../agent/contract";
 import type {
   AgentRunRecord,
   AgentRunRepository,
   AgentRunUsageDelta,
   CreateQueuedAgentRunResult,
 } from "../../application/ports";
-import type { AgentRuntimeId } from "../../agent/contract";
 import {
-  canTransitionAgentRun,
-  isValidAgentRunFailure,
-  isTerminalAgentRun,
   type AgentRunStatus,
+  canTransitionAgentRun,
+  isTerminalAgentRun,
+  isValidAgentRunFailure,
 } from "../../domain/agent-run";
 import type { RuntimeKind } from "../../runtime/contract";
+import { listPageSize, type TimestampCursor } from "../../shared/api";
 import type { AgentRunFailureCode } from "../../shared/error-codes";
 import {
   type AgentRunRow,
-  type MessageRow,
   agentRunColumns,
+  type MessageRow,
   messageColumns,
   requireBatchRow,
   toAgentRunRecord,
@@ -24,7 +28,10 @@ import {
 } from "./d1-records";
 
 export class D1AgentRunRepository implements AgentRunRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly diagnostics: DiagnosticReporter = noopDiagnosticReporter,
+  ) {}
 
   async createQueuedWithInput(input: {
     agentRunId: string;
@@ -104,6 +111,7 @@ export class D1AgentRunRepository implements AgentRunRepository {
         run: toAgentRunRecord(requireBatchRow<AgentRunRow>(results, 3, "create queued AgentRun")),
       };
     } catch (error) {
+      if (isResourceAdmissionError(error)) return { kind: "resource_limited" };
       if (isActiveAgentRunConflict(error)) {
         return { kind: "project_busy" };
       }
@@ -166,17 +174,32 @@ export class D1AgentRunRepository implements AgentRunRepository {
     return row === null ? null : toAgentRunRecord(row);
   }
 
-  async listRecentOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord[]> {
-    const result = await this.db
-      .prepare(
-        `SELECT ${agentRunColumns}
+  async listRecentOwnedByProjectId(
+    projectId: string,
+    userId: string,
+    cursor?: TimestampCursor,
+  ): Promise<AgentRunRecord[]> {
+    const result = await measureD1(this.diagnostics, "run_history", () =>
+      this.db
+        .prepare(
+          `SELECT ${agentRunColumns}
         FROM agent_runs
         WHERE project_id = ? AND user_id = ?
+          AND (? IS NULL OR created_at < ? OR (created_at = ? AND id < ?))
         ORDER BY created_at DESC, id DESC
-        LIMIT 50`,
-      )
-      .bind(projectId, userId)
-      .all<AgentRunRow>();
+        LIMIT ?`,
+        )
+        .bind(
+          projectId,
+          userId,
+          cursor?.at ?? null,
+          cursor?.at ?? null,
+          cursor?.at ?? null,
+          cursor?.id ?? null,
+          listPageSize + 1,
+        )
+        .all<AgentRunRow>(),
+    );
 
     return result.results.map(toAgentRunRecord);
   }

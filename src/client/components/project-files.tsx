@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   FileCode2,
   FileQuestion,
   Folder,
@@ -73,6 +74,22 @@ export function ProjectFiles({
         <FileToolbar
           onBack={() => setSelectedFilePath(null)}
           onRefresh={() => void file.refetch()}
+          onDownload={
+            !file.error && file.data
+              ? () => {
+                  const data = file.data;
+                  if (!data) return;
+                  const url = URL.createObjectURL(
+                    new Blob([data.content], { type: "text/plain;charset=utf-8" }),
+                  );
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = data.name;
+                  link.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+                }
+              : undefined
+          }
           path={selectedFilePath}
         />
         {file.isPending ? <LoadingState label="Loading file" /> : null}
@@ -82,9 +99,14 @@ export function ProjectFiles({
           <ErrorState compact error={file.error} onRetry={() => void file.refetch()} />
         ) : null}
         {!file.error && file.data ? (
-          <pre className="project-file-content">
-            <code>{file.data.content}</code>
-          </pre>
+          <>
+            <p className="project-files-limit">
+              Download saves the displayed text file only. It is not a project backup.
+            </p>
+            <pre className="project-file-content">
+              <code>{file.data.content}</code>
+            </pre>
+          </>
         ) : null}
       </section>
     );
@@ -175,10 +197,12 @@ function DirectoryToolbar({
 }
 
 function FileToolbar({
+  onDownload,
   onBack,
   onRefresh,
   path,
 }: {
+  onDownload: (() => void) | undefined;
   onBack: () => void;
   onRefresh: () => void;
   path: string;
@@ -189,6 +213,11 @@ function FileToolbar({
         <ChevronLeft aria-hidden="true" size={14} />
         <span>{path.split("/").at(-1)}</span>
       </button>
+      {onDownload ? (
+        <IconButton label="Download displayed file" onClick={onDownload}>
+          <Download aria-hidden="true" size={14} />
+        </IconButton>
+      ) : null}
       <IconButton label="Refresh file" onClick={onRefresh}>
         <RefreshCw aria-hidden="true" size={14} />
       </IconButton>

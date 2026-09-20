@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { D1AgentRunRepository } from "./d1-repositories";
-import { TestD1Database, result } from "./d1-test-database";
+import { result, TestD1Database } from "./d1-test-database";
 
 describe("D1 AgentRun repository", () => {
   it("creates the user message and queued AgentRun in one batch", async () => {
@@ -260,8 +260,8 @@ describe("D1 AgentRun repository", () => {
       },
     ]);
     expect(db.prepared[0]?.query).toContain("ORDER BY created_at DESC, id DESC");
-    expect(db.prepared[0]?.query).toContain("LIMIT 50");
-    expect(db.prepared[0]?.bindings).toEqual(["project-1", "user-1"]);
+    expect(db.prepared[0]?.query).toContain("LIMIT ?");
+    expect(db.prepared[0]?.bindings).toEqual(["project-1", "user-1", null, null, null, null, 51]);
   });
 
   it("atomically adds non-terminal AgentRun usage deltas", async () => {

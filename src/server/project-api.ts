@@ -1,8 +1,13 @@
 import { Hono } from "hono";
-
-import { createProjectRequestSchema, updateProjectRequestSchema } from "../shared/api";
+import {
+  createProjectRequestSchema,
+  listPageQuerySchema,
+  messagePageQuerySchema,
+  updateProjectRequestSchema,
+} from "../shared/api";
 import { registerAgentRunRoutes } from "./agent-run-api";
 import type { AppEnv } from "./env";
+import { renderApiError } from "./http/api-errors";
 import { validateJsonRequest } from "./http/json-validator";
 import {
   type ProjectApiDependencies,
@@ -35,9 +40,13 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
-    const projects = await services.projectReads.listOwnedProjects(user.id);
-
-    return c.json(projects.map(({ lease, project }) => toProjectResponse(project, lease)));
+    const query = listPageQuerySchema.safeParse(c.req.query());
+    if (!query.success) return renderApiError(c, "request.invalid");
+    const projects = await services.projectReads.listOwnedProjects(user.id, query.data.cursor);
+    return c.json({
+      items: projects.items.map(({ lease, project }) => toProjectResponse(project, lease)),
+      nextCursor: projects.nextCursor,
+    });
   });
 
   api.post(
@@ -164,15 +173,21 @@ export function createProjectApi(overrides: Partial<ProjectApiDependencies> = {}
     }
 
     const services = dependencies.createServices(c.env, requestDiagnosticContext(c));
+    const query = messagePageQuerySchema.safeParse(c.req.query());
+    if (!query.success) return renderApiError(c, "request.invalid");
     const messages = await services.projectReads.listOwnedMessages(
       c.req.param("projectId"),
       user.id,
+      query.data,
     );
     if (!messages) {
       return notFound(c);
     }
 
-    return c.json(messages.map(toMessageResponse));
+    return c.json({
+      items: messages.items.map(toMessageResponse),
+      nextCursor: messages.nextCursor,
+    });
   });
 
   registerProjectFilesRoutes(api, dependencies);

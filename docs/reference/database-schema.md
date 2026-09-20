@@ -2,9 +2,9 @@
 
 > 文档状态：当前 schema 基准
 >
-> 校准日期：2026-07-30
+> 校准日期：2026-09-20（0009 为本地变更）
 >
-> 权威来源：`migrations/0001_app.sql` 至 `migrations/0008_archived_run_usage.sql`
+> 权威来源：`migrations/0001_app.sql` 至 `migrations/0009_resource_admission.sql`
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
@@ -23,6 +23,7 @@ erDiagram
   user ||--o{ projects : owns
   user ||--o{ agent_runs : executes
   user ||--o{ archived_run_usage : retains
+  user ||--o| user_resource_counters : limits
 
   projects ||--o| sandbox_leases : has
   projects ||--o{ messages : contains
@@ -52,6 +53,7 @@ erDiagram
 | `messages` | 产品 | 用户输入和最终可见 assistant 回复 | 作为 Project 对话记录保留。 |
 | `agent_runs` | 产品 | 每次 Agent 执行的状态、模型和聚合用量 | 作为运行与计量记录保留。 |
 | `archived_run_usage` | 产品计量 | 已删除 Project 的一行一 Run 最小计量事实 | 保留到 User 删除；不是账单或对话历史。 |
+| `user_resource_counters` | 执行准入 | 用户当前小时启动次数和当前 UTC 日模型准入次数 | 每 User 至多一行；Project 删除不影响，User 删除级联。 |
 | `terminal_sessions` | 临时协调 | 当前 PTY 互斥、到期时间和私有 Provider 引用 | 关闭、断线清理或到期后删除。 |
 | `preview_sessions` | 临时协调 | 当前 Preview 进程所有权和到期时间 | 停止、失效或到期后删除。 |
 
@@ -187,6 +189,8 @@ Project 标题可更新；硬删除不新增字段或历史表。
 | `status` | `TEXT NOT NULL CHECK (...)` | Run 状态机。 |
 | `input_tokens` / `output_tokens` / `total_tokens` | 非负 `INTEGER`，默认 `0` | ModelGateway 累加的 token usage。 |
 | `model_request_count` | 非负 `INTEGER`，默认 `0` | 成功记录 usage 的模型请求数。 |
+| `model_admission_count` | `INTEGER`，0 至 64，默认 0 | 私有准入次数，失败不退回，不作为实际 usage。 |
+| `model_request_active` | `INTEGER`，0 或 1，默认 0 | 私有在途模型请求锁；无按时间自动解锁。 |
 | `sandbox_duration_ms` | 非负 `INTEGER`，默认 `0` | 真实 Sandbox Run 的执行时长。 |
 | `provider_process_ref` | `TEXT NULL` | Worker 私有的 Agent 进程引用。 |
 | `failure_code` | 受控 `TEXT NULL` | 稳定 Run 失败码；由状态组合 trigger 约束。 |
@@ -313,7 +317,7 @@ AgentRuntime 分组。Project 分组通过 `projectDeleted` 标记归档记录�
 不代表可结算账单：
 
 - 没有价格快照、货币、税、折扣或 Provider 账单对账。
-- 没有额度、预授权、余额扣减或超额阻断。
+- 没有货币余额、付款预授权或账单扣减；执行准入独立于实际 usage，见 ADR-0012。
 - Provider 返回且成功写入的 usage 才会计入 D1。
 - Project 硬删除会级联删除 AgentRun，但归档计量继续进入 Usage。
 
@@ -341,3 +345,14 @@ AgentRuntime 分组。Project 分组通过 `projectDeleted` 标记归档记录�
 - BYOK credential。
 
 相关边界见 [当前项目架构](./current-architecture.md) 和 [平台限制](./platform-limits.md)。
+
+## 8. 用户资源计数（0009）
+
+user_resource_counters 的 user_id 是引用 user(id) 的主键；admission_hour 和 model_day
+分别为数据库 UTC Unix 时间整除 3600 和 86400 的窗口编号；admission_count 为 0 至 60，
+model_count 为 0 至 512，四项 INTEGER 默认 0。窗口仅在下一次准入时更新，不保留历史。
+
+agent_runs_resource_admission 和 terminal_sessions_resource_admission 在插入后检查
+用户总并发并更新小时计数；失败回滚原语句/创建 batch。agent_runs_model_admission 在
+增加 Run 私有准入次数时更新用户日计数。它们不改变 usage 归档合同，不存任何用户内容。
+详细失败语义与限额见 [ADR-0012](../adr/0012-user-resource-admission.md)。

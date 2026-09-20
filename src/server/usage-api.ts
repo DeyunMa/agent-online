@@ -5,17 +5,21 @@ import type { UserUsageResponse } from "../shared/api";
 import { getAuthenticatedUser, type AuthenticatedUser } from "./auth-context";
 import type { AppBindings, AppEnv } from "./env";
 import { renderApiError } from "./http/api-errors";
+import { createDiagnosticReporter } from "./observability/reporter";
 import { D1UserUsageRepository } from "./persistence/d1-repositories";
 
 type AppContext = Context<AppEnv>;
 
 export type UsageApiDependencies = {
-  createUsageQuery: (env: AppBindings) => UserUsageQuery;
+  createUsageQuery: (env: AppBindings, requestId?: string) => UserUsageQuery;
   getAuthenticatedUser: (env: AppBindings, headers: Headers) => Promise<AuthenticatedUser | null>;
 };
 
 const defaultDependencies: UsageApiDependencies = {
-  createUsageQuery: (env) => new UserUsageService(new D1UserUsageRepository(env.DB)),
+  createUsageQuery: (env, requestId) =>
+    new UserUsageService(
+      new D1UserUsageRepository(env.DB, createDiagnosticReporter(requestId ? { requestId } : {})),
+    ),
   getAuthenticatedUser,
 };
 
@@ -29,7 +33,9 @@ export function createUsageApi(overrides: Partial<UsageApiDependencies> = {}) {
       return unauthorized(c);
     }
 
-    const summary = await dependencies.createUsageQuery(c.env).getForUser(user.id);
+    const summary = await dependencies
+      .createUsageQuery(c.env, c.get("requestId"))
+      .getForUser(user.id);
 
     return c.json<UserUsageResponse>({
       ...summary,

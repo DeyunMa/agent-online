@@ -6,7 +6,7 @@ import type { AppEnv } from "../env";
 
 type PublicErrorDefinition = {
   retryable: boolean;
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 500 | 503;
+  status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 429 | 500 | 503;
 };
 
 export const publicErrorDefinitions = {
@@ -25,6 +25,7 @@ export const publicErrorDefinitions = {
   "request.forbidden": { retryable: false, status: 403 },
   "request.invalid": { retryable: false, status: 400 },
   "request.too_large": { retryable: false, status: 413 },
+  "resource.limited": { retryable: true, status: 429 },
   "resource.not_found": { retryable: false, status: 404 },
   "run.creation_disabled": { retryable: false, status: 503 },
   "sandbox.not_active": { retryable: false, status: 409 },

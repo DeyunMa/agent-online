@@ -11,6 +11,7 @@ export const diagnosticErrorCodes = [
   "AGENT_PROTOCOL_INVALID",
   "AGENT_PROCESS_FAILED",
   "MODEL_CAPABILITY_INVALID",
+  "MODEL_ADMISSION_FAILED",
   "MODEL_UPSTREAM_REJECTED",
   "MODEL_UPSTREAM_TIMEOUT",
   "MODEL_USAGE_WRITE_FAILED",
@@ -27,6 +28,7 @@ export const diagnosticErrorDefinitions = {
   AGENT_PROCESS_FAILED: { retryable: true, severity: "error" },
   AGENT_PROTOCOL_INVALID: { retryable: false, severity: "error" },
   LEASE_INCONSISTENT: { retryable: false, severity: "error" },
+  MODEL_ADMISSION_FAILED: { retryable: true, severity: "error" },
   MODEL_CAPABILITY_INVALID: { retryable: false, severity: "warn" },
   MODEL_UPSTREAM_REJECTED: { retryable: true, severity: "error" },
   MODEL_UPSTREAM_TIMEOUT: { retryable: true, severity: "error" },
@@ -53,6 +55,7 @@ export type DiagnosticContext = {
 };
 
 export type DiagnosticEventName =
+  | "performance.measured"
   | "agent_run.cancel_requested"
   | "agent_run.created"
   | "agent_run.dispatch_failed"
@@ -79,6 +82,7 @@ export type DiagnosticStage =
   | "mark_lease_busy"
   | "mark_lease_ready"
   | "mark_lease_starting"
+  | "model_admission"
   | "mark_run_running"
   | "persist_completion"
   | "persist_process_ref"
@@ -100,6 +104,21 @@ export type DiagnosticStage =
   | "usage_write";
 
 export type DiagnosticEvent = DiagnosticContext & {
+  operation?: "http" | "run_history" | "usage_summary";
+  route?:
+    | "auth"
+    | "projects"
+    | "messages"
+    | "runs"
+    | "files"
+    | "changes"
+    | "preview"
+    | "usage"
+    | "model_gateway"
+    | "other";
+  httpStatus?: number;
+  rowsRead?: number;
+  rowsWritten?: number;
   agentRuntimeId?: AgentRuntimeId;
   attempt?: number;
   detached?: boolean;

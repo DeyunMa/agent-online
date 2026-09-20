@@ -1,3 +1,4 @@
+import { isResourceAdmissionError } from "./resource-admission-error";
 import type { TerminalSessionRepository } from "../../application/ports";
 import {
   type TerminalSessionRow,
@@ -18,10 +19,11 @@ export class D1TerminalSessionRepository implements TerminalSessionRepository {
     projectId: string;
     sandboxLeaseId: string;
   }) {
-    const results = await this.db.batch<TerminalSessionRow>([
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO terminal_sessions (
+    try {
+      const results = await this.db.batch<TerminalSessionRow>([
+        this.db
+          .prepare(
+            `INSERT OR IGNORE INTO terminal_sessions (
             id,
             project_id,
             sandbox_lease_id,
@@ -53,42 +55,46 @@ export class D1TerminalSessionRepository implements TerminalSessionRepository {
               FROM preview_sessions
               WHERE project_id = ?
                 AND status = 'starting'
-            )`,
-        )
-        .bind(
-          input.id,
-          input.projectId,
-          input.expiresAt,
-          input.now,
-          input.now,
-          input.sandboxLeaseId,
-          input.projectId,
-          input.expectedLeaseUpdatedAt,
-          input.expectedLeaseProviderRef,
-          input.projectId,
-          input.projectId,
-          input.projectId,
-        ),
-      this.db
-        .prepare(
-          `SELECT ${terminalSessionColumns}
+            ) RETURNING id`,
+          )
+          .bind(
+            input.id,
+            input.projectId,
+            input.expiresAt,
+            input.now,
+            input.now,
+            input.sandboxLeaseId,
+            input.projectId,
+            input.expectedLeaseUpdatedAt,
+            input.expectedLeaseProviderRef,
+            input.projectId,
+            input.projectId,
+            input.projectId,
+          ),
+        this.db
+          .prepare(
+            `SELECT ${terminalSessionColumns}
           FROM terminal_sessions
           WHERE id = ?
           LIMIT 1`,
-        )
-        .bind(input.id),
-    ]);
+          )
+          .bind(input.id),
+      ]);
 
-    if (results[0]?.meta.changes !== 1) {
-      return { kind: "project_busy" } as const;
+      if (results[0]?.results.length !== 1) {
+        return { kind: "project_busy" } as const;
+      }
+
+      return {
+        kind: "claimed" as const,
+        session: toTerminalSessionRecord(
+          requireBatchRow<TerminalSessionRow>(results, 1, "claim Terminal session"),
+        ),
+      };
+    } catch (error) {
+      if (isResourceAdmissionError(error)) return { kind: "resource_limited" } as const;
+      throw error;
     }
-
-    return {
-      kind: "claimed" as const,
-      session: toTerminalSessionRecord(
-        requireBatchRow<TerminalSessionRow>(results, 1, "claim Terminal session"),
-      ),
-    };
   }
 
   async findById(sessionId: string) {

@@ -38,3 +38,13 @@ jobs:
 
       - name: Validate
         run: pnpm check
+
+      # Only local fake-runtime browser fixtures are included; never hosted sessions.
+      - name: Preserve browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/playwright/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

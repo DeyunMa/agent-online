@@ -256,6 +256,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isTerminalServerErrorCode(value: unknown): value is TerminalServerErrorCode {
   return (
     value === "invalid_message" ||
+    value === "resource_limited" ||
     value === "project_busy" ||
     value === "provider_error" ||
     value === "sandbox_unavailable"
@@ -266,6 +267,8 @@ function messageForTerminalError(code: TerminalServerErrorCode | "network_error"
   switch (code) {
     case "invalid_message":
       return "终端协议请求无效，请重新连接。";
+    case "resource_limited":
+      return "当前用户的执行额度已用尽，请结束其他 Run 或终端，或稍后重试。";
     case "project_busy":
       return "该项目已有正在执行的 Agent Run 或终端会话。";
     case "sandbox_unavailable":

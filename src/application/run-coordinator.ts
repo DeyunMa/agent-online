@@ -1,3 +1,4 @@
+import { measureOperation } from "./diagnostic-measurement";
 import type { AgentExecution, AgentRuntime, AgentRuntimeId } from "../agent/contract";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import type { AgentRunStatus } from "../domain/agent-run";
@@ -121,11 +122,16 @@ class ManagedRun implements CoordinatedAgentRun {
       startupStage = "mark_lease_starting";
       await this.updateLease("starting");
       startupStage = "ensure_sandbox";
-      const sandboxHandle = await sandboxRuntime.ensureLease({
-        providerRef: this.currentLease.providerRef,
-        projectId: this.currentRun.projectId,
-        sandboxLeaseId: this.currentLease.id,
-      });
+      const sandboxHandle = await measureOperation(
+        this.dependencies.diagnostics ?? noopDiagnosticReporter,
+        { runId: this.currentRun.id, stage: "ensure_sandbox" },
+        () =>
+          sandboxRuntime.ensureLease({
+            providerRef: this.currentLease.providerRef,
+            projectId: this.currentRun.projectId,
+            sandboxLeaseId: this.currentLease.id,
+          }),
+      );
 
       if (sandboxHandle.kind !== sandboxRuntime.kind) {
         throw new Error("SandboxRuntime returned a handle for a different runtime");
@@ -141,30 +147,35 @@ class ManagedRun implements CoordinatedAgentRun {
       }
       if (isTerminalAgentRun(this.currentRun.status)) throw new Error("Run no longer owns startup");
       startupStage = "start_agent";
-      const execution = await agentRuntime.start(
-        {
-          files: {
-            write: (path, content) => sandboxRuntime.writeFile(sandboxHandle, path, content),
-          },
-          processes: {
-            start: async (command) => {
-              await this.refreshCurrentRun();
-              if (this.currentRun.status !== "starting")
-                throw new Error("Run startup was cancelled");
-              this.processStartAttempted = true;
-              this.processSession = await sandboxRuntime.startProcess(sandboxHandle, command);
-              return this.processSession;
+      const execution = await measureOperation(
+        this.dependencies.diagnostics ?? noopDiagnosticReporter,
+        { runId: this.currentRun.id, stage: "start_agent" },
+        () =>
+          agentRuntime.start(
+            {
+              files: {
+                write: (path, content) => sandboxRuntime.writeFile(sandboxHandle, path, content),
+              },
+              processes: {
+                start: async (command) => {
+                  await this.refreshCurrentRun();
+                  if (this.currentRun.status !== "starting")
+                    throw new Error("Run startup was cancelled");
+                  this.processStartAttempted = true;
+                  this.processSession = await sandboxRuntime.startProcess(sandboxHandle, command);
+                  return this.processSession;
+                },
+              },
             },
-          },
-        },
-        {
-          agentRunId: this.currentRun.id,
-          ...(this.input.modelAccess ? { modelAccess: this.input.modelAccess } : {}),
-          projectId: this.currentRun.projectId,
-          prompt: this.input.prompt,
-          sandboxLeaseId: this.currentLease.id,
-          workingDirectory: this.input.workingDirectory,
-        },
+            {
+              agentRunId: this.currentRun.id,
+              ...(this.input.modelAccess ? { modelAccess: this.input.modelAccess } : {}),
+              projectId: this.currentRun.projectId,
+              prompt: this.input.prompt,
+              sandboxLeaseId: this.currentLease.id,
+              workingDirectory: this.input.workingDirectory,
+            },
+          ),
       );
       this.execution = execution;
       startupStage = "persist_process_ref";

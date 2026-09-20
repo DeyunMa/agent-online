@@ -2,6 +2,7 @@ import type { AgentRuntimeId } from "../agent/contract";
 import type { AgentRunStatus } from "../domain/agent-run";
 import type { SandboxLeaseStatus } from "../domain/sandbox-lease";
 import type { RuntimeKind } from "../runtime/contract";
+import type { MessagePageQuery, TimestampCursor } from "../shared/api";
 import type { AgentRunFailureCode } from "../shared/error-codes";
 
 export type ProjectRecord = {
@@ -95,7 +96,7 @@ export interface ProjectRepository {
    */
   deleteOwned(input: { deletedAt: string; projectId: string; userId: string }): Promise<boolean>;
   findOwnedById(projectId: string, userId: string): Promise<ProjectRecord | null>;
-  listOwned(userId: string): Promise<ProjectRecord[]>;
+  listOwned(userId: string, cursor?: TimestampCursor): Promise<ProjectRecord[]>;
   renameOwned(input: {
     projectId: string;
     title: string;
@@ -106,7 +107,7 @@ export interface ProjectRepository {
 
 export interface MessageRepository {
   findById(messageId: string, projectId: string): Promise<MessageRecord | null>;
-  listByProjectId(projectId: string): Promise<MessageRecord[]>;
+  listByProjectId(projectId: string, query?: MessagePageQuery): Promise<MessageRecord[]>;
 }
 
 /** Null content marks a whole message omitted because it exceeds the history budget. */
@@ -185,7 +186,8 @@ export type ClaimTerminalSessionResult =
       kind: "claimed";
       session: TerminalSessionRecord;
     }
-  | { kind: "project_busy" };
+  | { kind: "project_busy" }
+  | { kind: "resource_limited" };
 
 export interface TerminalSessionRepository {
   /**
@@ -274,7 +276,8 @@ export interface PreviewSessionRepository {
 
 export type CreateQueuedAgentRunResult =
   | { inputMessage: MessageRecord; kind: "created"; run: AgentRunRecord }
-  | { kind: "project_busy" };
+  | { kind: "project_busy" }
+  | { kind: "resource_limited" };
 
 export interface AgentRunRepository {
   /**
@@ -300,7 +303,11 @@ export interface AgentRunRepository {
   findActiveOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord | null>;
   findOwnedById(agentRunId: string, userId: string): Promise<AgentRunRecord | null>;
   /** Returns the newest runs first. The adapter owns the bounded history size. */
-  listRecentOwnedByProjectId(projectId: string, userId: string): Promise<AgentRunRecord[]>;
+  listRecentOwnedByProjectId(
+    projectId: string,
+    userId: string,
+    cursor?: TimestampCursor,
+  ): Promise<AgentRunRecord[]>;
   /** Stores a provider-private process identifier while a Run is non-terminal. */
   setProviderProcessRef(runId: string, providerProcessRef: string): Promise<AgentRunRecord | null>;
   /** Idempotently records elapsed sandbox wall time while a Run is non-terminal. */

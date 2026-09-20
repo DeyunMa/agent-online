@@ -81,6 +81,48 @@ describe("Project API", () => {
     });
   });
 
+  it("returns a public 429 without persisting input when user allowance is exhausted", async () => {
+    const fixture = createFixture(testUser);
+    await fixture.projects.create({
+      id: "project_1",
+      userId: testUser.id,
+      title: "Limited",
+      defaultAgentRuntimeId: "pi",
+      now,
+    });
+    vi.spyOn(fixture.agentRuns, "createQueuedWithInput").mockResolvedValue({
+      kind: "resource_limited",
+    });
+    const response = await fixture.app.request(
+      "http://agent-online.test/api/projects/project_1/agent-runs",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: "preserve draft" }),
+      },
+    );
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      error: { code: "resource.limited", retryable: true },
+    });
+    expect(await fixture.messages.listByProjectId("project_1")).toEqual([]);
+  });
+
+  it("rejects malformed, conflicting, and unknown pagination parameters", async () => {
+    const fixture = createFixture(testUser);
+    for (const path of [
+      "/projects?cursor=garbage",
+      "/projects?limit=10000",
+      "/projects/project_1/messages?before=1&after=2",
+      "/projects/project_1/messages?after=-1",
+      "/projects/project_1/agent-runs?cursor=%7B%7D",
+    ]) {
+      const response = await fixture.app.request(`http://agent-online.test/api${path}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: { code: "request.invalid" } });
+    }
+  });
+
   it("rejects an unauthenticated request before accessing product data", async () => {
     const fixture = createFixture(null);
 
@@ -117,7 +159,7 @@ describe("Project API", () => {
     expect(created).toMatchObject({ sandboxLease: null, title: "Personal App" });
 
     const listedResponse = await fixture.app.request("http://agent-online.test/api/projects");
-    const listed = (await listedResponse.json()) as ProjectResponse[];
+    const listed = ((await listedResponse.json()) as { items: ProjectResponse[] }).items;
 
     expect(listedResponse.status).toBe(200);
     expect(listed).toHaveLength(1);
@@ -497,7 +539,10 @@ describe("Project API", () => {
       prompt: "Build a demo",
       workingDirectory: "/workspace",
     });
-    expect(messages).toMatchObject([{ content: "Build a demo", role: "user", sequence: 0 }]);
+    expect(messages).toMatchObject({
+      items: [{ content: "Build a demo", role: "user", sequence: 0 }],
+      nextCursor: null,
+    });
     expect(JSON.stringify(messages)).not.toContain("projectId");
     expect(activeResponse.status).toBe(200);
     expect(active).toMatchObject({ id: created.id, status: "queued" });
@@ -715,7 +760,7 @@ describe("Project API", () => {
     const historyResponse = await fixture.app.request(
       "http://agent-online.test/api/projects/project_1/agent-runs",
     );
-    const history = (await historyResponse.json()) as AgentRunResponse[];
+    const history = ((await historyResponse.json()) as { items: AgentRunResponse[] }).items;
     const inaccessible = await fixture.app.request(
       "http://agent-online.test/api/projects/project_other/agent-runs",
     );
@@ -918,8 +963,17 @@ class InMemoryProjectRepository implements ProjectRepository {
     return project?.userId === userId ? project : null;
   }
 
-  async listOwned(userId: string) {
-    return [...this.records.values()].filter((project) => project.userId === userId);
+  async listOwned(userId: string, cursor?: Parameters<ProjectRepository["listOwned"]>[1]) {
+    return [...this.records.values()]
+      .filter(
+        (project) =>
+          project.userId === userId &&
+          (!cursor ||
+            project.updatedAt < cursor.at ||
+            (project.updatedAt === cursor.at && project.id < cursor.id)),
+      )
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id))
+      .slice(0, 51);
   }
 
   async renameOwned(input: Parameters<ProjectRepository["renameOwned"]>[0]) {
@@ -947,10 +1001,21 @@ class InMemoryMessageRepository implements MessageRepository {
     );
   }
 
-  async listByProjectId(projectId: string) {
+  async listByProjectId(
+    projectId: string,
+    query: NonNullable<Parameters<MessageRepository["listByProjectId"]>[1]> = {},
+  ) {
     return this.records
-      .filter((message) => message.projectId === projectId)
-      .sort((left, right) => left.sequence - right.sequence);
+      .filter(
+        (message) =>
+          message.projectId === projectId &&
+          (query.before === undefined || message.sequence < query.before) &&
+          (query.after === undefined || message.sequence > query.after),
+      )
+      .sort((left, right) =>
+        query.after === undefined ? right.sequence - left.sequence : left.sequence - right.sequence,
+      )
+      .slice(0, 51);
   }
 }
 
@@ -1163,14 +1228,25 @@ class InMemoryAgentRunRepository implements AgentRunRepository {
     return run?.userId === userId ? run : null;
   }
 
-  async listRecentOwnedByProjectId(projectId: string, userId: string) {
+  async listRecentOwnedByProjectId(
+    projectId: string,
+    userId: string,
+    cursor?: Parameters<AgentRunRepository["listRecentOwnedByProjectId"]>[2],
+  ) {
     return [...this.records.values()]
-      .filter((run) => run.projectId === projectId && run.userId === userId)
+      .filter(
+        (run) =>
+          run.projectId === projectId &&
+          run.userId === userId &&
+          (!cursor ||
+            run.createdAt < cursor.at ||
+            (run.createdAt === cursor.at && run.id < cursor.id)),
+      )
       .sort(
         (left, right) =>
           right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
       )
-      .slice(0, 50);
+      .slice(0, 51);
   }
 
   async setProviderProcessRef(runId: string, providerProcessRef: string) {

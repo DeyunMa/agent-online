@@ -1,3 +1,5 @@
+import type { ModelAdmission } from "../application/model-admission";
+import { D1ModelAdmission } from "./persistence/d1-model-admission";
 import type { AgentRunRepository } from "../application/ports";
 import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
 import { createOpenAiCompatibleModelGateway, type ModelGatewayUsage } from "./model-gateway";
@@ -9,6 +11,7 @@ import { createDiagnosticReporter } from "./observability/reporter";
 export const modelGatewayEndpointPath = "/api/model-gateway/v1/chat/completions";
 
 export type RunAuthorizedModelGatewayOptions = {
+  modelAdmission: ModelAdmission;
   agentRuns: Pick<AgentRunRepository, "addUsageDelta" | "findById">;
   capabilitySecret: string;
   diagnostics?: DiagnosticReporter;
@@ -24,6 +27,10 @@ export function createRunAuthorizedModelGateway(options: RunAuthorizedModelGatew
   });
 
   return createOpenAiCompatibleModelGateway({
+    async admit(capability) {
+      if (!(await options.modelAdmission.acquire(capability.runId))) return null;
+      return { release: () => options.modelAdmission.release(capability.runId) };
+    },
     async authorize(request) {
       const token = readBearerToken(request.headers.get("authorization"));
       if (!token) {
@@ -78,6 +85,7 @@ export function createWorkerModelGateway(
 
   return createRunAuthorizedModelGateway({
     agentRuns: new D1AgentRunRepository(env.DB),
+    modelAdmission: new D1ModelAdmission(env.DB),
     capabilitySecret: env.BETTER_AUTH_SECRET,
     diagnostics: createDiagnosticReporter(diagnosticContext),
     geminiApiKey: env.GEMINI_API_KEY,

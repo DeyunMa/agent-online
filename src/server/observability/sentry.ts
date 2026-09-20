@@ -151,6 +151,7 @@ function sanitizeFingerprint(fingerprint: ErrorEvent["fingerprint"]) {
 }
 
 export function shouldReportDiagnosticToSentry(event: DiagnosticEvent) {
+  if (event.event === "performance.measured") return false;
   if (event.event === "request.unhandled") {
     return false;
   }

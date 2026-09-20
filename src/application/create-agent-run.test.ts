@@ -54,28 +54,31 @@ describe("CreateAgentRunService", () => {
     );
   });
 
-  it("preserves the atomic project_busy result without dispatching", async () => {
-    const start = vi.fn();
-    const service = createService({
-      agentRuns: agentRunRepository({
-        createQueuedWithInput: async () => ({ kind: "project_busy" }),
-      }),
-      runExecutions: { start },
-      sandboxLeases: sandboxLeaseRepository({
-        getOrCreate: async () => sandboxLease(),
-      }),
-    });
+  it.each(["project_busy", "resource_limited"] as const)(
+    "preserves atomic %s without dispatching",
+    async (kind) => {
+      const start = vi.fn();
+      const service = createService({
+        agentRuns: agentRunRepository({
+          createQueuedWithInput: async () => ({ kind }),
+        }),
+        runExecutions: { start },
+        sandboxLeases: sandboxLeaseRepository({
+          getOrCreate: async () => sandboxLease(),
+        }),
+      });
 
-    const result = await service.create({
-      agentRuntimeId: "pi",
-      content: "Inspect the project",
-      projectId: "project-1",
-      userId: "user-1",
-    });
+      const result = await service.create({
+        agentRuntimeId: "pi",
+        content: "Inspect the project",
+        projectId: "project-1",
+        userId: "user-1",
+      });
 
-    expect(result).toEqual({ kind: "project_busy" });
-    expect(start).not.toHaveBeenCalled();
-  });
+      expect(result).toEqual({ kind });
+      expect(start).not.toHaveBeenCalled();
+    },
+  );
 
   it("converges a dispatch failure to a failed Run", async () => {
     const queued = agentRun();

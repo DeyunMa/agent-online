@@ -66,6 +66,20 @@ describe("RunExecutionService", () => {
     expect(prompts[0]).not.toContain("Foreign project content");
     expect(prompts[0]).not.toContain("Future message");
     expect(current.content).toBe("Continue with the second option.");
+    expect(
+      fixture.diagnosticEvents.filter((event) => event.event === "performance.measured"),
+    ).toEqual([
+      expect.objectContaining({
+        stage: "ensure_sandbox",
+        durationMs: expect.any(Number),
+        outcome: "succeeded",
+      }),
+      expect.objectContaining({
+        stage: "start_agent",
+        durationMs: expect.any(Number),
+        outcome: "succeeded",
+      }),
+    ]);
     expect(JSON.stringify(fixture.diagnosticEvents)).not.toContain("compact sidebar");
   });
 
@@ -91,6 +105,8 @@ describe("RunExecutionService", () => {
     expect(completed.providerProcessRef).toBeNull();
     expect(fixture.diagnosticEvents.map((event) => event.event)).toEqual([
       "agent_run.execution_started",
+      "performance.measured",
+      "performance.measured",
       "agent_run.execution_finished",
     ]);
     expect(JSON.stringify(fixture.diagnosticEvents)).not.toContain(

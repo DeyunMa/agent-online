@@ -6,6 +6,7 @@ export type TerminalClientMessage =
 
 export type TerminalServerErrorCode =
   | "invalid_message"
+  | "resource_limited"
   | "project_busy"
   | "provider_error"
   | "sandbox_unavailable";

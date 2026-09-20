@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRunRecord, AgentRunUsageDelta } from "../application/ports";
 import { createRunAuthorizedModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
@@ -12,6 +12,7 @@ describe("Run-authorized ModelGateway", () => {
     const repository = new FakeModelGatewayRunRepository(createRun());
     const gateway = createRunAuthorizedModelGateway({
       agentRuns: repository,
+      modelAdmission: { acquire: async () => true, release: async () => {} },
       capabilitySecret: secret,
       fetchImplementation: async () =>
         Response.json({
@@ -47,6 +48,113 @@ describe("Run-authorized ModelGateway", () => {
     ]);
   });
 
+  it("rejects exhausted allowance before contacting the model", async () => {
+    const fetchImplementation = vi.fn();
+    const modelAdmission = { acquire: vi.fn(async () => false), release: vi.fn(async () => {}) };
+    const gateway = createRunAuthorizedModelGateway({
+      agentRuns: new FakeModelGatewayRunRepository(createRun()),
+      capabilitySecret: secret,
+      geminiApiKey: "test-key",
+      now: () => now,
+      modelAdmission,
+      fetchImplementation,
+    });
+    const response = await gateway(createCompletionRequest(await issueCapability()));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: { code: "resource_limit" } });
+    expect(modelAdmission.acquire).toHaveBeenCalledWith("run-1");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(modelAdmission.release).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when admission persistence is unavailable", async () => {
+    const fetchImplementation = vi.fn();
+    const gateway = createRunAuthorizedModelGateway({
+      agentRuns: new FakeModelGatewayRunRepository(createRun()),
+      capabilitySecret: secret,
+      geminiApiKey: "test-key",
+      now: () => now,
+      modelAdmission: {
+        acquire: async () => {
+          throw new Error("private DB details");
+        },
+        release: async () => {},
+      },
+      fetchImplementation,
+    });
+    const response = await gateway(createCompletionRequest(await issueCapability()));
+    expect(response.status).toBe(503);
+    expect(await response.text()).not.toContain("private");
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("holds the model permit through usage persistence and releases on failure", async () => {
+    let releaseUpstream: ((response: Response) => void) | undefined;
+    let occupied = false;
+    const modelAdmission = {
+      acquire: vi.fn(async () => {
+        if (occupied) return false;
+        occupied = true;
+        return true;
+      }),
+      release: vi.fn(async () => {
+        occupied = false;
+      }),
+    };
+    const repository = new FakeModelGatewayRunRepository(createRun());
+    const writeUsage = vi.spyOn(repository, "addUsageDelta").mockImplementation(async () => {
+      expect(occupied).toBe(true);
+      throw new Error("private persistence error");
+    });
+    const fetchImplementation = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseUpstream = resolve;
+        }),
+    );
+    const gateway = createRunAuthorizedModelGateway({
+      agentRuns: repository,
+      capabilitySecret: secret,
+      geminiApiKey: "test-key",
+      now: () => now,
+      modelAdmission,
+      fetchImplementation,
+    });
+    const token = await issueCapability();
+    const first = gateway(createCompletionRequest(token));
+    await vi.waitFor(() => expect(fetchImplementation).toHaveBeenCalledTimes(1));
+    expect((await gateway(createCompletionRequest(token))).status).toBe(429);
+    releaseUpstream?.(
+      Response.json({
+        choices: [],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      }),
+    );
+    const response = await first;
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("private");
+    expect(writeUsage).toHaveBeenCalledOnce();
+    expect(modelAdmission.release).toHaveBeenCalledOnce();
+    expect(occupied).toBe(false);
+  });
+
+  it("releases an admitted request after upstream network failure without refunding it", async () => {
+    const modelAdmission = { acquire: vi.fn(async () => true), release: vi.fn(async () => {}) };
+    const gateway = createRunAuthorizedModelGateway({
+      agentRuns: new FakeModelGatewayRunRepository(createRun()),
+      capabilitySecret: secret,
+      geminiApiKey: "test-key",
+      now: () => now,
+      modelAdmission,
+      fetchImplementation: async () => {
+        throw new Error("upstream unreachable");
+      },
+    });
+    expect((await gateway(createCompletionRequest(await issueCapability()))).status).toBe(502);
+    expect(modelAdmission.acquire).toHaveBeenCalledOnce();
+    expect(modelAdmission.release).toHaveBeenCalledWith("run-1");
+  });
+
   it("rejects a capability when its Run is terminal or does not match the Project", async () => {
     let upstreamCalls = 0;
     const run = createRun();
@@ -54,6 +162,7 @@ describe("Run-authorized ModelGateway", () => {
     const repository = new FakeModelGatewayRunRepository(run);
     const gateway = createRunAuthorizedModelGateway({
       agentRuns: repository,
+      modelAdmission: { acquire: async () => true, release: async () => {} },
       capabilitySecret: secret,
       fetchImplementation: async () => {
         upstreamCalls += 1;

@@ -1,9 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Folder, LoaderCircle, Plus } from "lucide-react";
 
-import { browserApi } from "../api";
-import { projectQueryKey } from "../query-keys";
+import { useProjects } from "../project-queries";
 import { AccountMenu, type AccountMenuProps } from "./account-menu";
 import { ProjectActionsMenu } from "./project-actions-menu";
 
@@ -13,11 +11,14 @@ export function ProjectSidebar({
   name,
   onSignOut,
 }: Omit<AccountMenuProps, "placement">) {
-  const projects = useQuery({
-    queryFn: browserApi.listProjects,
-    queryKey: projectQueryKey,
-  });
-  const visibleProjects = projects.data ?? [];
+  const projects = useProjects();
+  const items = [
+    ...new Map(
+      projects.data?.pages.flatMap((page) => page.items).map((project) => [project.id, project]) ??
+        [],
+    ).values(),
+  ];
+  const visibleProjects = items;
 
   return (
     <aside className="project-sidebar">
@@ -71,6 +72,16 @@ export function ProjectSidebar({
               </li>
             ))}
           </ul>
+        ) : null}
+        {projects.hasNextPage ? (
+          <button
+            type="button"
+            className="secondary-action"
+            disabled={projects.isFetchingNextPage}
+            onClick={() => void projects.fetchNextPage()}
+          >
+            Load more projects
+          </button>
         ) : null}
       </div>
 

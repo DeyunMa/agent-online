@@ -97,6 +97,14 @@ describe("ProjectTerminalService", () => {
     expect(harness.runtime.ensureLease).not.toHaveBeenCalled();
   });
 
+  it("rejects exhausted user allowance before scheduling or creating a sandbox", async () => {
+    const harness = createHarness({ resourceLimited: true });
+    await expect(harness.service.open("project-1", { cols: 80, rows: 24 })).resolves.toEqual({
+      kind: "resource_limited",
+    });
+    expect(harness.runtime.ensureLease).not.toHaveBeenCalled();
+  });
+
   it("does not start provider state when durable expiry scheduling fails", async () => {
     const harness = createHarness({ scheduleExpiryError: true });
 
@@ -227,6 +235,7 @@ function createHarness(
   options: {
     activeRun?: boolean;
     claimBusy?: boolean;
+    resourceLimited?: boolean;
     closeError?: boolean;
     keepTerminalOpen?: boolean;
     runtimeAvailable?: boolean;
@@ -278,12 +287,14 @@ function createHarness(
   } as unknown as SandboxLeaseRepository;
   const terminalSessions = {
     claim: vi.fn(async () =>
-      options.claimBusy
-        ? ({ kind: "project_busy" } as const)
-        : ({
-            kind: "claimed",
-            session: terminalRecord,
-          } as const),
+      options.resourceLimited
+        ? ({ kind: "resource_limited" } as const)
+        : options.claimBusy
+          ? ({ kind: "project_busy" } as const)
+          : ({
+              kind: "claimed",
+              session: terminalRecord,
+            } as const),
     ),
     findById: vi.fn(async () => terminalRecord),
     findByProjectId: vi.fn(async () => terminalRecord),

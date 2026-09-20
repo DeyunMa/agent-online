@@ -19,6 +19,75 @@ describe("D1 repositories in the Workers runtime", () => {
     await seedProject();
   });
 
+  it("pages messages and Runs without gaps across equal timestamps and isolates owners", async () => {
+    const messages = new D1MessageRepository(env.DB);
+    const runs = new D1AgentRunRepository(env.DB);
+    for (let i = 0; i < 55; i += 1) {
+      const id = `page-run-${String(i).padStart(3, "0")}`;
+      const result = await runs.createQueuedWithInput({
+        agentRunId: id,
+        agentRuntimeId: "pi",
+        content: `Message ${i}`,
+        inputMessageId: `page-message-${i}`,
+        modelId: "gemini-3.6-flash",
+        now: createdAt,
+        projectId: "project_1",
+        sandboxLeaseId: "lease_1",
+        sandboxRuntimeId: "fake",
+        userId: "user_1",
+      });
+      expect(result.kind).toBe("created");
+      await runs.transition({ runId: id, from: "queued", to: "cancelled", finishedAt });
+    }
+    const latest = await messages.listByProjectId("project_1");
+    expect(latest).toHaveLength(51);
+    expect(latest[0]?.sequence).toBe(54);
+    const firstPage = latest.slice(0, 50);
+    const oldest = firstPage.at(-1);
+    if (!oldest) throw new Error("Missing message page");
+    const earlier = await messages.listByProjectId("project_1", { before: oldest.sequence });
+    expect(earlier.map((row) => row.sequence)).toEqual([4, 3, 2, 1, 0]);
+    const delta = await messages.listByProjectId("project_1", { after: 51 });
+    expect(delta.map((row) => row.sequence)).toEqual([52, 53, 54]);
+    const runPage = (await runs.listRecentOwnedByProjectId("project_1", "user_1")).slice(0, 50);
+    const lastRun = runPage.at(-1);
+    if (!lastRun) throw new Error("Missing Run page");
+    const remaining = await runs.listRecentOwnedByProjectId("project_1", "user_1", {
+      at: lastRun.createdAt,
+      id: lastRun.id,
+    });
+    expect(remaining).toHaveLength(5);
+    expect(new Set([...runPage, ...remaining].map((run) => run.id)).size).toBe(55);
+    expect(
+      await runs.listRecentOwnedByProjectId("project_1", "other_user", {
+        at: lastRun.createdAt,
+        id: lastRun.id,
+      }),
+    ).toEqual([]);
+  });
+
+  it("pages Projects using both update time and id", async () => {
+    const repository = new D1ProjectRepository(env.DB);
+    for (let i = 0; i < 55; i += 1) {
+      await repository.create({
+        id: `project-page-${String(i).padStart(3, "0")}`,
+        userId: "user_1",
+        title: "Paged Project",
+        defaultAgentRuntimeId: "pi",
+        now: createdAt,
+      });
+    }
+    const first = (await repository.listOwned("user_1")).slice(0, 50);
+    const last = first.at(-1);
+    if (!last) throw new Error("Missing Project page");
+    const next = await repository.listOwned("user_1", { at: last.updatedAt, id: last.id });
+    expect(next).toHaveLength(6);
+    expect(new Set([...first, ...next].map((project) => project.id)).size).toBe(56);
+    expect(await repository.listOwned("other_user", { at: last.updatedAt, id: last.id })).toEqual(
+      [],
+    );
+  });
+
   it("applies every migration with valid foreign keys and integrity triggers", async () => {
     const migrations = await env.DB.prepare("SELECT name FROM d1_migrations ORDER BY name").all<{
       name: string;
@@ -40,6 +109,7 @@ describe("D1 repositories in the Workers runtime", () => {
       "0006_integrity_guards.sql",
       "0007_agent_run_failure_codes.sql",
       "0008_archived_run_usage.sql",
+      "0009_resource_admission.sql",
     ]);
     expect(triggers.results.map(({ name }) => name)).toEqual(
       expect.arrayContaining([

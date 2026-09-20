@@ -1,3 +1,4 @@
+import { reportMeasurement } from "../application/diagnostic-measurement";
 import {
   type DiagnosticEvent,
   type DiagnosticReporter,
@@ -22,6 +23,7 @@ export type ModelGatewayCapability = {
 };
 
 export type ModelGatewayOptions = {
+  admit?(capability: ModelGatewayCapability): Promise<{ release(): Promise<void> } | null>;
   authorize(request: Request): Promise<ModelGatewayCapability | null>;
   diagnostics?: DiagnosticReporter;
   endpointPath?: string;
@@ -129,65 +131,134 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
       );
     }
 
-    let upstreamResponse: Response;
-    const timeoutSignal = AbortSignal.timeout(upstreamTimeoutMs);
-    try {
-      upstreamResponse = await fetchImplementation(
-        `${modelApiBaseUrl}/v1beta/openai/chat/completions`,
-        {
-          body: JSON.stringify(upstreamRequest),
-          headers: {
-            accept: parsed.stream ? "text/event-stream" : "application/json",
-            authorization: `Bearer ${options.geminiApiKey}`,
-            "content-type": "application/json",
-          },
-          method: "POST",
-          signal: AbortSignal.any([request.signal, timeoutSignal]),
-        },
-      );
-    } catch {
-      if (timeoutSignal.aborted) {
+    let admission: { release(): Promise<void> } | null = null;
+    if (options.admit) {
+      try {
+        admission = await options.admit(capability);
+      } catch {
         diagnostics.report({
-          errorCode: "MODEL_UPSTREAM_TIMEOUT",
+          event: "model_gateway.request_failed",
+          errorCode: "MODEL_ADMISSION_FAILED",
+          outcome: "failed",
+          runId: capability.runId,
+          stage: "model_admission",
+        });
+        return gatewayError(
+          503,
+          "admission_unavailable",
+          "Model request admission is unavailable.",
+        );
+      }
+      if (!admission)
+        return gatewayError(
+          429,
+          "resource_limit",
+          "Model request concurrency or budget limit reached.",
+        );
+    }
+    try {
+      const upstreamStarted = performance.now();
+      let upstreamResponse: Response;
+      const timeoutSignal = AbortSignal.timeout(upstreamTimeoutMs);
+      try {
+        upstreamResponse = await fetchImplementation(
+          `${modelApiBaseUrl}/v1beta/openai/chat/completions`,
+          {
+            body: JSON.stringify(upstreamRequest),
+            headers: {
+              accept: parsed.stream ? "text/event-stream" : "application/json",
+              authorization: `Bearer ${options.geminiApiKey}`,
+              "content-type": "application/json",
+            },
+            method: "POST",
+            signal: AbortSignal.any([request.signal, timeoutSignal]),
+          },
+        );
+      } catch {
+        reportMeasurement(diagnostics, {
+          runId: capability.runId,
+          stage: "upstream_fetch",
+          outcome: "failed",
+          durationMs: performance.now() - upstreamStarted,
+        });
+        if (timeoutSignal.aborted) {
+          diagnostics.report({
+            errorCode: "MODEL_UPSTREAM_TIMEOUT",
+            event: "model_gateway.request_failed",
+            modelId: capability.modelId,
+            outcome: "failed",
+            runId: capability.runId,
+            stage: "upstream_fetch",
+          });
+          return gatewayError(504, "model_timeout", "The upstream model request timed out.");
+        }
+
+        diagnostics.report({
+          errorCode: "MODEL_UPSTREAM_REJECTED",
           event: "model_gateway.request_failed",
           modelId: capability.modelId,
           outcome: "failed",
           runId: capability.runId,
           stage: "upstream_fetch",
         });
-        return gatewayError(504, "model_timeout", "The upstream model request timed out.");
+        return gatewayError(502, "model_unavailable", "The upstream model request failed.");
       }
 
-      diagnostics.report({
-        errorCode: "MODEL_UPSTREAM_REJECTED",
-        event: "model_gateway.request_failed",
-        modelId: capability.modelId,
-        outcome: "failed",
+      reportMeasurement(diagnostics, {
         runId: capability.runId,
         stage: "upstream_fetch",
+        outcome: upstreamResponse.ok ? "succeeded" : "failed",
+        durationMs: performance.now() - upstreamStarted,
       });
-      return gatewayError(502, "model_unavailable", "The upstream model request failed.");
-    }
 
-    if (!upstreamResponse.ok) {
-      const upstreamDiagnostic = await readUpstreamErrorDiagnostic(upstreamResponse);
-      diagnostics.report({
-        errorCode: "MODEL_UPSTREAM_REJECTED",
-        event: "model_gateway.request_failed",
-        modelId: capability.modelId,
-        outcome: "failed",
-        runId: capability.runId,
-        stage: "upstream_response",
-        upstreamCategory: upstreamDiagnostic.errorCategory,
-        upstreamHttpStatus: upstreamDiagnostic.upstreamHttpStatus,
-      });
-      return gatewayError(502, "model_unavailable", "The upstream model request was rejected.");
-    }
+      if (!upstreamResponse.ok) {
+        const upstreamDiagnostic = await readUpstreamErrorDiagnostic(upstreamResponse);
+        diagnostics.report({
+          errorCode: "MODEL_UPSTREAM_REJECTED",
+          event: "model_gateway.request_failed",
+          modelId: capability.modelId,
+          outcome: "failed",
+          runId: capability.runId,
+          stage: "upstream_response",
+          upstreamCategory: upstreamDiagnostic.errorCategory,
+          upstreamHttpStatus: upstreamDiagnostic.upstreamHttpStatus,
+        });
+        return gatewayError(502, "model_unavailable", "The upstream model request was rejected.");
+      }
 
-    let upstreamBody: string;
-    try {
-      const body = await readBoundedText(upstreamResponse.body, maxUpstreamResponseBytes);
-      if (body.kind !== "ok") {
+      let upstreamBody: string;
+      try {
+        const body = await readBoundedText(upstreamResponse.body, maxUpstreamResponseBytes);
+        if (body.kind !== "ok") {
+          if (timeoutSignal.aborted) {
+            diagnostics.report({
+              errorCode: "MODEL_UPSTREAM_TIMEOUT",
+              event: "model_gateway.request_failed",
+              modelId: capability.modelId,
+              outcome: "failed",
+              runId: capability.runId,
+              stage: "upstream_response",
+            });
+            return gatewayError(504, "model_timeout", "The upstream model request timed out.");
+          }
+          diagnostics.report({
+            errorCode: "MODEL_UPSTREAM_REJECTED",
+            event: "model_gateway.request_failed",
+            modelId: capability.modelId,
+            outcome: "failed",
+            runId: capability.runId,
+            stage: "upstream_response",
+          });
+          return gatewayError(
+            502,
+            "invalid_model_response",
+            body.kind === "too_large"
+              ? "The upstream model response exceeded the gateway limit."
+              : "The upstream model response was invalid.",
+          );
+        }
+        upstreamBody = body.value;
+      } catch {
         if (timeoutSignal.aborted) {
           diagnostics.report({
             errorCode: "MODEL_UPSTREAM_TIMEOUT",
@@ -210,86 +281,73 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
         return gatewayError(
           502,
           "invalid_model_response",
-          body.kind === "too_large"
-            ? "The upstream model response exceeded the gateway limit."
-            : "The upstream model response was invalid.",
+          "The upstream model response was invalid.",
         );
       }
-      upstreamBody = body.value;
-    } catch {
-      if (timeoutSignal.aborted) {
+
+      const responseBody = parsed.stream
+        ? normalizeStreamingToolProtocol(upstreamBody)
+        : upstreamBody;
+      const usage = readOpenAiUsage(responseBody, parsed.stream);
+      if (!usage) {
         diagnostics.report({
-          errorCode: "MODEL_UPSTREAM_TIMEOUT",
+          errorCode: "MODEL_UPSTREAM_REJECTED",
           event: "model_gateway.request_failed",
           modelId: capability.modelId,
           outcome: "failed",
           runId: capability.runId,
           stage: "upstream_response",
         });
-        return gatewayError(504, "model_timeout", "The upstream model request timed out.");
+        return gatewayError(
+          502,
+          "invalid_model_response",
+          "The upstream model response did not contain usage.",
+        );
       }
-      diagnostics.report({
-        errorCode: "MODEL_UPSTREAM_REJECTED",
-        event: "model_gateway.request_failed",
-        modelId: capability.modelId,
-        outcome: "failed",
-        runId: capability.runId,
-        stage: "upstream_response",
-      });
-      return gatewayError(
-        502,
-        "invalid_model_response",
-        "The upstream model response was invalid.",
-      );
-    }
 
-    const responseBody = parsed.stream
-      ? normalizeStreamingToolProtocol(upstreamBody)
-      : upstreamBody;
-    const usage = readOpenAiUsage(responseBody, parsed.stream);
-    if (!usage) {
-      diagnostics.report({
-        errorCode: "MODEL_UPSTREAM_REJECTED",
-        event: "model_gateway.request_failed",
-        modelId: capability.modelId,
-        outcome: "failed",
-        runId: capability.runId,
-        stage: "upstream_response",
-      });
-      return gatewayError(
-        502,
-        "invalid_model_response",
-        "The upstream model response did not contain usage.",
-      );
-    }
+      try {
+        await options.onUsage?.(usage, capability);
+      } catch {
+        diagnostics.report({
+          errorCode: "MODEL_USAGE_WRITE_FAILED",
+          event: "model_gateway.request_failed",
+          modelId: capability.modelId,
+          outcome: "failed",
+          runId: capability.runId,
+          stage: "usage_write",
+        });
+        return gatewayError(
+          500,
+          "usage_recording_failed",
+          "The ModelGateway could not record usage.",
+        );
+      }
 
-    try {
-      await options.onUsage?.(usage, capability);
-    } catch {
-      diagnostics.report({
-        errorCode: "MODEL_USAGE_WRITE_FAILED",
-        event: "model_gateway.request_failed",
-        modelId: capability.modelId,
-        outcome: "failed",
-        runId: capability.runId,
-        stage: "usage_write",
+      return new Response(responseBody, {
+        headers: {
+          "cache-control": "no-store",
+          "content-type":
+            upstreamResponse.headers.get("content-type") ??
+            (parsed.stream
+              ? "text/event-stream; charset=utf-8"
+              : "application/json; charset=utf-8"),
+        },
+        status: upstreamResponse.status,
       });
-      return gatewayError(
-        500,
-        "usage_recording_failed",
-        "The ModelGateway could not record usage.",
-      );
+    } finally {
+      try {
+        await admission?.release();
+      } catch {
+        diagnostics.report({
+          event: "model_gateway.request_failed",
+          errorCode: "MODEL_ADMISSION_FAILED",
+          outcome: "failed",
+          runId: capability.runId,
+          stage: "model_admission",
+        });
+        // Keep a failed release locked. Never infer that another upstream call is safe.
+      }
     }
-
-    return new Response(responseBody, {
-      headers: {
-        "cache-control": "no-store",
-        "content-type":
-          upstreamResponse.headers.get("content-type") ??
-          (parsed.stream ? "text/event-stream; charset=utf-8" : "application/json; charset=utf-8"),
-      },
-      status: upstreamResponse.status,
-    });
   };
 }
 

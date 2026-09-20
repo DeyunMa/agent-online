@@ -63,16 +63,23 @@ test("preserves a failed draft, handles keyboard input and submits only once", a
 for (const width of [1440, 390]) {
   test(`follows new messages and preserves reading position at ${width}px`, async ({ page }) => {
     let count = 30;
-    await page.route("**/api/projects/*/messages", (route) =>
+    await page.route("**/api/projects/*/messages*", (route) =>
       route.fulfill({
-        json: Array.from({ length: count }, (_, index) => ({
-          agentRunId: null,
-          content: `Message ${index + 1}\n${"A paragraph in the conversation. ".repeat(12)}`,
-          createdAt: "2026-09-09T00:00:00.000Z",
-          id: `message-${index}`,
-          role: "user",
-          sequence: index + 1,
-        })),
+        json: {
+          items: Array.from({ length: count }, (_, index) => ({
+            agentRunId: null,
+            content: `Message ${index + 1}\n${"A paragraph in the conversation. ".repeat(12)}`,
+            createdAt: "2026-09-09T00:00:00.000Z",
+            id: `message-${index}`,
+            role: "user",
+            sequence: index + 1,
+          })).filter(
+            (message) =>
+              message.sequence >
+              Number(new URL(route.request().url()).searchParams.get("after") ?? -1),
+          ),
+          nextCursor: null,
+        },
       }),
     );
     await page.setViewportSize({ width, height: 900 });

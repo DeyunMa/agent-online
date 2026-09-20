@@ -53,11 +53,11 @@ D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Ch
 
 以下是当前已有护栏和公开部署前仍需评估的边界：
 
-1. 每个 Project 同时最多一个活动 Provider sandbox、一个非终态 Run 或一个 Terminal 硬锁；当前没有每 User 全局并发额度。
+1. 每个 Project 同时最多一个活动 Provider sandbox、一个非终态 Run 或一个 Terminal 硬锁；每 User 的非终态 Run 与 Terminal 硬锁合计最多 2，UTC 固定小时最多成功启动 60 次（本地 0009）。
 2. 每个 AgentRun 设置最大 wall-clock 时间；真实沙箱接入后记录 `sandbox_duration_ms`。
 3. 空闲 TTL 到期后停止沙箱，避免 Project 因打开标签页长期占用资源；停止不做快照。
 4. ModelGateway 从 Gemini 实际响应写入 token 和请求数，不把模型成本估算藏在 UI 状态中。
-5. 出现 Provider 错误或异常用量时，维护者可用服务端 `RUNS_ENABLED` 总开关暂停新 Run；admin 用量视图和精细配额以后再设计。
+5. 出现 Provider 错误或异常用量时，维护者可用服务端 `RUNS_ENABLED` 总开关暂停新 Run；模型准入已限定每 Run 64 次、每 User 每 UTC 日 512 次；货币预算和 admin 用量视图不在当前范围。
 6. 早期真实沙箱通过部署邮箱 allowlist 只对自己或受邀测试账号开放；开源不等于开放匿名计算资源。
 7. 每个新 AgentRuntime 独立评估镜像体积、冷启动、模型请求路径、凭据持有方式和出网能力，不能沿用 Pi 的成本假设。
 8. Cloudflare Workflows Free 当前每 step 10ms CPU、每 instance 最多 50 个外部 subrequest，并包含每天 3,000 steps 与 1GB 状态。Cloudflare 公告 step/storage 计费规则不早于 2026-08-10 生效；Free 超出包含量不会自动产生这两项账单，但会受限。典型 Pi Run 仍需持续观察。

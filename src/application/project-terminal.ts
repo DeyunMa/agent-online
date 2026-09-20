@@ -29,6 +29,7 @@ export type ProjectTerminalRuntime = SandboxLifecycleRuntime & SandboxTerminalRu
 export type OpenProjectTerminalResult =
   | { connection: ProjectTerminalConnection; kind: "opened" }
   | { kind: "invalid_size" }
+  | { kind: "resource_limited" }
   | { kind: "project_busy" }
   | { kind: "provider_error" }
   | { kind: "runtime_mismatch" }
@@ -118,7 +119,7 @@ export class ProjectTerminalService {
       projectId,
       sandboxLeaseId: lease.id,
     });
-    if (claimed.kind === "project_busy") {
+    if (claimed.kind !== "claimed") {
       return claimed;
     }
 

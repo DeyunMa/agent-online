@@ -89,7 +89,7 @@ flowchart LR
 | 表单与合同 | React Hook Form、Zod、Hono Zod validator | 认证/创建表单、共享请求响应与 SSE schema；服务端仍单独执行授权。 |
 | Markdown | react-markdown、remark-gfm | 最终回复的安全 GFM 展示；原始 HTML 和远程图片不渲染。 |
 | API 与认证 | Hono、Better Auth | 同源边界、会话认证、Project 授权和公开 DTO。 |
-| 数据访问 | D1、Drizzle、条件 SQL/batch | Drizzle 映射现有 11 张表并访问 Project/Message；复杂生命周期保留原子 SQL。迁移仍是物理 schema 真相源。 |
+| 数据访问 | D1、Drizzle、条件 SQL/batch | Drizzle 映射现有 12 张表并访问 Project/Message；复杂生命周期保留原子 SQL。迁移仍是物理 schema 真相源。 |
 | 执行 | Cloudflare Workflows、E2B、Pi/Goose adapter | Workflow 拥有 Run；Agent 进程及用户代码只在沙箱。 |
 | 模型协议与令牌 | ModelGateway、eventsource-parser、jose | 上游 SSE 边界解析、Gemini 协议转换、实际 usage 与短时 HS256 JWT。 |
 | 验证与观测 | Vitest、Workers D1 tests、Playwright、Biome、Sentry | 工程门禁和脱敏 Error Monitoring。 |
@@ -296,7 +296,8 @@ Provider reference、Key、capability、异常 message 或 stack。
 - Better Auth 用户、账号、会话和验证数据。
 - Project 元数据。
 - 用户可见 Message。
-- AgentRun 生命周期、稳定 failure code 与聚合 usage。
+- AgentRun 生命周期、稳定 failure code、聚合 usage 与私有模型准入计数/在途锁。
+- 每用户一行当前小时启动/当前日模型准入计数，Project 删除不重置。
 - 已删除 Project 的最小 per-Run usage 归档，不含消息或 Provider 引用。
 - SandboxLease 和当前 Terminal/Preview 的临时协调行。
 
@@ -356,3 +357,11 @@ Provider reference、Key、capability、异常 message 或 stack。
 - [Preview ADR](../adr/0006-controlled-project-preview.md)
 - [Changes ADR](../adr/0007-controlled-project-changes.md)
 - [协调状态恢复](../operations/coordination-recovery.md)
+
+## 2026-09-20 本地优化补充
+
+Project/Run/Message 已使用每页 50 条游标分页，消息刷新只取 sequence 增量；查看历史 Run
+与当前活动 Run 分离。SSE 健康时每 30 秒校验详情，错误后每 2 秒查询；终态回读完整事实后
+集中刷新一次。Files 可下载当前显示文本，不是项目备份。结构化性能测量不包含用户内容。
+用户级执行护栏由 [ADR-0012](../adr/0012-user-resource-admission.md) 和 migration 0009 定义。
+这些本地变更尚未发布，不能据此推断当前远程 Preview 行为。

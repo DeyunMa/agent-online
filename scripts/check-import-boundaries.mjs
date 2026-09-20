@@ -4,6 +4,11 @@ import path from "node:path";
 import { parse } from "@babel/parser";
 
 const repositoryRoot = process.cwd();
+// The repository keeps tsconfig.json as strict JSON; use its actual alias map.
+const configuration = JSON.parse(
+  await readFile(path.join(repositoryRoot, "tsconfig.json"), "utf8"),
+);
+const aliases = Object.entries(configuration.compilerOptions.paths ?? {});
 const sourceFiles = [
   ...(await collectSourceFiles(path.join(repositoryRoot, "src"))),
   ...(await collectSourceFiles(path.join(repositoryRoot, "worker"))),
@@ -40,7 +45,8 @@ for (const file of sourceFiles) {
   );
 
   for (const specifier of imports) {
-    if (!specifier.startsWith(".")) {
+    const resolved = resolveLocalImport(file, specifier);
+    if (!resolved) {
       if (sourceLayer === "domain" && !isTestFile(sourceRelative)) {
         violations.push(
           `${sourceRelative}: domain production code cannot import package "${specifier}"`,
@@ -49,7 +55,7 @@ for (const file of sourceFiles) {
       continue;
     }
 
-    const targetRelative = toRepositoryPath(path.resolve(path.dirname(file), specifier));
+    const targetRelative = toRepositoryPath(resolved);
     const targetLayer = getLayer(targetRelative);
     if (!targetLayer) {
       continue;
@@ -191,4 +197,23 @@ function stripExtension(relativePath) {
 
 function toRepositoryPath(absolutePath) {
   return path.relative(repositoryRoot, absolutePath).split(path.sep).join("/");
+}
+
+function resolveLocalImport(file, specifier) {
+  if (specifier.startsWith(".")) return path.resolve(path.dirname(file), specifier);
+  for (const [alias, targets] of aliases) {
+    const star = alias.indexOf("*");
+    const prefix = star < 0 ? alias : alias.slice(0, star);
+    const suffix = star < 0 ? "" : alias.slice(star + 1);
+    if (
+      star < 0 ? specifier !== alias : !specifier.startsWith(prefix) || !specifier.endsWith(suffix)
+    )
+      continue;
+    if (targets.length !== 1)
+      throw new Error(`Ambiguous alias in import boundary configuration: ${alias}`);
+    const matched =
+      star < 0 ? "" : specifier.slice(prefix.length, specifier.length - suffix.length);
+    return path.resolve(repositoryRoot, targets[0].replace("*", matched));
+  }
+  return null;
 }

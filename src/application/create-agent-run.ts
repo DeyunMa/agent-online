@@ -18,6 +18,7 @@ export type CreateAgentRunResult =
       kind: "created";
       run: AgentRunRecord;
     }
+  | { kind: "resource_limited" }
   | { kind: "project_busy" }
   | { kind: "runtime_mismatch" };
 
@@ -69,7 +70,7 @@ export class CreateAgentRunService {
       sandboxRuntimeId: sandboxLease.runtimeId,
       userId: input.userId,
     });
-    if (created.kind === "project_busy") {
+    if (created.kind !== "created") {
       return created;
     }
 

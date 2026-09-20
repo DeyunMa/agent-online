@@ -7,7 +7,7 @@ describe("D1 Terminal and Preview repositories", () => {
   it("atomically claims one ephemeral Terminal against an unchanged Lease", async () => {
     const db = new TestD1Database();
     db.batchResults.push([
-      result(),
+      result([{ id: "terminal-new" }], 2),
       result([
         {
           created_at: "2026-07-25T00:30:00.000Z",

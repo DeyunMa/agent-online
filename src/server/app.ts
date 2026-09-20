@@ -9,6 +9,7 @@ import { createChangesApi } from "./changes-api";
 import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
 import { renderApiError } from "./http/api-errors";
+import { requestMeasurement } from "./observability/request-measurement";
 import { productRequestGuard } from "./http/product-request-guard";
 import { createWorkerModelGateway, modelGatewayEndpointPath } from "./model-gateway-service";
 import { createProjectApi } from "./project-api";
@@ -32,6 +33,7 @@ app.use("*", async (c, next) => {
   c.header("x-request-id", c.get("requestId"));
   await next();
 });
+app.use("/api/*", requestMeasurement());
 app.use(
   "/api/*",
   secureHeaders({

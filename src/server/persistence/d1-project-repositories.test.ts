@@ -117,8 +117,8 @@ describe("D1 Project and Message repositories", () => {
         sequence: 1,
       },
     ]);
-    expect(db.prepared[0]?.query).toContain('order by "messages"."sequence" asc');
-    expect(db.prepared[0]?.bindings).toEqual(["project-1"]);
+    expect(db.prepared[0]?.query).toContain('order by "messages"."sequence" desc');
+    expect(db.prepared[0]?.bindings).toEqual(["project-1", 51]);
   });
 
   it("finds an input message only inside its Project boundary", async () => {

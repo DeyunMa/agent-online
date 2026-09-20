@@ -11,7 +11,7 @@ import {
   TerminalSquare,
   XCircle,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Select,
@@ -174,20 +174,42 @@ export function RunMetrics({
 }
 
 export function ConversationTimeline({
+  hasOlder,
+  loadingOlder,
+  onLoadOlder,
+  olderError,
   error,
   isPending,
   isRunning,
+  runStatus,
   messages,
   onRetry,
 }: {
   error: Error | null;
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  onLoadOlder: () => void;
+  olderError: Error | null;
   isPending: boolean;
   isRunning: boolean;
+  runStatus: AgentRunStatus | null;
   messages: MessageResponse[] | undefined;
   onRetry: () => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<{ element: Element; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    const viewport = viewportRef.current;
+    if (!messages || !anchor || !viewport || loadingOlder) return;
+    const container =
+      getComputedStyle(viewport).overflowY === "visible"
+        ? (document.scrollingElement ?? viewport)
+        : viewport;
+    container.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
+    anchorRef.current = null;
+  }, [messages, loadingOlder]);
   useEffect(() => {
     const viewport = viewportRef.current;
     const content = contentRef.current;
@@ -223,6 +245,23 @@ export function ConversationTimeline({
   return (
     <div className="project-console-scroll" ref={viewportRef}>
       <div ref={contentRef}>
+        {hasOlder ? (
+          <button
+            className="secondary-action"
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => {
+              const element = contentRef.current?.querySelector(".timeline-message");
+              anchorRef.current = element
+                ? { element, top: element.getBoundingClientRect().top }
+                : null;
+              onLoadOlder();
+            }}
+          >
+            {loadingOlder ? "Loading history…" : "Load earlier messages"}
+          </button>
+        ) : null}
+        {olderError ? <ErrorState compact error={olderError} /> : null}
         {isPending ? <LoadingState label="Loading conversation" /> : null}
         {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
         {!isPending && !error && visibleMessages.length === 0 && !isRunning ? (
@@ -240,7 +279,15 @@ export function ConversationTimeline({
               <li className="timeline-message timeline-message-assistant">
                 <p role="status" className="assistant-run-placeholder">
                   <LoaderCircle aria-hidden="true" className="spin" size={15} />
-                  Agent is working on the project…
+                  {runStatus === "queued"
+                    ? "Task queued…"
+                    : runStatus === "starting"
+                      ? "Preparing the sandbox and Agent…"
+                      : runStatus === "cancelling"
+                        ? "Cancelling the task and releasing resources…"
+                        : runStatus === "running"
+                          ? "Agent is executing your task…"
+                          : "Submitting your task…"}
                 </p>
               </li>
             ) : null}
@@ -302,7 +349,7 @@ export function RunHistory({
       ) : null}
       {runs && runs.length > 0 ? (
         <ol className="run-history-table">
-          {runs.slice(0, 12).map((run) => {
+          {runs.map((run) => {
             const inputMessage = messages?.find((message) => message.id === run.inputMessageId);
             const selected = run.id === selectedRunId;
 
@@ -338,6 +385,7 @@ export function AgentComposer({
   agentRuntimeIds,
   changesEnabled,
   disabled,
+  disabledReason,
   error,
   fileUploadDisabled,
   isSubmitting,
@@ -355,6 +403,7 @@ export function AgentComposer({
   agentRuntimeIds: readonly AgentRuntimeId[];
   changesEnabled: boolean;
   disabled: boolean;
+  disabledReason: string | null;
   error: Error | null;
   fileUploadDisabled: boolean;
   isSubmitting: boolean;
@@ -396,6 +445,7 @@ export function AgentComposer({
     >
       <Textarea
         aria-label="Agent task"
+        aria-describedby={disabledReason ? "composer-disabled-reason" : undefined}
         disabled={disabled || isSubmitting}
         maxLength={64_000}
         name="content"
@@ -412,6 +462,15 @@ export function AgentComposer({
         }}
         className="agent-composer-input min-h-[50px] max-h-40 resize-y border-0 bg-transparent px-3.5 pt-2.5 pb-0 leading-6 shadow-none focus-visible:border-0 focus-visible:ring-0"
       />
+      {disabledReason ? (
+        <p
+          id="composer-disabled-reason"
+          className="text-muted-foreground px-3.5 text-sm"
+          role="status"
+        >
+          {disabledReason}
+        </p>
+      ) : null}
       {error ? <ErrorState compact error={error} /> : null}
       {uploadError ? <ErrorState compact error={uploadError} /> : null}
       <div className="agent-composer-toolbar">

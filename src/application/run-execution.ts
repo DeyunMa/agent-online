@@ -1,3 +1,4 @@
+import { measureOperation } from "./diagnostic-measurement";
 import type { AgentRunInput, AgentRuntime, AgentRuntimeId } from "../agent/contract";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import {
@@ -171,7 +172,11 @@ export class RunExecutionService {
   }
 
   async cancel(input: AgentRunExecutionInput): Promise<AgentRunRecord> {
-    const run = await this.cancelRun(input);
+    const run = await measureOperation(
+      this.dependencies.diagnostics ?? noopDiagnosticReporter,
+      { runId: input.runId, stage: "cancel" },
+      () => this.cancelRun(input),
+    );
     if (isTerminalAgentRun(run.status)) this.reportFinished(run);
     return run;
   }

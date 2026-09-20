@@ -1,9 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type InfiniteData, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { LoaderCircle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { type FormEvent, useId, useRef, useState } from "react";
 
-import type { ProjectResponse } from "../../shared/api";
+import type { ProjectPageResponse, ProjectResponse } from "../../shared/api";
 import { browserApi } from "../api";
 import { projectDetailQueryKey, projectQueryKey, userUsageQueryKey } from "../query-keys";
 import {
@@ -56,8 +56,18 @@ export function ProjectActionsMenu({
   const renameProject = useMutation({
     mutationFn: (nextTitle: string) => browserApi.updateProject(project.id, { title: nextTitle }),
     onSuccess: async (updatedProject) => {
-      queryClient.setQueryData<ProjectResponse[]>(projectQueryKey, (projects) =>
-        projects?.map((item) => (item.id === updatedProject.id ? updatedProject : item)),
+      queryClient.setQueryData<InfiniteData<ProjectPageResponse>>(projectQueryKey, (projects) =>
+        projects
+          ? {
+              ...projects,
+              pages: projects.pages.map((page) => ({
+                ...page,
+                items: page.items.map((item) =>
+                  item.id === updatedProject.id ? updatedProject : item,
+                ),
+              })),
+            }
+          : projects,
       );
       queryClient.setQueryData(projectDetailQueryKey(updatedProject.id), updatedProject);
       setDialog(null);
@@ -68,8 +78,16 @@ export function ProjectActionsMenu({
     mutationFn: () => browserApi.deleteProject(project.id),
     onSuccess: async () => {
       setDialog(null);
-      queryClient.setQueryData<ProjectResponse[]>(projectQueryKey, (projects) =>
-        projects?.filter((item) => item.id !== project.id),
+      queryClient.setQueryData<InfiniteData<ProjectPageResponse>>(projectQueryKey, (projects) =>
+        projects
+          ? {
+              ...projects,
+              pages: projects.pages.map((page) => ({
+                ...page,
+                items: page.items.filter((item) => item.id !== project.id),
+              })),
+            }
+          : projects,
       );
       queryClient.removeQueries({
         predicate: ({ queryKey }) => queryKey[1] === project.id,

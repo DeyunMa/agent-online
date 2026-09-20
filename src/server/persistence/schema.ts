@@ -17,7 +17,7 @@ import type { SandboxLeaseStatus } from "../../domain/sandbox-lease";
 import type { RuntimeKind } from "../../runtime/contract";
 import type { AgentRunFailureCode } from "../../shared/error-codes";
 
-// This is the typed mapping of migrations/0001–0008, not a second migration
+// This is the typed mapping of migrations/0001–0009, not a second migration
 // history. Better Auth owns its DATE values and continues using its D1 adapter.
 const authDate = customType<{ data: string | number; driverData: string | number }>({
   dataType: () => "date",
@@ -182,6 +182,8 @@ export const agentRuns = sqliteTable(
     finished_at: text(),
     provider_process_ref: text(),
     failure_code: text().$type<AgentRunFailureCode>(),
+    model_admission_count: integer().notNull().default(0),
+    model_request_active: integer().notNull().default(0),
   },
   (table) => [
     index("agent_runs_by_project_created_at").on(table.project_id, sql`${table.created_at} desc`),
@@ -196,6 +198,8 @@ export const agentRuns = sqliteTable(
     check("agent_runs_input_tokens", sql`${table.input_tokens} >= 0`),
     check("agent_runs_output_tokens", sql`${table.output_tokens} >= 0`),
     check("agent_runs_total_tokens", sql`${table.total_tokens} >= 0`),
+    check("agent_runs_model_admission_count", sql`${table.model_admission_count} between 0 and 64`),
+    check("agent_runs_model_request_active", sql`${table.model_request_active} in (0, 1)`),
     check("agent_runs_model_request_count", sql`${table.model_request_count} >= 0`),
     check("agent_runs_sandbox_duration_ms", sql`${table.sandbox_duration_ms} >= 0`),
     check(
@@ -286,5 +290,22 @@ export const archivedRunUsage = sqliteTable(
     check("archived_run_usage_total_tokens", sql`${table.total_tokens} >= 0`),
     check("archived_run_usage_model_request_count", sql`${table.model_request_count} >= 0`),
     check("archived_run_usage_sandbox_duration_ms", sql`${table.sandbox_duration_ms} >= 0`),
+  ],
+);
+
+export const userResourceCounters = sqliteTable(
+  "user_resource_counters",
+  {
+    user_id: text()
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    admission_hour: integer().notNull().default(0),
+    admission_count: integer().notNull().default(0),
+    model_day: integer().notNull().default(0),
+    model_count: integer().notNull().default(0),
+  },
+  (table) => [
+    check("user_resource_admission_rate", sql`${table.admission_count} between 0 and 60`),
+    check("user_resource_model_budget", sql`${table.model_count} between 0 and 512`),
   ],
 );
