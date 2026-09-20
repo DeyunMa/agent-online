@@ -1,4 +1,14 @@
 import { sql } from "drizzle-orm";
+export {
+  jwks,
+  oauthClient,
+  oauthRefreshToken,
+  oauthAccessToken,
+  oauthConsent,
+  oauthResource,
+  oauthClientResource,
+  oauthClientAssertion,
+} from "./mcp-auth-schema";
 import {
   type AnySQLiteColumn,
   check,
@@ -165,7 +175,7 @@ export const agentRuns = sqliteTable(
     sandbox_lease_id: text()
       .notNull()
       .references(() => sandboxLeases.id, { onDelete: "restrict" }),
-    agent_runtime_id: text().$type<AgentRuntimeId>().notNull(),
+    agent_runtime_id: text().notNull(),
     sandbox_runtime_id: text().$type<RuntimeKind>().notNull(),
     model_id: text().notNull(),
     status: text().$type<AgentRunStatus>().notNull(),
@@ -259,7 +269,7 @@ export const archivedRunUsage = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     project_id: text().notNull(),
     project_title: text().notNull(),
-    agent_runtime_id: text().$type<AgentRuntimeId>().notNull(),
+    agent_runtime_id: text().notNull(),
     sandbox_runtime_id: text().$type<RuntimeKind>().notNull(),
     model_id: text().notNull(),
     status: text()

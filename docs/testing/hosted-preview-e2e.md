@@ -3,7 +3,7 @@
 > 状态：本流程是显式 opt-in 的发布后验收，不属于 `pnpm check`，不会在 CI 或普通本地
 > 开发中自动创建 E2B 沙箱或 Gemini 请求。
 > 关联：[私有 Preview 部署](../setup/preview-deployment.md) ·
-> [adapter 级 E2B E2E](./e2b-agent-runtimes-gemini.md)
+> [adapter 级 E2B E2E](./e2b-pi-gemini.md)
 
 ## 验收边界
 
@@ -17,7 +17,7 @@
 4. 最终 assistant Message、真实 token 和模型请求计量可见；
 5. Agent 创建的文件可通过受控 Files 读取；
 6. 浏览器向同一沙箱上传一个文件，并通过 Files 读回原文；
-7. 浏览器选择 Goose 启动第二个 Run，该运行中 Run 可取消，刷新后没有伪造的最终 assistant Message；
+7. 浏览器使用 Pi 启动第二个 Run，该运行中 Run 可取消，刷新后没有伪造的最终 assistant Message；
 8. 当前 Project 沙箱可停止；
 9. 测试期间的 JSON API 响应不出现 Provider 引用、traffic token 或模型/沙箱 Key。
 
@@ -37,16 +37,16 @@ Project 生命周期路径：
 3. 硬删除 Project，由产品路径停止空闲 sandbox；
 4. 验证页面返回 Projects、旧 Project API 为 `404`，且 JSON 响应未泄露 Provider 状态。
 
-这是完整产品路径，不替代 adapter 级 Pi/Goose 组合模板 E2E。后者验证 Runtime 协议和
-同沙箱切换，本文验证 React、Hono、Better Auth、D1、Workflow、ModelGateway 和 E2B
-组合后的 Pi/Goose 产品路径。
+这是完整产品路径，不替代 adapter 级 Pi-only 模板 E2E。后者验证 Runtime 协议和
+同沙箱连续 Run，本文验证 React、Hono、Better Auth、D1、Workflow、ModelGateway 和 E2B
+组合后的 Pi 产品路径。
 
 ## 前置条件
 
 - 已按部署文档完成 `RUNS_ENABLED=false` 锁定部署、排空、`0006` 迁移和锁定 smoke。
 - 已重新部署 `RUNS_ENABLED=true`，且 `/api/capabilities` 返回
   `runCreationEnabled: true`、`fileUploadEnabled: true` 和
-  `agentRuntimeIds: ["pi", "goose"]`。
+  `agentRuntimeIds: ["pi"]`。
 - 测试账号已在 `ACCESS_ALLOWED_EMAILS` 中并完成注册。
 - 工作树对应的代码已提交，部署版本可追溯。
 
@@ -67,7 +67,7 @@ unset PREVIEW_E2E_EMAIL PREVIEW_E2E_PASSWORD
 ```
 
 完整执行会创建两个 AgentRun 和三个 E2B 沙箱：只有基线路径使用一次真实 Pi 成功
-Run 和一次通过 UI 选择 Goose 的可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
+Run 和一次Pi 的可取消长任务，其余能力与 Project 生命周期使用确定性 Terminal fixture。
 这样仍覆盖真实 ModelGateway/Workflow/usage/取消，同时证明平台 Preview 底座不依赖
 Project 安装 Vite，也避免用模型安装依赖或只为创建沙箱而运行 Agent。成功路径会主动关闭 Terminal/Preview
 并停止沙箱；测试中途失败时，`afterEach` 也会尽力按 Terminal、Preview、sandbox 顺序
@@ -87,7 +87,10 @@ Terminal fixture 的 ready marker 必须由命令实际输出，不能让 marker
 终端输入回显中；否则自动化会在前序命令尚未完成时误判 ready。命令还必须显式使用
 `git -C /workspace` 并避免把多行文本直接拼进 shell，以保持结果可重复。
 
-## 最近执行
+## 历史执行记录
+
+以下为 Goose 移除前的验收事实，不代表当前运行能力。新 Pi-only 模板尚待远程验收。
+
 
 2026-07-30 针对 Preview 版本 `4351a021-9e37-4882-adcc-3b767de40639` 完成既有登录态
 浏览器纵向验收：

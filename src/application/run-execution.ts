@@ -1,5 +1,4 @@
-import { measureOperation } from "./diagnostic-measurement";
-import type { AgentRunInput, AgentRuntime, AgentRuntimeId } from "../agent/contract";
+import type { AgentRunInput, AgentRuntime } from "../agent/contract";
 import { isTerminalAgentRun } from "../domain/agent-run";
 import {
   type DiagnosticErrorCode,
@@ -9,16 +8,17 @@ import {
 } from "../observability/contract";
 import type { RuntimeHandle, RuntimeKind, SandboxRuntime } from "../runtime/contract";
 import type { AgentRunFailureCode } from "../shared/error-codes";
+import { measureOperation } from "./diagnostic-measurement";
 import type {
   AgentRunRecord,
   AgentRunRepository,
-  MessageRepository,
   MessageContextRepository,
+  MessageRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
-import { RunCoordinator, type Clock, type CoordinatedAgentRun } from "./run-coordinator";
 import { buildRunPrompt } from "./run-context";
+import { type Clock, type CoordinatedAgentRun, RunCoordinator } from "./run-coordinator";
 import type {
   ActivityIdleCleanupInput,
   IdleSandboxStopResult,
@@ -39,7 +39,7 @@ export type RunExecutionServiceDependencies = {
   clock: Clock;
   createId(): string;
   diagnostics?: DiagnosticReporter;
-  getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
+  getAgentRuntime(id: string): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   issueModelAccess(input: {
     expiresAt: Date;

@@ -42,9 +42,10 @@ export interface AppBindings {
   E2B_API_KEY?: string;
   E2B_TEMPLATE_ID?: string;
   GEMINI_API_KEY?: string;
-  GOOSE_RUNTIME_MODE?: string;
   MAX_RUN_WALL_SECONDS?: string;
   MODEL_GATEWAY_BASE_URL?: string;
+  MCP_RATE_LIMIT?: RateLimit;
+  MCP_REGISTRATION_LIMIT?: RateLimit;
   RUNS_ENABLED?: string;
   RUNTIME_IDLE_TTL_SECONDS?: string;
   RUNTIME_PROVIDER?: string;

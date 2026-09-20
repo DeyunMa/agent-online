@@ -1,17 +1,15 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { spawn, type ChildProcess } from "node:child_process";
-import { Readable } from "node:stream";
 import type { AddressInfo } from "node:net";
+import { Readable } from "node:stream";
 
-import { CommandExitError, Sandbox, type CommandResult, type CommandStartOpts } from "e2b";
+import { CommandExitError, type CommandResult, type CommandStartOpts, Sandbox } from "e2b";
 import { describe, expect, it } from "vitest";
-
-import { gooseRuntime } from "../agent/goose-runtime";
-import { piRuntime } from "../agent/pi-runtime";
 import type { AgentEvent, AgentExecutionContext, AgentRunInput } from "../agent/contract";
+import { piRuntime } from "../agent/pi-runtime";
 import type { RuntimeHandle } from "../runtime/contract";
 import { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import {
@@ -21,22 +19,20 @@ import {
 import { createRunCapabilityCodec } from "../server/run-capability";
 
 const modelId = "gemini-3.6-flash";
-const goosePackageVersion = "1.44.0";
 const piPackageVersion = "0.82.0";
 const nodeRuntimeVersion = "24.16.0";
 const pnpmRuntimeVersion = "10.33.2";
 const previewViteVersion = "8.1.5";
 const piCreatedMarker = "PI_CREATED";
-const gooseUpdatedMarker = "GOOSE_UPDATED";
 const piVerifiedMarker = "PI_VERIFIED";
 const previewTemplateMarker = "AGENT_ONLINE_TEMPLATE_PREVIEW_READY";
-const gooseCancellationMarkerPath = "/workspace/agent-online-goose-cancel-started";
+const piCancellationMarkerPath = "/workspace/agent-online-pi-cancel-started";
 const isEnabled = process.env.RUN_E2E === "1";
 
 const realE2E = isEnabled ? describe : describe.skip;
 
-realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
-  it("switches Pi -> Goose -> Pi in one sandbox without exposing the Gemini key", async () => {
+realE2E("E2B + Pi AgentRuntime + Gemini ModelGateway", () => {
+  it("runs consecutive Pi turns and cancels Pi in one sandbox without exposing the Gemini key", async () => {
     loadLocalTestEnvironment();
     const geminiApiKey = requireEnvironment("GEMINI_API_KEY");
     const e2bApiKey = requireEnvironment("E2B_API_KEY");
@@ -103,6 +99,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
           'test "$(stat -c %U /workspace)" = "$(id -un)"',
           "test -r /opt/agent-online/manifest.json",
           "test ! -w /opt/agent-online",
+          `jq -e '(.agentRuntimes | keys) == ["pi"]' /opt/agent-online/manifest.json >/dev/null`,
           `test "$(pnpm --version)" = "${pnpmRuntimeVersion}"`,
           `/opt/agent-online/preview/node_modules/.bin/vite --version | grep -F "${previewViteVersion}" >/dev/null`,
           "python3 --version >/dev/null",
@@ -115,16 +112,14 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
           "rm -rf /workspace/.git",
           "node --version",
           "pi --version",
-          "goose --version",
         ].join(" && "),
         { timeoutMs: 30_000 },
         redactOutput,
       );
       expect(templateProbe.exitCode).toBe(0);
-      const [nodeVersion, piVersion, gooseVersion] = templateProbe.stdout.trim().split(/\r?\n/);
+      const [nodeVersion, piVersion] = templateProbe.stdout.trim().split(/\r?\n/);
       expect(nodeVersion).toBe(`v${nodeRuntimeVersion}`);
       expect(piVersion).toContain(piPackageVersion);
-      expect(gooseVersion).toContain(goosePackageVersion);
 
       await expect(runtime.inspectPreview(runtimeHandle)).resolves.toEqual({
         kind: "entry_missing",
@@ -175,36 +170,11 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       const piCreateEvents = await collectAgentEvents(piCreate.events());
       expectSuccessfulCompletion(piCreateEvents, piCreatedMarker);
 
-      const gooseUpdate = await gooseRuntime.start(
-        context,
-        createAgentRunInput(
-          "goose-update",
-          `Read /workspace/agent-online-e2e.txt and confirm its first line is ${piCreatedMarker}. Append a second line containing exactly ${gooseUpdatedMarker} without changing the first line. Verify the file has exactly those two non-empty lines, then reply with exactly ${gooseUpdatedMarker}.`,
-          await issueModelAccess(
-            capabilityCodec,
-            capabilityTokens,
-            secretsToRedact,
-            `${tunnel.publicUrl}/v1`,
-            "goose-update",
-          ),
-        ),
-      );
-      const gooseUpdateEvents = await collectAgentEvents(gooseUpdate.events());
-      expectSuccessfulCompletion(gooseUpdateEvents, gooseUpdatedMarker);
-      const gooseFileProbe = await runSandboxCommand(
-        sandbox,
-        "Goose file continuity verification",
-        `node -e 'const fs=require("fs");const lines=fs.readFileSync("/workspace/agent-online-e2e.txt","utf8").split(/\\r?\\n/).filter(Boolean);if(JSON.stringify(lines)!==JSON.stringify(["${piCreatedMarker}","${gooseUpdatedMarker}"]))process.exit(1)'`,
-        { cwd: "/workspace", timeoutMs: 30_000 },
-        redactOutput,
-      );
-      expect(gooseFileProbe.exitCode).toBe(0);
-
       const piVerify = await piRuntime.start(
         context,
         createAgentRunInput(
           "pi-verify",
-          `Read /workspace/agent-online-e2e.txt. Keep its existing two lines unchanged, append a third line containing exactly ${piVerifiedMarker}, verify all three lines, then reply with exactly ${piVerifiedMarker}.`,
+          `Read /workspace/agent-online-e2e.txt. Keep its existing first line unchanged, append a second line containing exactly ${piVerifiedMarker}, verify both lines, then reply with exactly ${piVerifiedMarker}.`,
           await issueModelAccess(
             capabilityCodec,
             capabilityTokens,
@@ -219,32 +189,32 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       const finalFileProbe = await runSandboxCommand(
         sandbox,
         "Pi final file continuity verification",
-        `node -e 'const fs=require("fs");const lines=fs.readFileSync("/workspace/agent-online-e2e.txt","utf8").split(/\\r?\\n/).filter(Boolean);if(JSON.stringify(lines)!==JSON.stringify(["${piCreatedMarker}","${gooseUpdatedMarker}","${piVerifiedMarker}"]))process.exit(1)'`,
+        `node -e 'const fs=require("fs");const lines=fs.readFileSync("/workspace/agent-online-e2e.txt","utf8").split(/\\r?\\n/).filter(Boolean);if(JSON.stringify(lines)!==JSON.stringify(["${piCreatedMarker}","${piVerifiedMarker}"]))process.exit(1)'`,
         { cwd: "/workspace", timeoutMs: 30_000 },
         redactOutput,
       );
       expect(finalFileProbe.exitCode).toBe(0);
 
-      const cancelledGoose = await gooseRuntime.start(
+      const cancelledPi = await piRuntime.start(
         context,
         createAgentRunInput(
-          "goose-cancel",
-          `Run exactly this shell command and do not reply until it finishes: touch ${gooseCancellationMarkerPath} && sleep 60`,
+          "pi-cancel",
+          `Run exactly this shell command and do not reply until it finishes: touch ${piCancellationMarkerPath} && sleep 60`,
           await issueModelAccess(
             capabilityCodec,
             capabilityTokens,
             secretsToRedact,
             `${tunnel.publicUrl}/v1`,
-            "goose-cancel",
+            "pi-cancel",
           ),
         ),
       );
-      const cancelledEventsPromise = collectAgentEvents(cancelledGoose.events());
-      await waitForSandboxFile(sandbox, gooseCancellationMarkerPath, 30_000);
-      await cancelledGoose.cancel("cancelled");
+      const cancelledEventsPromise = collectAgentEvents(cancelledPi.events());
+      await waitForSandboxFile(sandbox, piCancellationMarkerPath, 30_000);
+      await cancelledPi.cancel("cancelled");
       const cancelledEvents = await cancelledEventsPromise;
       expect(cancelledEvents.at(-1)).toMatchObject({
-        agentRuntimeId: "goose",
+        agentRuntimeId: "pi",
         type: "agent.completed",
       });
       expect(
@@ -252,7 +222,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       ).not.toBe(0);
       const postCancelProbe = await runSandboxCommand(
         sandbox,
-        "sandbox reuse after Goose cancellation",
+        "sandbox reuse after Pi cancellation",
         `test -r /workspace/agent-online-e2e.txt && test -w /workspace`,
         { cwd: "/workspace", timeoutMs: 30_000 },
         redactOutput,
@@ -262,13 +232,9 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       const piProviderConfig = await sandbox.files.read(
         "/tmp/agent-online-pi/pi-create/models.json",
       );
-      const gooseProviderConfig = await sandbox.files.read(
-        "/tmp/agent-online-goose/goose-update/config/custom_providers/agent_online.json",
-      );
-      expect(new Set(capabilityTokens.values()).size).toBe(4);
+      expect(new Set(capabilityTokens.values()).size).toBe(3);
       for (const capabilityToken of capabilityTokens.values()) {
         expect(String(piProviderConfig)).not.toContain(capabilityToken);
-        expect(String(gooseProviderConfig)).not.toContain(capabilityToken);
       }
       expect(usage.length).toBeGreaterThanOrEqual(3);
       expect(
@@ -276,7 +242,7 @@ realE2E("E2B + Pi/Goose AgentRuntime + Gemini ModelGateway", () => {
       ).toBeGreaterThanOrEqual(3);
       expect(usage.reduce((total, entry) => total + entry.totalTokens, 0)).toBeGreaterThan(0);
       expect(new Set(usage.map((entry) => entry.runId))).toEqual(
-        new Set(["pi-create", "goose-update", "pi-verify", "goose-cancel"]),
+        new Set(["pi-create", "pi-verify", "pi-cancel"]),
       );
     } finally {
       if (runtime && runtimeHandle) {

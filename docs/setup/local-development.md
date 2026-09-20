@@ -1,6 +1,8 @@
 # 本地开发基线
 
-> 状态：D2/D3 与 Goose 真实链路已完成；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
+> 状态：D2/D3 与 Goose 真实链路已完成；2026-07-30 已部署受 allowlist 保护的 Pi UI 选择，并实现受控单文件上传。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [环境变量](./environment-variables.md)
 
 ## 工程形态
@@ -17,7 +19,7 @@ src/observability/ Provider 无关的诊断合同
 src/domain/     Project、SandboxLease、AgentRun 的纯业务规则
 src/application/ Project 与 AgentRun 用例、ports、RunCoordinator
 src/runtime/    SandboxRuntime 合同与 fake/E2B/Container Adapter
-src/agent/      AgentRuntime 合同、Pi/Goose 独立适配器和 registry
+src/agent/      AgentRuntime 合同、Pi 独立适配器和 registry
 src/shared/     客户端与服务端共享 DTO
 migrations/     D1 认证表与应用表迁移
 worker/         Cloudflare Worker 入口
@@ -29,7 +31,7 @@ worker/         Cloudflare Worker 入口
 
 - D1 migration、Better Auth 邮箱密码客户端、Project API、Message 查询、单活跃 Run、SSE 和取消状态转换已经实现；SSE 在自己的请求内轮询 D1 的 Run 状态，页面刷新后可通过当前活跃 Run 查询恢复。
 - `FakeSandboxRuntime` 用于无外部成本的 UI/控制面开发；`E2BSandboxRuntime` 支持真实 Linux、进程重连、精确进程终止、PTY、固定 Preview fetch、受控 Git Changes 和沙箱停止。
-- Pi 是默认且已验收的 AgentRuntime，它把 `pi --mode rpc` JSONL 映射为统一 Agent 事件。Goose adapter 和组合 E2B 模板已通过本地及私有 Preview 真实 E2E，并由受 allowlist 保护的 capability 在 UI 公布；fake runtime 不执行真实 Agent 二进制。
+- Pi 是默认且已验收的 AgentRuntime，它把 `pi --mode rpc` JSONL 映射为统一 Agent 事件。fake runtime 不执行真实 Agent 二进制。
 - `AgentRunWorkflow`、ModelGateway、Run capability、真实 usage、deadline 和空闲 TTL 已实现。远程 Preview 已通过代表性的文件工具调用、取消、deadline 与 10 分钟空闲回收；更复杂任务下的 Workflows Free CPU/subrequest 限额仍需观察。
 - 部署级邮箱 allowlist 与 `RUNS_ENABLED` 总开关已实现。本地不设置时默认开放访问并允许 Run，避免增加日常 fake 开发配置。
 - Files 读取与单文件根目录上传已实现；fake Runtime 的内存文件不跨请求，因此本地
@@ -41,7 +43,7 @@ worker/         Cloudflare Worker 入口
 - Terminal 已实现并通过远端真实 E2B 验收：同源 WebSocket、临时 D1 硬互斥、30 分钟会话上限、显式关闭、断线清理和 idle Workflow；fake Runtime 明确不提供 Terminal。
 - Project Preview 已实现并通过远端真实 E2B 验收：现有 Lease、固定 `/workspace`、平台只读 Vite/端口、入口与依赖预检、同源签名 GET/HEAD 网关、30 分钟 expiry、显式停止、Agent 修改后手动刷新，以及 Run/Terminal 并行。fake Runtime 明确不提供 Preview。
 - 只读 Changes 已实现并通过远端真实 E2B 验收：固定 `/workspace/.git`、系统 Git/Bash/coreutils、危险本地配置拒绝、500 项/128 KiB status、每段 128 KiB diff、staged/unstaged 分离和 no-store。fake Runtime 明确不提供 Changes；它不新增 D1、环境变量或外部服务。
-- Goose 是当前唯一公开的第二 Runtime；Claude Code、Codex CLI 仍仅在 Runtime ID 合同中预留。
+- Pi 是唯一安装的 Runtime；Claude Code、Codex CLI 仍仅在 Runtime ID 合同中预留。
 - 当前源码、迁移和 Worker binding 不包含 R2/Revision 路径；本地数据仍可按 ADR-0002 直接重建。
 
 ## 运行步骤

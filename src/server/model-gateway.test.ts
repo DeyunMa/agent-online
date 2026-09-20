@@ -4,9 +4,201 @@ import { createOpenAiCompatibleModelGateway, type ModelGatewayUsage } from "./mo
 
 const modelId = "gemini-2.5-flash";
 
+const plainRequest = (stream = false, extra: Record<string, unknown> = {}) =>
+  new Request("https://gateway.test/v1/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: "user", content: "Hello" }],
+      stream,
+      ...extra,
+    }),
+  });
+const authorize = async () => ({
+  modelId,
+  maxOutputTokens: 128,
+  projectId: "project-1",
+  runId: "run-1",
+});
+const nativeReply = (usage: Record<string, unknown> | undefined) => ({
+  candidates: [
+    {
+      content: {
+        role: "model",
+        parts: [{ text: "PRIVATE REASONING", thought: true }, { text: "done" }],
+      },
+      finishReason: "STOP",
+    },
+  ],
+  ...(usage ? { usageMetadata: usage } : {}),
+});
+
 describe("OpenAI-compatible ModelGateway", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it.each([false, true])(
+    "rejects undeclared tool calls without recording success (stream=%s)",
+    async (stream) => {
+      const reply = {
+        candidates: [
+          {
+            content: { role: "model", parts: [{ functionCall: { name: "undeclared", args: {} } }] },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+      };
+      const onUsage = vi.fn();
+      const gateway = createOpenAiCompatibleModelGateway({
+        authorize,
+        geminiApiKey: "test-key",
+        onUsage,
+        fetchImplementation: async () =>
+          stream
+            ? new Response(`data: ${JSON.stringify(reply)}\n\n`, {
+                headers: { "content-type": "text/event-stream" },
+              })
+            : Response.json(reply),
+      });
+      expect((await gateway(plainRequest(stream))).status).toBe(502);
+      expect(onUsage).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "preserves measured usage semantics without disclosing reasoning (stream=%s)",
+    async (stream) => {
+      const onUsage = vi.fn();
+      const reply = nativeReply({
+        promptTokenCount: 9,
+        candidatesTokenCount: 4,
+        thoughtsTokenCount: 3,
+        totalTokenCount: 16,
+      });
+      const gateway = createOpenAiCompatibleModelGateway({
+        authorize,
+        geminiApiKey: "test-key",
+        onUsage,
+        fetchImplementation: async () =>
+          stream
+            ? new Response(`data: ${JSON.stringify(reply)}\n\n`, {
+                headers: { "content-type": "text/event-stream" },
+              })
+            : Response.json(reply),
+      });
+      const response = await gateway(plainRequest(stream));
+      expect(response.status).toBe(200);
+      expect(await response.text()).not.toContain("PRIVATE REASONING");
+      expect(onUsage).toHaveBeenCalledWith(
+        { inputTokens: 9, outputTokens: 4, totalTokens: 16, modelRequestCount: 1 },
+        expect.anything(),
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    {},
+    { promptTokenCount: 1 },
+    { promptTokenCount: 9, candidatesTokenCount: 4, totalTokenCount: 1 },
+  ])("fails closed on absent or invalid actual usage %j", async (usage) => {
+    const onUsage = vi.fn();
+    const gateway = createOpenAiCompatibleModelGateway({
+      authorize,
+      geminiApiKey: "test-key",
+      onUsage,
+      fetchImplementation: async () => Response.json(nativeReply(usage)),
+    });
+    expect((await gateway(plainRequest())).status).toBe(502);
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
+  it.each([429, 500, 302])(
+    "never retries or follows a provider rejection (%s), or leaks its details",
+    async (status) => {
+      const fetchImplementation = vi.fn(
+        async () =>
+          new Response("PRIVATE UPSTREAM", {
+            status,
+            headers: { Location: "https://attacker.test" },
+          }),
+      );
+      const report = vi.fn();
+      const gateway = createOpenAiCompatibleModelGateway({
+        authorize,
+        geminiApiKey: "test-key",
+        fetchImplementation,
+        diagnostics: { report },
+      });
+      const response = await gateway(plainRequest(true));
+      expect(response.status).toBe(502);
+      expect(fetchImplementation).toHaveBeenCalledTimes(1);
+      expect(await response.text()).not.toContain("PRIVATE");
+      expect(JSON.stringify(report.mock.calls)).not.toContain("PRIVATE");
+    },
+  );
+
+  it("rejects malformed tool history and remote media before consuming admission or fetching", async () => {
+    const fetchImplementation = vi.fn();
+    const admit = vi.fn();
+    const gateway = createOpenAiCompatibleModelGateway({
+      authorize,
+      geminiApiKey: "test-key",
+      fetchImplementation,
+      admit,
+    });
+    for (const messages of [
+      [{ role: "tool", tool_call_id: "missing", content: "x" }],
+      [
+        {
+          role: "assistant",
+          tool_calls: [
+            { type: "function", id: "call", function: { name: "test", arguments: "bad-json" } },
+          ],
+        },
+      ],
+      [
+        {
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: "http://127.0.0.1/private" } }],
+        },
+      ],
+    ])
+      expect((await gateway(plainRequest(false, { messages }))).status).toBe(400);
+    expect(admit).not.toHaveBeenCalled();
+    expect(fetchImplementation).not.toHaveBeenCalled();
+  });
+
+  it("cancels one in-flight SDK call and releases admission without retrying", async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const release = vi.fn(async () => {});
+    const fetchImplementation = vi.fn(
+      async (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          started();
+          init?.signal?.addEventListener("abort", () => reject(new Error("test abort")), {
+            once: true,
+          });
+        }),
+    );
+    const gateway = createOpenAiCompatibleModelGateway({
+      authorize,
+      geminiApiKey: "test-key",
+      fetchImplementation,
+      admit: async () => ({ release }),
+    });
+    const pending = gateway(new Request(plainRequest(true), { signal: controller.signal }));
+    await ready;
+    controller.abort();
+    expect((await pending).status).toBe(502);
+    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the Gemini key on the gateway and proxies Pi tools with actual streaming usage", async () => {
@@ -22,54 +214,29 @@ describe("OpenAI-compatible ModelGateway", () => {
 
       return new Response(
         [
-          `data: ${JSON.stringify({
-            choices: [
+          {
+            candidates: [
               {
-                delta: {
-                  tool_calls: [
+                content: {
+                  role: "model",
+                  parts: [
                     {
-                      extra_content: {
-                        google: {
-                          thought_signature: "signed-test-thought",
-                        },
-                      },
-                      function: { arguments: '{"path":"/workspace/test.txt"}', name: "write_file" },
-                      id: "call-1",
-                      index: 0,
-                      type: "function",
+                      functionCall: { name: "write_file", args: { path: "/workspace/test.txt" } },
+                      thoughtSignature: "signed-test-thought",
                     },
                   ],
                 },
-                finish_reason: null,
-                index: 0,
               },
             ],
-          })}`,
-          `data: ${JSON.stringify({
-            choices: [
-              {
-                delta: { role: "assistant" },
-                finish_reason: "stop",
-                index: 0,
-              },
-            ],
-          })}`,
-          `data: ${JSON.stringify({
-            choices: [],
-            usage: {
-              completion_tokens: 4,
-              prompt_tokens: 9,
-              total_tokens: 13,
-            },
-          })}`,
-          "data: [DONE]",
-          "",
-        ].join("\n\n"),
-        {
-          headers: {
-            "content-type": "text/event-stream; charset=utf-8",
           },
-        },
+          {
+            candidates: [{ finishReason: "STOP" }],
+            usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 4, totalTokenCount: 13 },
+          },
+        ]
+          .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+          .join(""),
+        { headers: { "content-type": "text/event-stream" } },
       );
     };
     const gateway = createOpenAiCompatibleModelGateway({
@@ -129,37 +296,18 @@ describe("OpenAI-compatible ModelGateway", () => {
       throw new Error("Expected the ModelGateway to call Gemini once.");
     }
     expect(String(capturedRequest?.input)).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse",
     );
     expect(capturedRequest.init).toMatchObject({
-      headers: expect.objectContaining({ authorization: "Bearer test-gemini-key" }),
+      headers: expect.objectContaining({ "x-goog-api-key": "test-gemini-key" }),
       method: "POST",
     });
 
-    expect(JSON.parse(String(capturedRequest.init?.body))).toEqual({
-      max_tokens: 128,
-      messages: [
-        { content: "You are a terse coding assistant.", role: "developer" },
-        { content: "Return the test marker.", role: "user" },
-      ],
-      model: modelId,
-      stream: true,
-      stream_options: { include_usage: true },
-      tool_choice: "auto",
-      tools: [
-        {
-          function: {
-            description: "Write a file",
-            name: "write_file",
-            parameters: {
-              properties: { path: { type: "string" } },
-              required: ["path"],
-              type: "object",
-            },
-          },
-          type: "function",
-        },
-      ],
+    expect(JSON.parse(String(capturedRequest.init?.body))).toMatchObject({
+      generationConfig: { maxOutputTokens: 128 },
+      systemInstruction: { parts: [{ text: "You are a terse coding assistant." }] },
+      contents: [{ role: "user", parts: [{ text: "Return the test marker." }] }],
+      tools: [{ functionDeclarations: [{ name: "write_file" }] }],
     });
     expect(recordedUsage).toEqual([
       { inputTokens: 9, modelRequestCount: 1, outputTokens: 4, totalTokens: 13 },
@@ -175,18 +323,10 @@ describe("OpenAI-compatible ModelGateway", () => {
       fetchImplementation: async (_input, init) => {
         upstreamBodyText = String(init?.body);
         return Response.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              index: 0,
-              message: { content: "done", role: "assistant" },
-            },
+          candidates: [
+            { content: { role: "model", parts: [{ text: "done" }] }, finishReason: "STOP" },
           ],
-          usage: {
-            completion_tokens: 4,
-            prompt_tokens: 9,
-            total_tokens: 13,
-          },
+          usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 4, totalTokenCount: 13 },
         });
       },
       geminiApiKey: "test-gemini-key",
@@ -231,22 +371,20 @@ describe("OpenAI-compatible ModelGateway", () => {
 
     expect(response.status).toBe(200);
     const upstreamBody = JSON.parse(upstreamBodyText) as Record<string, unknown>;
-    const messages = upstreamBody.messages;
-    expect(Array.isArray(messages)).toBe(true);
-    const assistantMessage = Array.isArray(messages) ? messages[1] : null;
-    expect(assistantMessage).not.toHaveProperty("reasoning_details");
-    expect(assistantMessage).toMatchObject({
-      tool_calls: [
-        {
-          extra_content: {
-            google: {
-              thought_signature: "signed-test-thought",
-            },
+    expect(upstreamBody.contents).toMatchObject([
+      { role: "user" },
+      {
+        role: "model",
+        parts: [
+          {
+            functionCall: { name: "read_file", args: { path: "/workspace/test.txt" } },
+            thoughtSignature: "signed-test-thought",
           },
-          id: "call-1",
-        },
-      ],
-    });
+        ],
+      },
+      { role: "user", parts: [{ functionResponse: { name: "read_file" } }] },
+    ]);
+    expect(upstreamBodyText).not.toContain("reasoning_details");
   });
 
   it("rejects invalid capabilities before calling Gemini", async () => {

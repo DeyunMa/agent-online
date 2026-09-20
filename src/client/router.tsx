@@ -10,6 +10,8 @@ import { CreateProjectPage } from "./components/create-project-page";
 import { ProjectDashboard } from "./components/project-dashboard";
 import { ProjectSidebar } from "./components/project-sidebar";
 import { LoadingState } from "./components/ui-states";
+import { McpAuthorization } from "./components/mcp-authorization";
+import { McpConnections } from "./components/mcp-connections";
 
 // Start route downloads only when the authenticated shell renders its outlet.
 const ProjectConsole = lazy(() =>
@@ -116,7 +118,23 @@ const usageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/usage",
 });
-const routeTree = rootRoute.addChildren([indexRoute, createProjectRoute, projectRoute, usageRoute]);
+const mcpAuthorizationRoute = createRoute({
+  component: McpAuthorization,
+  getParentRoute: () => rootRoute,
+  path: "/mcp/authorize",
+});
+const routeTree = rootRoute.addChildren([
+  createRoute({
+    component: McpConnections,
+    getParentRoute: () => rootRoute,
+    path: "/settings/connections",
+  }),
+  indexRoute,
+  createProjectRoute,
+  projectRoute,
+  usageRoute,
+  mcpAuthorizationRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

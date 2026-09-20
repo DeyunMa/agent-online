@@ -1,5 +1,9 @@
 # Cloudflare 私有 Preview 部署
 
+发布前必须在 shell/CI 设置 `E2B_TEMPLATE_ID=agent-online-pi-runtime:<build-id>`，使用已验证的 Pi-only v3 精确 build。`pnpm deploy:preview` 和 dry-run 均先校验该变量，再通过 Wrangler `--var` 注入；不再从仓库固定模板 ID，也不自动读取 `.dev.vars` 作为发布目标。
+
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
 > 状态：2026-09-08 已部署标准库接入与 Terminal 布局修复，v4 组合模板与受控能力保持不变；
 > 当前 Worker 版本和 Hosted E2E 证据见资源台账；
 > `0006_integrity_guards.sql` 和 `0007_agent_run_failure_codes.sql` 继续保持已应用。
@@ -45,8 +49,6 @@ pnpm deploy:preview:dry-run
 - 全零的 Preview D1 `database_id`；
 - 包含 `replace-me` 的 `BETTER_AUTH_URL`；
 - 占位 E2B Template ID；
-- 非法的 `GOOSE_RUNTIME_MODE`；
-- 启用 Goose 时仍使用非组合 E2B Template；
 - 非 allowlist 的 Preview 访问模式；
 - 非 E2B 的 Preview SandboxRuntime。
 
@@ -228,7 +230,6 @@ status/failure code 非法组合计数为零，Hosted E2E 通过。
 - Gemini Key 只在 Worker，E2B Key 只在 Worker 的 Sandbox Adapter。
 - D1 中只出现产品状态和聚合 usage，不出现 Provider Key、raw transcript 或 Project 文件。
 - Cloudflare Workflow 免费层的真实限制有实测结论。
-- `GOOSE_RUNTIME_MODE=public` 时安全能力接口公布 Pi/Goose，已登录 allowlist 用户可在 UI 选择，创建 Run 仍校验认证、Project 所有权和服务端 Runtime allowlist。
 - Project Preview 只运行固定 `vite-v1`，内容只走同源 GET/HEAD capability；Run/Terminal
   并行、整沙箱 Stop 互斥、显式停止和 expiry/idle cleanup 均收敛。
 - Changes 只读取当前 Git working tree/index；固定命令、危险配置拒绝、输出上限、
@@ -238,6 +239,6 @@ status/failure code 非法组合计数为零，Hosted E2E 通过。
 
 完成以上条件后，D2/D3 对应纵切才算通过完整远程环境验收。只读 Files 已使用真实 E2B Lease 验证目录、文本、停止状态和陈旧缓存清理。Terminal 已应用 `0004_terminal_sessions.sql` 并验证同源 WebSocket、真实 `/workspace` PTY、Run/Files/Stop 互斥、显式关闭、断线关闭和 Terminal/Pi Run 文件连续性；30 分钟 durable expiry 由测试覆盖，本轮没有为了验收等待完整时长。Project Preview 已应用 `0005_preview_sessions.sql` 并按上述步骤通过。Changes 不新增迁移，已按上述步骤通过。
 
-当前已完成 owner 注册、Project 创建、Pi/Goose 同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。临时 8 秒空闲 TTL 已验证 `detached=true, stopped=true`，正式值恢复为 600 秒；手动 Stop UI 也已独立通过。Project Preview 已验证 V1 页面、运行中 Pi 修改后的 V2 Reload、Terminal 并行、Stop 冲突、显式关闭和独立 expiry Workflow smoke。Changes 已验证当前 Git status/diff、安全拒绝、截断和桌面/移动端。最终 Preview/Terminal 临时行均清空，手动 Stop 让 D1 Lease 变为 `stopped` 并清空 Provider 引用，Project 文件按 V1 设计允许丢失。
+当前已完成 owner 注册、Project 创建、Pi 同一沙箱文件复用、包含工具调用与多次 Gemini 请求的成功 Run、长任务取消，以及临时 8 秒 wall-clock 配置下的 `timed_out` 收敛。取消和超时均没有 assistant Message，后续 Run 仍能读取原文件。临时 8 秒空闲 TTL 已验证 `detached=true, stopped=true`，正式值恢复为 600 秒；手动 Stop UI 也已独立通过。Project Preview 已验证 V1 页面、运行中 Pi 修改后的 V2 Reload、Terminal 并行、Stop 冲突、显式关闭和独立 expiry Workflow smoke。Changes 已验证当前 Git status/diff、安全拒绝、截断和桌面/移动端。最终 Preview/Terminal 临时行均清空，手动 Stop 让 D1 Lease 变为 `stopped` 并清空 Provider 引用，Project 文件按 V1 设计允许丢失。
 
 Worker binding 与 Workflow 版本可能短暂不同步。涉及 wall clock 或 TTL 的部署，必须等待 Workflow 最新版本传播，并在实例详情确认实际 sleep/timeout 后再记录结论。

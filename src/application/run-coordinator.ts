@@ -1,7 +1,6 @@
-import { measureOperation } from "./diagnostic-measurement";
-import type { AgentExecution, AgentRuntime, AgentRuntimeId } from "../agent/contract";
-import { isTerminalAgentRun } from "../domain/agent-run";
+import type { AgentExecution, AgentRuntime } from "../agent/contract";
 import type { AgentRunStatus } from "../domain/agent-run";
+import { isTerminalAgentRun } from "../domain/agent-run";
 import {
   type DiagnosticErrorCode,
   type DiagnosticReporter,
@@ -9,18 +8,19 @@ import {
   noopDiagnosticReporter,
 } from "../observability/contract";
 import type {
+  ProcessTerminationReason,
+  RuntimeKind,
+  SandboxProcessSession,
+  SandboxRuntime,
+} from "../runtime/contract";
+import type { AgentRunFailureCode, FailedAgentRunFailureCode } from "../shared/error-codes";
+import { measureOperation } from "./diagnostic-measurement";
+import type {
   AgentRunRecord,
   AgentRunRepository,
   SandboxLeaseRecord,
   SandboxLeaseRepository,
 } from "./ports";
-import type {
-  RuntimeKind,
-  SandboxRuntime,
-  SandboxProcessSession,
-  ProcessTerminationReason,
-} from "../runtime/contract";
-import type { AgentRunFailureCode, FailedAgentRunFailureCode } from "../shared/error-codes";
 
 export type Clock = {
   now(): Date;
@@ -31,7 +31,7 @@ export type RunCoordinatorDependencies = {
   clock: Clock;
   createId(): string;
   diagnostics?: DiagnosticReporter;
-  getAgentRuntime(id: AgentRuntimeId): AgentRuntime;
+  getAgentRuntime(id: string): AgentRuntime;
   getSandboxRuntime(id: RuntimeKind): SandboxRuntime;
   sandboxLeaseRepository: SandboxLeaseRepository;
 };

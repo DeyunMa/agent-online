@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 const configUrl = new URL("../wrangler.jsonc", import.meta.url);
 const config = JSON.parse(await readFile(configUrl, "utf8"));
 const vars = config.vars ?? {};
+const templateId = process.env.E2B_TEMPLATE_ID;
 const database = config.d1_databases?.find(({ binding }) => binding === "DB");
 const workflow = config.workflows?.find(({ binding }) => binding === "AGENT_RUN_WORKFLOW");
 const errors = [];
@@ -24,30 +25,16 @@ if (vars.RUNTIME_PROVIDER !== "e2b") {
 }
 
 if (
-  typeof vars.E2B_TEMPLATE_ID !== "string" ||
-  vars.E2B_TEMPLATE_ID.trim() === "" ||
-  vars.E2B_TEMPLATE_ID.includes("replace-with")
+  typeof templateId !== "string" ||
+  !/^agent-online-pi-runtime:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(templateId)
 ) {
-  errors.push("top-level E2B_TEMPLATE_ID must be an exact E2B template build reference");
+  errors.push(
+    "Set E2B_TEMPLATE_ID in the deployment environment to an exact Pi-only build reference",
+  );
 }
 
 if (vars.RUNS_ENABLED !== "true" && vars.RUNS_ENABLED !== "false") {
   errors.push("top-level RUNS_ENABLED must be true or false");
-}
-
-if (
-  vars.GOOSE_RUNTIME_MODE !== undefined &&
-  !["disabled", "spike", "public"].includes(vars.GOOSE_RUNTIME_MODE)
-) {
-  errors.push("top-level GOOSE_RUNTIME_MODE must be disabled, spike, or public");
-}
-
-if (
-  vars.GOOSE_RUNTIME_MODE !== undefined &&
-  vars.GOOSE_RUNTIME_MODE !== "disabled" &&
-  !vars.E2B_TEMPLATE_ID?.startsWith("agent-online-pi-goose-runtime:")
-) {
-  errors.push("top-level deployment must use the combined Pi/Goose template when Goose is enabled");
 }
 
 if (!workflow?.name || workflow.name === "agent-online-preview-run") {

@@ -554,7 +554,7 @@ describe("Project API", () => {
 
   it("persists an explicitly selected enabled AgentRuntime", async () => {
     const fixture = createFixture(testUser, {
-      enabledAgentRuntimeIds: ["pi", "goose"],
+      enabledAgentRuntimeIds: ["pi"],
     });
     await fixture.projects.create({
       defaultAgentRuntimeId: "pi",
@@ -568,7 +568,7 @@ describe("Project API", () => {
       "http://agent-online.test/api/projects/project_1/agent-runs",
       {
         body: JSON.stringify({
-          agentRuntimeId: "goose",
+          agentRuntimeId: "pi",
           content: "Inspect this project",
         }),
         headers: { "content-type": "application/json" },
@@ -578,13 +578,13 @@ describe("Project API", () => {
 
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      agentRuntimeId: "goose",
+      agentRuntimeId: "pi",
       status: "queued",
     });
-    expect(fixture.coordinator.starts[0]?.agentRun.agentRuntimeId).toBe("goose");
+    expect(fixture.coordinator.starts[0]?.agentRun.agentRuntimeId).toBe("pi");
   });
 
-  it("rejects a gated AgentRuntime before creating product state", async () => {
+  it("rejects a removed AgentRuntime before creating product state", async () => {
     const fixture = createFixture(testUser);
     await fixture.projects.create({
       defaultAgentRuntimeId: "pi",
@@ -606,9 +606,9 @@ describe("Project API", () => {
       },
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      error: { code: "agent_runtime.unavailable", retryable: false },
+      error: { code: "request.invalid", retryable: false },
     });
     expect(fixture.agentRuns.records.size).toBe(0);
     expect(fixture.messages.records).toHaveLength(0);

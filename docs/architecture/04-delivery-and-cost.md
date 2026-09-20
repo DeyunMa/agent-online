@@ -1,5 +1,7 @@
 # 交付阶段、运行时选择与成本边界
 
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
 > 状态：D2、D3 与 D4 Goose 真实链路已完成既定验收；2026-09-08 已部署标准库接入与 Terminal 布局修复；仍为私有 allowlist Preview。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [运行时](./02-sandbox-runtime.md) · [环境变量](../setup/environment-variables.md)
 
@@ -15,8 +17,8 @@ Cloudflare Worker/Assets 和 D1 是 V1 平台基线；R2 不在第一版。真�
 flowchart LR
     F["fake SandboxRuntime\n快速测试"] --> E["E2B Adapter\n真实远程开发"]
     E --> C["Cloudflare Container Adapter\n以后部署候选"]
-    P["Pi AgentRuntime\n默认且已验收"] --> G["Goose AgentRuntime\n私有 Preview 能力开放"]
-    G --> N["其他 Runtime\n独立 ADR 后再评估"]
+    P["Pi AgentRuntime\n唯一已安装 Runtime"]
+    P --> N["其他 Runtime\n独立 ADR 后再评估"]
     F --> X["同一 User -> Project -> SandboxLease 合同"]
     E --> X
     C --> X
@@ -43,10 +45,9 @@ D3 按“受控只读 Files -> 跨 Run 用量聚合 -> Terminal -> Preview -> Ch
 ## 3. 当前与未来 Runtime 的边界
 
 - `fake`：测试 RunCoordinator、重复启动、失败、取消和 D1 状态收敛；不模拟真实 wall-clock timeout，内存文件也不具备跨请求连续性，因此公共 Files 和 Terminal 不可用。
-- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。当前组合模板以非 root 用户运行并由该用户拥有 `/workspace`，模板探针必须实际完成 Git init/status。
+- `e2b`：开发测试真实 Pi 和 Linux；`E2B_API_KEY` 只在服务端环境中使用。Terminal 通过同源 WebSocket 开放；Preview 通过独立固定 preset、同源签名 GET/HEAD 网关和临时 D1 所有权开放；Changes 只运行固定 Git 读命令。三者都不能直接暴露 E2B URL/ID。当前 Pi-only 模板以非 root 用户运行并由该用户拥有 `/workspace`，模板探针必须实际完成 Git init/status。
 - `cloudflare-container`：以后需要 Cloudflare 原生生产 Runtime 时接入；不要因其名称把业务层绑定到 Containers。
 - Pi：默认且已验收的 AgentRuntime，也是当前公开执行路径。
-- Goose：按 ADR-0004 实施独立 adapter 和 Pi + Goose 组合模板；远端执行门槛、capability 输出脱敏和本地浏览器选择均已通过，Preview 以 `public` 模式公布，2026-09-08 已验证真实浏览器下拉选择，执行链路证据沿用此前验收。
 - Claude Code、Codex CLI：仍是后续候选，保留 ID 不表示已支持。
 
 ## 4. D2/D3 成本与滥用护栏

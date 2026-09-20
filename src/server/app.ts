@@ -1,10 +1,12 @@
 import { sentry } from "@sentry/hono/cloudflare";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
+import { bodyLimit } from "hono/body-limit";
 
-import { defaultAgentRuntimeId } from "../agent/registry";
-import { getAgentRuntimePolicy } from "./agent-runtime-policy";
+import { defaultAgentRuntimeId, installedAgentRuntimeIds } from "../agent/registry";
 import { createAuth } from "./auth";
+import { createMcpApi } from "./mcp/api";
+import { createMcpConnectionsApi } from "./mcp/connections";
 import { createChangesApi } from "./changes-api";
 import { getDeploymentPolicy } from "./deployment-policy";
 import type { AppEnv } from "./env";
@@ -34,6 +36,7 @@ app.use("*", async (c, next) => {
   await next();
 });
 app.use("/api/*", requestMeasurement());
+app.use("/mcp", requestMeasurement());
 app.use(
   "/api/*",
   secureHeaders({
@@ -52,9 +55,8 @@ app.get("/api/health", (c) =>
 
 app.get("/api/capabilities", (c) => {
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(c.env);
-  const policy = getAgentRuntimePolicy(c.env, sandboxRuntimeId);
   return c.json({
-    agentRuntimeIds: [...policy.publicRuntimeIds],
+    agentRuntimeIds: [...installedAgentRuntimeIds],
     changesEnabled: sandboxRuntimeId === "e2b",
     defaultAgentRuntimeId,
     fileUploadEnabled: sandboxRuntimeId === "e2b",
@@ -68,9 +70,27 @@ app.post(modelGatewayEndpointPath, (c) =>
   createWorkerModelGateway(c.env, { requestId: c.get("requestId") })(c.req.raw),
 );
 
+app.use(
+  "/api/auth/oauth2/*",
+  bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "request.too_large" }, 413) }),
+);
+app.use("/api/auth/oauth2/*", async (c, next) => {
+  const registering = c.req.path === "/api/auth/oauth2/register";
+  const limiter = registering ? c.env.MCP_REGISTRATION_LIMIT : c.env.MCP_RATE_LIMIT;
+  if (!limiter) return c.json({ error: "oauth.unavailable" }, 503);
+  const key = `oauth:${c.req.header("cf-connecting-ip") ?? "local"}`;
+  if (!(await limiter.limit({ key })).success) {
+    c.header("Retry-After", "60");
+    return c.json({ error: "rate_limited" }, 429);
+  }
+  await next();
+});
+
 app.on(["GET", "POST"], "/api/auth/*", (c) => createAuth(c.env).handler(c.req.raw));
 
 app.route("/api", createProjectApi());
+app.route("/", createMcpApi());
+app.route("/api", createMcpConnectionsApi());
 app.route("/api", createChangesApi());
 app.route("/api", createUsageApi());
 app.route("/api", createTerminalApi());

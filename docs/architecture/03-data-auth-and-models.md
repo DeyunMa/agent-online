@@ -1,5 +1,7 @@
 # 数据、认证、模型与基础用量
 
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
 > 状态：D1、Better Auth、ModelGateway、Run usage、Terminal/Preview 临时所有权和不落库的 Changes 已实现；2026-09-08 已部署 Drizzle 类型映射、Zod 合同和 jose JWT，保留严格脱敏的 Sentry Error Monitoring。当前没有维护者角色或管理视图。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](../adr/0003-agent-run-workflow.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [ADR-0010](../adr/0010-deleted-project-usage-archive.md) · [领域术语](../../CONTEXT.md) · [环境变量](../setup/environment-variables.md)
 
@@ -15,6 +17,11 @@
 V1 没有 R2 Binding。Project 文件只在沙箱存活期间存在；沙箱停止或故障后，Project 可以留下元数据和对话，但文件允许丢失。
 
 ## 2. 认证与授权
+
+2026-09-20 新增 [ADR-0013](../adr/0013-readonly-product-insights-mcp.md)：同一 Better Auth
+实例通过 OAuth Provider + JWT 支持外部 MCP 授权；仍使用以下邮箱密码身份体系。新增的
+OAuth 授权不是 Google/飞书社交登录。`/mcp` 使用受众和 scope 受限 Bearer，产品 API
+继续使用 Cookie 与同源保护。认证表由 `0010_mcp_oauth.sql` 增量提供。
 
 Better Auth 负责 `user`、`account`、`session` 和 `verification`。第一版只启用邮箱密码注册/登录：`emailAndPassword.enabled = true`；不配置 Google OAuth、邮件验证、找回密码或邮件发送服务。
 
@@ -41,7 +48,7 @@ Terminal、Preview 的条件写入、成功回复事务、Project 删除归档�
 原生 D1 SQL/batch，保留现有互斥条件、数据库触发器和同批读取语义；Better Auth
 继续使用自己的 D1 adapter。
 
-`migrations/0001` 至 `0009` 是唯一迁移历史；0009 增量加入用户执行准入，不重置已有数据。
+`migrations/0001` 至 `0011` 是唯一迁移历史；0009 增量加入用户执行准入，0010 增加 MCP OAuth 认证表，0011 升级认证资源和 CIMD 字段，不重置已有数据。
 后续表变更需要同时更新 SQL 迁移、Drizzle schema 与数据库文档。`pnpm test:d1` 在隔离
 Workers D1 中应用全部迁移，核对 schema 的列、默认值、主键、外键、唯一约束、索引与
 CHECK 表达式，并继续验证触发器和原子写入。SQLite 的 TEXT PRIMARY KEY 在 PRAGMA
@@ -110,11 +117,18 @@ END;
 - Agent 只使用 Run 范围内的受限访问路径；它不知道 Gemini 原始 Key，也不拥有永久模型凭据。
 - `jose` 负责 Run/Preview 的 HS256 JWT 签发与验证；两种用途使用隔离的 HKDF 派生
   密钥，校验各自 audience、scope、资源标识及期限。JWT payload 可解码，不承载模型密钥。
-- ModelGateway 上游 SSE 使用 `eventsource-parser` 解析事件边界，平台仍负责有界缓冲、
-  Gemini 协议修正及真实 usage。浏览器 SSE 仍只发布 Run 状态和终态用量。
+- ModelGateway 内部使用 Vercel AI SDK `ai` Core 与 `@ai-sdk/google` Provider 调用
+  Gemini 原生 API，不依赖 Vercel Gateway 或 Vercel 部署。`generateText` / `streamText`
+  负责供应商调用，HTTP 兼容层继续向 Pi 提供 OpenAI Chat Completions。
+- 网关保留有界缓冲、先落库 usage 后返回、取消和无自动重试；工具只声明 schema，不在
+  Worker 执行。Google thought signature 在工具调用与 Pi 协议间双向传递，推理文本
+  不返回或持久化。实际 provider usageMetadata 是计量依据，SDK 缺省值不能充当真实用量。
+- 单次 SDK 调用保持一个模型请求。输出 token 继续为 candidatesTokenCount，total 包含
+  reasoning tokens，避免 SDK 统一 outputTokens 包含 reasoning 后改变既有统计口径。
+  浏览器 SSE 仍只发布 Run 状态和终态用量。接入细节见 [AI SDK 网关](../reference/model-gateway-ai-sdk.md)。
 - 默认模型 ID 是服务端配置。第一版不提供模型选择 UI、BYOK 或用户上传模型连接。
 
-短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi/Goose + Gemini 和 Cloudflare 远程 Workflow 均已完成代表性验收；两种 Runtime 复用同一网关，沙箱没有 Gemini Key。Goose 已在私有 Preview 公开；capability 的工具继承是持续受控的残余风险，输出脱敏仍须维持；复杂任务下的免费层 CPU/subrequest 上限也需持续观察。
+短时能力令牌、Agent custom provider 与 `AgentRunWorkflow` 的协调关系由 [ADR-0003](../adr/0003-agent-run-workflow.md) 定义。真实 E2B + Pi + Gemini 和 Cloudflare 远程 Workflow 均已完成代表性验收；Pi 使用该网关，沙箱没有 Gemini Key。capability 的工具继承是持续受控的残余风险，输出脱敏仍须维持；复杂任务下的免费层 CPU/subrequest 上限也需持续观察。
 
 BYOK 是一个单独的未来能力。实施时需要另行决定用户 Key 的加密、撤销、网关访问、审计和泄漏响应，不能把它伪装成当前字段或环境变量。
 

@@ -1,10 +1,10 @@
+import { getAgentRuntime } from "../agent/registry";
 import { RunExecutionService } from "../application/run-execution";
 import { SandboxReclaimer } from "../application/sandbox-reclaimer";
 import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import type { RuntimeKind } from "../runtime/contract";
 import type { DiagnosticContext } from "../observability/contract";
 import type { AppBindings } from "./env";
-import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import {
   D1AgentRunRepository,
   D1MessageRepository,
@@ -26,7 +26,6 @@ export function createE2BRunExecution(
   diagnosticContext: DiagnosticContext = {},
 ): E2BRunExecution {
   const { config, runtime } = createE2BSandboxRuntime(env);
-  const agentRuntimePolicy = getAgentRuntimePolicy(env, "e2b");
   const capabilityCodec = createRunCapabilityCodec({
     secret: requireSecret(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
   });
@@ -49,7 +48,7 @@ export function createE2BRunExecution(
       clock,
       createId: () => crypto.randomUUID(),
       diagnostics,
-      getAgentRuntime: agentRuntimePolicy.resolve,
+      getAgentRuntime: getAgentRuntime,
       getSandboxRuntime,
       async issueModelAccess({ expiresAt, issuedAt, run }) {
         return {

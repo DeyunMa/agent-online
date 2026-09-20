@@ -110,6 +110,8 @@ describe("D1 repositories in the Workers runtime", () => {
       "0007_agent_run_failure_codes.sql",
       "0008_archived_run_usage.sql",
       "0009_resource_admission.sql",
+      "0010_mcp_oauth.sql",
+      "0011_mcp_auth_hardening.sql",
     ]);
     expect(triggers.results.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
@@ -230,7 +232,7 @@ describe("D1 repositories in the Workers runtime", () => {
         const columnsSql = index.columns
           .map((column) => normalize(dialect.sqlToQuery(sql`${column}`).sql))
           .join(",");
-        expect(indexSql).toContain(`on${config.name}(${columnsSql})`);
+        expect(indexSql).toContain(`on${config.name.toLowerCase()}(${columnsSql})`);
         expect(indexes.results.find((item) => item.name === index.name)).toMatchObject({
           unique: Number(index.unique),
           partial: Number(Boolean(index.where)),

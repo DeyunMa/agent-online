@@ -1,0 +1,94 @@
+-- Better Auth 1.7.5: additive auth upgrade; preserve accounts and grants.
+
+ALTER TABLE "jwks" ADD COLUMN "alg" TEXT;
+
+ALTER TABLE "jwks" ADD COLUMN "crv" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "clientDiscoveryId" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "clientCredentialsScopes" TEXT DEFAULT '[]';
+
+ALTER TABLE "oauthClient" ADD COLUMN "backchannelLogoutUri" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "backchannelLogoutSessionRequired" INTEGER;
+
+ALTER TABLE "oauthClient" ADD COLUMN "applicationType" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "jwks" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "jwksUri" TEXT;
+
+ALTER TABLE "oauthClient" ADD COLUMN "dpopBoundAccessTokens" INTEGER DEFAULT 0;
+
+CREATE TABLE "oauthResource" (
+"id" TEXT PRIMARY KEY NOT NULL,
+"identifier" TEXT NOT NULL UNIQUE,
+"name" TEXT NOT NULL,
+"accessTokenTtl" INTEGER,
+"refreshTokenTtl" INTEGER,
+"signingAlgorithm" TEXT,
+"signingKeyId" TEXT,
+"allowedScopes" TEXT,
+"customClaims" TEXT,
+"dpopBoundAccessTokensRequired" INTEGER DEFAULT 0,
+"disabled" INTEGER DEFAULT 0,
+"createdAt" DATE,
+"updatedAt" DATE,
+"policyVersion" INTEGER DEFAULT 1,
+"metadata" TEXT
+);
+
+CREATE TABLE "oauthClientResource" (
+"id" TEXT PRIMARY KEY NOT NULL,
+"clientId" TEXT NOT NULL REFERENCES "oauthClient"("clientId") ON DELETE CASCADE,
+"resourceId" TEXT NOT NULL REFERENCES "oauthResource"("identifier") ON DELETE CASCADE,
+"metadata" TEXT,
+"createdAt" DATE
+);
+
+CREATE INDEX "oauthClientResource_clientId_idx" ON "oauthClientResource"("clientId");
+
+CREATE INDEX "oauthClientResource_resourceId_idx" ON "oauthClientResource"("resourceId");
+
+CREATE UNIQUE INDEX "oauthClientResource_clientId_resourceId_uidx" ON "oauthClientResource"("clientId","resourceId");
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "authorizationCodeId" TEXT;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "resources" TEXT;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "requestedUserInfoClaims" TEXT;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "rotatedAt" DATE;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "rotationReplayResponse" TEXT;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "rotationReplayExpiresAt" DATE;
+
+ALTER TABLE "oauthRefreshToken" ADD COLUMN "confirmation" TEXT;
+
+CREATE INDEX "oauthRefreshToken_authorizationCodeId_idx" ON "oauthRefreshToken"("authorizationCodeId");
+
+ALTER TABLE "oauthAccessToken" ADD COLUMN "authorizationCodeId" TEXT;
+
+ALTER TABLE "oauthAccessToken" ADD COLUMN "resources" TEXT;
+
+ALTER TABLE "oauthAccessToken" ADD COLUMN "requestedUserInfoClaims" TEXT;
+
+ALTER TABLE "oauthAccessToken" ADD COLUMN "revoked" DATE;
+
+ALTER TABLE "oauthAccessToken" ADD COLUMN "confirmation" TEXT;
+
+CREATE INDEX "oauthAccessToken_authorizationCodeId_idx" ON "oauthAccessToken"("authorizationCodeId");
+
+ALTER TABLE "oauthConsent" ADD COLUMN "resources" TEXT;
+
+ALTER TABLE "oauthConsent" ADD COLUMN "requestedUserInfoClaims" TEXT;
+
+CREATE TABLE "oauthClientAssertion" (
+"id" TEXT PRIMARY KEY NOT NULL,
+"expiresAt" DATE NOT NULL
+);
+
+UPDATE "oauthClient" SET "applicationType" = CASE WHEN "type" IN ('web','native') THEN "type" ELSE NULL END, "clientCredentialsScopes" = '[]';
+
+UPDATE "jwks" SET "alg" = 'EdDSA', "crv" = 'Ed25519' WHERE "alg" IS NULL;

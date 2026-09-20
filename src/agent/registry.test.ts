@@ -8,8 +8,8 @@ describe("AgentRuntime registry", () => {
     expect(getAgentRuntime(defaultAgentRuntimeId).id).toBe("pi");
   });
 
-  it("installs Goose as a separately gated adapter", () => {
-    expect(getAgentRuntime("goose").id).toBe("goose");
+  it("rejects a removed adapter even if an old record names it", () => {
+    expect(() => getAgentRuntime("goose")).toThrow("not installed");
   });
 
   it("rejects a runtime that is only reserved by the contract", () => {

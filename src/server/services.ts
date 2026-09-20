@@ -1,5 +1,9 @@
 import type { AgentRuntimeId } from "../agent/contract";
-import { defaultAgentRuntimeId } from "../agent/registry";
+import {
+  defaultAgentRuntimeId,
+  installedAgentRuntimeIds,
+  getAgentRuntime,
+} from "../agent/registry";
 import { CreateAgentRunService } from "../application/create-agent-run";
 import { ProjectChangesService } from "../application/project-changes";
 import { ProjectFilesService } from "../application/project-files";
@@ -24,7 +28,6 @@ import type {
 import type { E2BSandboxRuntime } from "../runtime/e2b-runtime";
 import { FakeSandboxRuntime } from "../runtime/fake-runtime";
 import { createE2BSandboxRuntime } from "./e2b-runtime-factory";
-import { getAgentRuntimePolicy } from "./agent-runtime-policy";
 import type { AppBindings } from "./env";
 import {
   D1AgentRunRepository,
@@ -83,7 +86,6 @@ export function createServerServices(
   const previewSessions = new D1PreviewSessionRepository(env.DB);
   const terminalSessions = new D1TerminalSessionRepository(env.DB);
   const sandboxRuntimeId = getInstalledSandboxRuntimeId(env);
-  const agentRuntimePolicy = getAgentRuntimePolicy(env, sandboxRuntimeId);
   const fakeRuntime =
     sandboxRuntimeId === "fake" ? new FakeSandboxRuntime({ completionDelayMs: 8_000 }) : null;
   let e2bRuntime: E2BSandboxRuntime | null = null;
@@ -121,7 +123,7 @@ export function createServerServices(
           agentRuns,
           sandboxLeases,
           getSandboxRuntime("fake"),
-          agentRuntimePolicy.resolve,
+          getAgentRuntime,
           diagnostics,
         )
       : createWorkflowDispatcher(env, diagnosticContext);
@@ -153,7 +155,7 @@ export function createServerServices(
       workingDirectory: defaultWorkingDirectory,
     }),
     diagnostics,
-    enabledAgentRuntimeIds: agentRuntimePolicy.executionRuntimeIds,
+    enabledAgentRuntimeIds: installedAgentRuntimeIds,
     projectChanges: new ProjectChangesService({
       agentRuns,
       getSandboxRuntime: getChangesRuntime,

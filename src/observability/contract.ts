@@ -1,5 +1,5 @@
-import type { AgentRunStatus, AgentRuntimeId, RuntimeKind } from "../shared/protocol";
 import type { AgentRunFailureCode } from "../shared/error-codes";
+import type { AgentRunStatus, RuntimeKind } from "../shared/protocol";
 
 export const diagnosticErrorCodes = [
   "RUN_DISPATCH_FAILED",
@@ -107,6 +107,7 @@ export type DiagnosticEvent = DiagnosticContext & {
   operation?: "http" | "run_history" | "usage_summary";
   route?:
     | "auth"
+    | "mcp"
     | "projects"
     | "messages"
     | "runs"
@@ -119,7 +120,7 @@ export type DiagnosticEvent = DiagnosticContext & {
   httpStatus?: number;
   rowsRead?: number;
   rowsWritten?: number;
-  agentRuntimeId?: AgentRuntimeId;
+  agentRuntimeId?: string;
   attempt?: number;
   detached?: boolean;
   durationMs?: number;

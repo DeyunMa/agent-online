@@ -32,29 +32,16 @@ describe("Worker API", () => {
     });
   });
 
-  it("keeps Goose private in spike mode and publishes it only in public E2B mode", async () => {
-    const spike = await app.request("http://agent-online.test/api/capabilities", undefined, {
-      GOOSE_RUNTIME_MODE: "spike",
+  it("publishes only Pi in E2B deployments", async () => {
+    const response = await app.request("http://agent-online.test/api/capabilities", undefined, {
       RUNTIME_PROVIDER: "e2b",
     } as AppBindings);
-    const publicResponse = await app.request(
-      "http://agent-online.test/api/capabilities",
-      undefined,
-      {
-        GOOSE_RUNTIME_MODE: "public",
-        RUNTIME_PROVIDER: "e2b",
-      } as AppBindings,
-    );
-
-    await expect(spike.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toMatchObject({
       agentRuntimeIds: ["pi"],
       changesEnabled: true,
       fileUploadEnabled: true,
       previewEnabled: true,
       terminalEnabled: true,
-    });
-    await expect(publicResponse.json()).resolves.toMatchObject({
-      agentRuntimeIds: ["pi", "goose"],
     });
   });
 

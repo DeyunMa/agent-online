@@ -1,5 +1,7 @@
 # Cloudflare Preview 资源台账
 
+> 2026-09-20：本文是已部署环境的历史清单。仓库已移除 Goose，新的 Pi-only 模板尚未构建和部署；下列旧模板与变量不代表新的部署目标。
+
 > 状态：本文记录截至 2026-09-09 的私有 Cloudflare 环境。v4 Pi/Goose 平台底座、
 > 受控 Preview 预检、覆盖式可调桌面检查器、受控文件上传和能力驱动的 Pi/Goose 选择已部署；`0006_integrity_guards.sql` 和
 > `0007_agent_run_failure_codes.sql`、`0008_archived_run_usage.sql` 均已应用。

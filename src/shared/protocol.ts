@@ -1,12 +1,12 @@
-export const agentRuntimeIds = ["pi", "goose", "claude-code", "codex-cli"] as const;
+export const agentRuntimeIds = ["pi", "claude-code", "codex-cli"] as const;
 
 export type AgentRuntimeId = (typeof agentRuntimeIds)[number];
 
-export type SupportedAgentRuntimeId = "pi" | "goose";
+export type SupportedAgentRuntimeId = "pi";
 
 /** Static protocol support; deployment policy still decides which runtime is enabled. */
 export function isSupportedAgentRuntimeId(id: AgentRuntimeId): id is SupportedAgentRuntimeId {
-  return id === "pi" || id === "goose";
+  return id === "pi";
 }
 
 export const agentRunStatuses = [

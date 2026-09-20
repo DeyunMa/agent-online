@@ -90,7 +90,7 @@
     {
       "id": "agent-runtime",
       "type": "backend",
-      "label": "Pi / Goose Agent",
+      "label": "Pi Agent",
       "sublabel": "沙箱进程 · /workspace",
       "tag": "Terminal / Preview / Changes",
       "pos": [1260, 330],

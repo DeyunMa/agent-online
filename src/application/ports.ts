@@ -35,7 +35,7 @@ export type AgentRunUsage = {
 export type AgentRunUsageDelta = AgentRunUsage;
 
 export type AgentRunRecord = {
-  agentRuntimeId: AgentRuntimeId;
+  agentRuntimeId: string;
   createdAt: string;
   failureCode: AgentRunFailureCode | null;
   finishedAt: string | null;

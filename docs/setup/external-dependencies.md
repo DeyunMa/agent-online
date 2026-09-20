@@ -1,6 +1,8 @@
 # 外部依赖与待补充项
 
-> 状态：Preview Worker、D1、Workflow、Secret、Sentry Error Monitoring、远程迁移，以及 Pi/Goose、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置。Goose 已切换为受 allowlist 保护的 `public` capability。
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
+> 状态：Preview Worker、D1、Workflow、Secret、Sentry Error Monitoring、远程迁移，以及 Pi、Files、Usage、Terminal、Project Preview、只读 Changes、取消、deadline、空闲 TTL 和手动停止已配置。当前代码仅公布 Pi capability。
 > 关联：[环境变量](./environment-variables.md) · [本地开发](./local-development.md) · [交付阶段](../architecture/04-delivery-and-cost.md)
 
 ## 1. 当前本地开发
@@ -11,7 +13,7 @@
 | Better Auth URL | `BETTER_AUTH_URL` | Cookie 与受信任 origin；本地应匹配实际访问地址。 | 已由本地 `.dev.vars` 提供。 |
 | Gemini API | `GEMINI_API_KEY` | 真实 Worker ModelGateway 和显式 E2E；fake 开发不读取。 | 本地真实链路已配置。 |
 | E2B | `E2B_API_KEY` | 创建和管理真实开发沙箱；fake 开发不读取。 | 本地真实链路已配置。 |
-| E2B Pi + Goose Template | `E2B_TEMPLATE_ID` | 固定 Node/npm/pnpm、Pi、Goose、Python、Git/Bash、常用开发工具、只读平台 Vite 和可写 `/workspace` 的组合模板。 | v4 精确 build 已构建，并完成 adapter、平台 Preview 和 Agent Runtime 真实 E2E。 |
+| E2B Pi Template | `E2B_TEMPLATE_ID` | 固定 Node/npm/pnpm、Pi、Python、Git/Bash、常用开发工具、只读平台 Vite 和可写 `/workspace` 的组合模板。 | Pi-only v3 定义已更新；新 build 与真实 E2E 尚待执行。 |
 | Sentry | `SENTRY_DSN`、`VITE_SENTRY_DSN` | 服务端与浏览器的脱敏 Error Monitoring；核心功能不依赖。 | 本地构建配置已准备，Preview 项目、Worker Secret 和源码映射已配置。 |
 | Local D1 | `DB` Binding | Better Auth 与产品数据。 | Wrangler 本地数据库可直接迁移，无需云端账号资源。 |
 | Local Workflows | `AGENT_RUN_WORKFLOW` Binding | 真实 Run 执行所有权、重试和 TTL。 | `wrangler.jsonc` 已声明；不需要单独 Key。 |
@@ -31,7 +33,7 @@
 | Preview Secret | 独立 `BETTER_AUTH_SECRET`。 | 已以加密 Secret 写入，不进入 Git。 |
 | 模型与沙箱 Secret | 现有 Gemini/E2B 账号。 | `GEMINI_API_KEY`、`E2B_API_KEY` 已加密写入；精确 Template ID 由仓库配置。 |
 | 私有访问 | owner 邮箱。 | 已以 `ACCESS_ALLOWED_EMAILS` Secret 写入；`ACCESS_MODE=allowlist`。 |
-| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi/Goose、取消、deadline、Run/Terminal/Preview expiry 与空闲回收已成功，复杂任务限额仍需观察。 |
+| Cloudflare Workflow | `agent-online-preview-run`。 | 已创建；真实 Pi、取消、deadline、Run/Terminal/Preview expiry 与空闲回收已成功，复杂任务限额仍需观察。 |
 | Sentry | `dylandeyunma/agent-online`。 | Error Monitoring、服务端/浏览器 DSN 和 Worker/React 源码映射已配置；Logs、Tracing、Metrics 与 Replay 关闭。 |
 
 当前部署为 `RUNS_ENABLED=true`，但仍受邮箱 allowlist 保护。owner 已完成注册、Project smoke、真实 Run、Files、Terminal、固定 Vite Preview 和只读 Changes；出现异常成本或 Provider 故障时，将该开关改回 `false` 并重新部署。`RUNS_ENABLED` 只关闭新 AgentRun，不会自动终止已有 Terminal/Preview；需要分别显式停止。实际资源与 Dashboard 入口见 [Cloudflare Preview 资源台账](./cloudflare-preview-resources.md)。
@@ -70,7 +72,7 @@ Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用
 | GitHub 仓库导入/同步 | GitHub App ID、Private Key、Webhook Secret。 | 先单独设计仓库权限、安装范围、撤销和沙箱凭据流。 |
 | BYOK | 用户 Key 加密与轮换基础设施。 | 先通过独立 ADR 决定加密、访问、撤销和泄漏响应。 |
 | 第二个 Sandbox Provider | 对应 Provider 账号和服务端 Key。 | 已有 Provider 无关的窄接口和 E2B adapter；第二个真实 Provider adapter、能力声明和 E2E 均未实现。 |
-| 第二个 Agent Runtime | 该 Agent 所需许可与模型凭据路径。 | Goose adapter、组合模板、事件、ModelGateway、D1/Workflow/TTL 已通过；输出脱敏和浏览器公开验收仍待完成。 |
+| 其他 Agent Runtime | 独立 ADR、适配器、凭据路径与端到端验收。 | 当前不支持。 |
 
 ## 5. 当前明确不需要
 
@@ -78,7 +80,6 @@ Preview E2E。未来涉及执行顺序或 trigger 的 Preview 发布继续使用
 - Stripe、价格、套餐、订阅、充值、发票或支付 Webhook。
 - Google OAuth Client ID/Secret 或其他第三方登录配置。
 - SMTP、Resend、邮箱验证和密码找回服务。
-- Goose 独立模型凭据；它复用短时 ModelGateway capability。Claude Code 或 Codex CLI 凭据也不需要。
 - 把 Cloudflare Account ID/API Token 当作 Worker 运行时 Secret。
 
 每次新增外部依赖时，先更新本表的用途、数据边界、是否敏感、谁负责提供和删除方式，再修改代码或远程资源。

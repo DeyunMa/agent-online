@@ -1,6 +1,8 @@
 # 环境变量与 Worker Binding
 
-> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi/Goose 组合模板、受控 Terminal、Project Preview、Changes 和脱敏 Sentry Error Monitoring 均已完成私有 Cloudflare 配置；私有 Preview 的仓库部署目标使用 `public` 模式向 allowlist 用户公开 Pi/Goose 选择。
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
+> 状态：Better Auth、Gemini 3.6 Flash ModelGateway、E2B、Workflow、Pi-only 模板、受控 Terminal、Project Preview、Changes 和脱敏 Sentry Error Monitoring 均已完成私有 Cloudflare 配置；仓库能力接口仅向 allowlist 用户公布 Pi。
 > 关联：[示例文件](../../.dev.vars.example) · [外部依赖与待补充项](./external-dependencies.md) · [数据、认证与模型](../architecture/03-data-auth-and-models.md)
 
 ## 1. 先区分三类配置
@@ -29,9 +31,9 @@
 
 | 变量 | 何时需要 | 用途 |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | 真实 Pi/Goose Run 或显式 E2E 时。 | 只由 Worker ModelGateway 调用平台 Gemini；不进入沙箱。 |
-| `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi/Goose + Gemini E2E](../testing/e2b-agent-runtimes-gemini.md) 时。 | 只供服务端创建和管理沙箱。 |
-| `E2B_TEMPLATE_ID` | `RUNTIME_PROVIDER=e2b` 或运行真实 spike 时。 | 非敏感的精确 E2B build reference；只由服务端创建沙箱时读取。 |
+| `GEMINI_API_KEY` | 真实 Pi Run 或显式 E2E 时。 | 只由 Worker ModelGateway 调用平台 Gemini；不进入沙箱。 |
+| `E2B_API_KEY` | `RUNTIME_PROVIDER=e2b` 或显式运行 [E2B + Pi + Gemini E2E](../testing/e2b-pi-gemini.md) 时。 | 只供服务端创建和管理沙箱。 |
+| `E2B_TEMPLATE_ID` | `RUNTIME_PROVIDER=e2b` 或运行真实 spike 时。 | 非敏感的精确 E2B build reference；本地放 `.dev.vars`，发布时从 shell/CI 的 `E2B_TEMPLATE_ID` 注入并由脚本显式传给 Wrangler。仅在 Dashboard 设置不能满足本地发布校验。 |
 
 `BETTER_AUTH_SECRET` 用 `openssl rand -base64 32` 独立生成，至少保持 32 个高熵字符。不要复用 Gemini 或 E2B Key。
 
@@ -45,14 +47,10 @@ BYOK 尚未设计，因此不需要 `CREDENTIAL_ENCRYPTION_KEY`、模型租约 S
 | `DEFAULT_MODEL_ID` | `gemini-3.6-flash` | ModelGateway 的服务端默认模型。 |
 | `RUNTIME_IDLE_TTL_SECONDS` | `600` | Project 空闲多久后由 Workflow 停止当前沙箱。 |
 | `MAX_RUN_WALL_SECONDS` | `1800` | 单个 AgentRun 最大墙钟时间；最大 3600 秒。 |
-| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-goose-runtime:<build-id>` | Pi + Goose 组合模板的不可变 build reference。当前 v4 还固定 npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/进程诊断/原生编译工具，以及只读 `/opt/agent-online/preview` 下的平台 Vite；能力清单写入只读 manifest。构建方式见 [真实链路 E2E](../testing/e2b-agent-runtimes-gemini.md)。 |
+| `E2B_TEMPLATE_ID` | 精确 `agent-online-pi-runtime:<build-id>` | Pi-only 模板的不可变 build reference。当前 v3 还固定 npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/进程诊断/原生编译工具，以及只读 `/opt/agent-online/preview` 下的平台 Vite；能力清单写入只读 manifest。构建方式见 [真实链路 E2E](../testing/e2b-pi-gemini.md)。 |
 | `MODEL_GATEWAY_BASE_URL` | 通常不设置 | 本地 E2B 无法访问 `localhost` 时，覆盖为公开 HTTPS tunnel；代码只保留固定网关路径。 |
-| `GOOSE_RUNTIME_MODE` | 普通开发不设置或 `disabled`；私有 Preview 为 `public` | `disabled` 只允许 Pi；`spike` 允许显式 API/E2E 调用 Goose但不向 UI 公布；`public` 通过安全 capabilities 公布选项，创建 Run 仍要求认证和 Project 所有权。只有 E2B 支持 Goose。 |
 | `SENTRY_ENVIRONMENT` | 本地通常不设置；Preview 为 `preview` | 服务端错误事件的固定环境标签；没有 DSN 时不会初始化 SDK。 |
 
-当前默认 AgentRuntime 固定为 `pi`，不是环境变量。`GOOSE_RUNTIME_MODE` 只控制第二 adapter 的执行与公开门槛，不改变 Project 默认值。
-`spike` 和 `public` 都不构成用户权限边界；认证与邮箱 allowlist 仍负责访问控制。
-`public` 只决定 `/api/capabilities` 和 UI 是否公布 Goose，不能绕过 Project 所有权。
 
 ## 5. Sentry 错误监控与源码映射
 

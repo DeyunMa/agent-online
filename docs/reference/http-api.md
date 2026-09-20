@@ -1,5 +1,7 @@
 # HTTP、SSE 与 WebSocket 接口设计
 
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
 > 文档状态：当前公开接口基准
 >
 > 校准日期：2026-07-30
@@ -99,7 +101,7 @@ Schema 会移除未知字段；服务端仍须通过独立 DTO 显式选择公�
 type ProjectResponse = {
   id: string;
   title: string;
-  defaultAgentRuntimeId: "pi" | "goose" | "claude-code" | "codex-cli";
+  defaultAgentRuntimeId: "pi" | "claude-code" | "codex-cli";
   createdAt: string;
   updatedAt: string;
   sandboxLease: null | {
@@ -123,7 +125,7 @@ type AgentRunResponse = {
   id: string;
   inputMessageId: string | null;
   sandboxLeaseId: string;
-  agentRuntimeId: "pi" | "goose" | "claude-code" | "codex-cli";
+  agentRuntimeId: string; // 历史 Run 保留原始标识
   sandboxRuntimeId: "fake" | "e2b" | "cloudflare-container";
   modelId: string;
   status:
@@ -167,8 +169,8 @@ type AgentRunResponse = {
 
 ```ts
 type PlatformCapabilitiesResponse = {
-  agentRuntimeIds: Array<"pi" | "goose" | "claude-code" | "codex-cli">;
-  defaultAgentRuntimeId: "pi" | "goose" | "claude-code" | "codex-cli";
+  agentRuntimeIds: Array<"pi" | "claude-code" | "codex-cli">;
+  defaultAgentRuntimeId: "pi" | "claude-code" | "codex-cli";
   runCreationEnabled: boolean;
   changesEnabled: boolean;
   fileUploadEnabled: boolean;
@@ -478,7 +480,14 @@ Content-Type: application/json
 - capability 必须有效，且 D1 中对应 Run 仍为 `starting` 或 `running`。
 - 请求模型必须与 AgentRun 的 `model_id` 一致。
 - 请求体最多 4 MiB；即使缺少或伪造 `Content-Length`，Worker 也按实际读取字节数中止。
-- Worker 强制输出 token 上限，把平台 Gemini Key 注入上游请求。
+- Worker 强制输出 token 上限，通过 AI SDK Google Provider 把平台 Gemini Key 注入原生 API 请求。
+- 当前兼容面接受文本消息、文本 content parts、function tools、tool results 和
+  `auto` / `none` / `required` / 指定函数的 tool choice；system/developer 转为 SDK instructions。
+  当前 Runtime 未暴露多模态输入，远程媒体 URL 不允许触发 Worker 下载。
+  对带工具的 `parallel_tool_calls=false` 返回 400：原生 Google Provider 无等价强制串行选项。
+- SDK 产生的工具调用只转给沙箱执行；流式调用仍有界缓冲，转换为 OpenAI SSE、usage 与
+  `[DONE]`，不是浏览器逐 token 推送。签名分别通过 Pi reasoning_details 与 Google
+  extra_content 携带，不返回 reasoning 文本。
 - Worker 到 Gemini 的单次上游 POST 最长 120 秒；deadline 到期返回通用
   `504 model_timeout`，且不会自动重放非幂等模型请求。
 - 成功上游响应最多缓冲 8 MiB，错误诊断最多读取 64 KiB；超限或非 UTF-8 响应统一拒绝。

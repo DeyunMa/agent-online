@@ -1,14 +1,14 @@
-import type { AgentRuntime, AgentRuntimeId } from "../agent/contract";
+import type { AgentRuntime } from "../agent/contract";
+import type { AgentRunExecutionStarter } from "../application/create-agent-run";
 import type {
   AgentRunRecord,
   AgentRunRepository,
   SandboxLeaseRepository,
 } from "../application/ports";
-import type { AgentRunExecutionStarter } from "../application/create-agent-run";
 import { RunCoordinator } from "../application/run-coordinator";
 import { isTerminalAgentRun } from "../domain/agent-run";
-import type { SandboxRuntime } from "../runtime/contract";
 import type { DiagnosticContext, DiagnosticReporter } from "../observability/contract";
+import type { SandboxRuntime } from "../runtime/contract";
 import { createE2BRunExecution } from "./e2b-run-execution";
 import type { AgentRunWorkflowPayload, AppBindings } from "./env";
 import { createDiagnosticReporter } from "./observability/reporter";
@@ -22,7 +22,7 @@ export function createInlineFakeDispatcher(
   agentRuns: AgentRunRepository,
   sandboxLeases: SandboxLeaseRepository,
   runtime: SandboxRuntime,
-  getAgentRuntime: (id: AgentRuntimeId) => AgentRuntime,
+  getAgentRuntime: (id: string) => AgentRuntime,
   diagnostics?: DiagnosticReporter,
 ): RunExecutionDispatcher {
   const coordinator = new RunCoordinator({

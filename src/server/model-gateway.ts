@@ -4,13 +4,16 @@ import {
   type DiagnosticReporter,
   noopDiagnosticReporter,
 } from "../observability/contract";
+import {
+  createSdkCompletionResponse,
+  SdkUpstreamError,
+  toSdkCompletionInput,
+} from "./model-gateway-ai-sdk";
 import { readBoundedText } from "./model-gateway-body";
 import {
   type ModelGatewayUsage,
-  normalizeStreamingToolProtocol,
   parseOpenAiCompletionRequest,
   readOpenAiUsage,
-  toUpstreamRequest,
 } from "./model-gateway-protocol";
 
 export type { ModelGatewayUsage } from "./model-gateway-protocol";
@@ -122,12 +125,12 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
       );
     }
 
-    const upstreamRequest = toUpstreamRequest(parsed, capability.maxOutputTokens);
+    const upstreamRequest = toSdkCompletionInput(parsed, capability.maxOutputTokens);
     if (!upstreamRequest) {
       return gatewayError(
         400,
         "invalid_request_error",
-        "The completion request exceeds the Run limits.",
+        "The completion request or Run limits are not supported by this ModelGateway.",
       );
     }
 
@@ -161,23 +164,19 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
       let upstreamResponse: Response;
       const timeoutSignal = AbortSignal.timeout(upstreamTimeoutMs);
       try {
-        upstreamResponse = await fetchImplementation(
-          `${modelApiBaseUrl}/v1beta/openai/chat/completions`,
-          {
-            body: JSON.stringify(upstreamRequest),
-            headers: {
-              accept: parsed.stream ? "text/event-stream" : "application/json",
-              authorization: `Bearer ${options.geminiApiKey}`,
-              "content-type": "application/json",
-            },
-            method: "POST",
-            signal: AbortSignal.any([request.signal, timeoutSignal]),
-          },
-        );
-      } catch {
+        upstreamResponse = await createSdkCompletionResponse(upstreamRequest, {
+          modelId: parsed.model,
+          stream: parsed.stream,
+          apiKey: options.geminiApiKey,
+          baseURL: modelApiBaseUrl,
+          fetchImplementation,
+          signal: AbortSignal.any([request.signal, timeoutSignal]),
+        });
+      } catch (error) {
+        const stage = error instanceof SdkUpstreamError ? error.stage : "upstream_fetch";
         reportMeasurement(diagnostics, {
           runId: capability.runId,
-          stage: "upstream_fetch",
+          stage,
           outcome: "failed",
           durationMs: performance.now() - upstreamStarted,
         });
@@ -188,7 +187,7 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
             modelId: capability.modelId,
             outcome: "failed",
             runId: capability.runId,
-            stage: "upstream_fetch",
+            stage,
           });
           return gatewayError(504, "model_timeout", "The upstream model request timed out.");
         }
@@ -199,9 +198,11 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
           modelId: capability.modelId,
           outcome: "failed",
           runId: capability.runId,
-          stage: "upstream_fetch",
+          stage,
         });
-        return gatewayError(502, "model_unavailable", "The upstream model request failed.");
+        return stage === "upstream_response"
+          ? gatewayError(502, "invalid_model_response", "The upstream model response was invalid.")
+          : gatewayError(502, "model_unavailable", "The upstream model request failed.");
       }
 
       reportMeasurement(diagnostics, {
@@ -285,9 +286,7 @@ export function createOpenAiCompatibleModelGateway(options: ModelGatewayOptions)
         );
       }
 
-      const responseBody = parsed.stream
-        ? normalizeStreamingToolProtocol(upstreamBody)
-        : upstreamBody;
+      const responseBody = upstreamBody;
       const usage = readOpenAiUsage(responseBody, parsed.stream);
       if (!usage) {
         diagnostics.report({

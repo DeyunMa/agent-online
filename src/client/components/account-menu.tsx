@@ -62,6 +62,9 @@ export function AccountMenu({ email, isSigningOut, name, onSignOut, placement }:
               <ChartNoAxesColumn aria-hidden="true" size={16} />
               <span>Usage</span>
             </DropdownMenuItem>
+            <DropdownMenuItem className="min-h-9" render={<Link to="/settings/connections" />}>
+              <span>Connected apps</span>
+            </DropdownMenuItem>
             <DropdownMenuItem className="min-h-9" disabled={isSigningOut} onClick={onSignOut}>
               {isSigningOut ? (
                 <LoaderCircle aria-hidden="true" className="spin" size={16} />

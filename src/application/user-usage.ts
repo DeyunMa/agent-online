@@ -1,4 +1,3 @@
-import type { AgentRuntimeId } from "../agent/contract";
 import type { AgentRunUsage } from "./ports";
 
 export type UsageMetrics = AgentRunUsage & {
@@ -13,7 +12,7 @@ export type ProjectUsageSummary = {
 };
 
 export type AgentRuntimeUsageSummary = {
-  agentRuntimeId: AgentRuntimeId;
+  agentRuntimeId: string;
   usage: UsageMetrics;
 };
 

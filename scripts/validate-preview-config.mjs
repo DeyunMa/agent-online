@@ -9,6 +9,7 @@ if (!preview) {
   errors.push("wrangler.jsonc must define env.preview");
 } else {
   const vars = preview.vars ?? {};
+  const templateId = process.env.E2B_TEMPLATE_ID;
   const database = preview.d1_databases?.find(({ binding }) => binding === "DB");
 
   if (typeof preview.account_id !== "string" || !/^[a-f0-9]{32}$/u.test(preview.account_id)) {
@@ -24,23 +25,12 @@ if (!preview) {
   }
 
   if (
-    typeof vars.E2B_TEMPLATE_ID !== "string" ||
-    vars.E2B_TEMPLATE_ID.trim() === "" ||
-    vars.E2B_TEMPLATE_ID.includes("replace-with")
+    typeof templateId !== "string" ||
+    !/^agent-online-pi-runtime:[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(templateId)
   ) {
-    errors.push("env.preview E2B_TEMPLATE_ID must be an exact E2B template build reference");
-  }
-
-  const gooseRuntimeMode = vars.GOOSE_RUNTIME_MODE ?? "disabled";
-  if (!["disabled", "spike", "public"].includes(gooseRuntimeMode)) {
-    errors.push("env.preview GOOSE_RUNTIME_MODE must be disabled, spike, or public");
-  }
-
-  if (
-    gooseRuntimeMode !== "disabled" &&
-    !vars.E2B_TEMPLATE_ID?.startsWith("agent-online-pi-goose-runtime:")
-  ) {
-    errors.push("env.preview must use the combined Pi/Goose template when Goose is enabled");
+    errors.push(
+      "Set E2B_TEMPLATE_ID in the deployment environment to an exact Pi-only build reference",
+    );
   }
 
   if (vars.ACCESS_MODE !== "allowlist") {

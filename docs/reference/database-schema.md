@@ -2,9 +2,15 @@
 
 > 文档状态：当前 schema 基准
 >
-> 校准日期：2026-09-20（0009 为本地变更）
+> 校准日期：2026-09-20（发布状态见对应 status 记录）
 >
-> 权威来源：`migrations/0001_app.sql` 至 `migrations/0009_resource_admission.sql`
+> 权威来源：`migrations/0001_app.sql` 至 `migrations/0010_mcp_oauth.sql`
+
+`0010` 增加 Better Auth OAuth Provider 与 JWT 的认证表：`jwks`（加密私钥/公钥）、
+`oauthClient`（客户端注册）、`oauthConsent`（scope 同意）、`oauthRefreshToken`、
+`oauthAccessToken`（插件需要的 token 记录）。令牌采用插件默认 hash 存储；JWT access token
+由签名校验，短期有效。类型映射位于 `mcp-auth-schema.ts` 并从 `schema.ts` 导出。
+这些表不能经 MCP 读取；不增加业务写工具或原始内容采集。详见 [MCP 合同](./mcp-api.md)。
 
 当前版本只使用 D1 保存产品状态。Project 文件、终端滚屏、Preview 内容、Git diff 和 raw Agent transcript 均不进入 D1，也没有 R2 副本。
 
@@ -183,7 +189,7 @@ Project 标题可更新；硬删除不新增字段或历史表。
 | `project_id` | `TEXT NOT NULL`，FK `projects.id`，`ON DELETE CASCADE` | 所属 Project。 |
 | `input_message_id` | `TEXT NULL`，FK `messages.id`，`ON DELETE SET NULL` | 本次 Run 的用户输入。 |
 | `sandbox_lease_id` | `TEXT NOT NULL`，FK `sandbox_leases.id`，`ON DELETE RESTRICT` | 本次 Run 使用的逻辑 Lease。 |
-| `agent_runtime_id` | `TEXT NOT NULL` | `pi` 或受控的 `goose`。 |
+| `agent_runtime_id` | `TEXT NOT NULL` | 当前新 Run 为 `pi`；历史 Run 保留原始 runtime 标识。 |
 | `sandbox_runtime_id` | `TEXT NOT NULL` | 创建 Run 时绑定的 SandboxRuntime。 |
 | `model_id` | `TEXT NOT NULL` | 创建 Run 时绑定的模型。 |
 | `status` | `TEXT NOT NULL CHECK (...)` | Run 状态机。 |
@@ -356,3 +362,7 @@ agent_runs_resource_admission 和 terminal_sessions_resource_admission 在插入
 用户总并发并更新小时计数；失败回滚原语句/创建 batch。agent_runs_model_admission 在
 增加 Run 私有准入次数时更新用户日计数。它们不改变 usage 归档合同，不存任何用户内容。
 详细失败语义与限额见 [ADR-0012](../adr/0012-user-resource-admission.md)。
+
+## MCP 认证加固（0011）
+
+Better Auth / OAuth Provider / CIMD 升级到 1.7.5。0011 增加 oauthResource、oauthClientResource、oauthClientAssertion 以及认证发现、resource、令牌轮换和授权码重放字段。既有 oauthClient.type/public 仅作为旧物理列保留，不增加双读逻辑。既有客户端填充 applicationType 和空机器权限，JWKS 补充 EdDSA/Ed25519 元数据；不删除账号、业务数据或用户授权。迁移与 Drizzle 映射由 D1 测试核对。

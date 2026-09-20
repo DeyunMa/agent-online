@@ -1,5 +1,7 @@
 # ADR-0004：以组合模板受控验证 Goose AgentRuntime
 
+> 已被 [ADR-0014](./0014-remove-goose-runtime.md) 取代（2026-09-20）。本文仅保留历史决策，不再是实现或部署指令。
+
 - 状态：Accepted；已批准在受 allowlist 保护的产品 UI 中启用
 - 日期：2026-07-26
 - 关联：[ADR-0002](./0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0003](./0003-agent-run-workflow.md) · [运行时边界](../architecture/02-sandbox-runtime.md)

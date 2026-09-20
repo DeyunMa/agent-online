@@ -24,6 +24,7 @@ export function requestMeasurement(
 }
 
 export function classifyRoute(path: string): NonNullable<DiagnosticEvent["route"]> {
+  if (path === "/mcp") return "mcp";
   if (path.startsWith("/api/auth/")) return "auth";
   if (path === "/api/usage") return "usage";
   if (path.includes("/model-gateway/")) return "model_gateway";

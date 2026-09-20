@@ -22,7 +22,7 @@ describe("D1 AgentRun repository", () => {
       ]),
       result([
         {
-          agent_runtime_id: "goose",
+          agent_runtime_id: "pi",
           created_at: "2026-07-25T00:00:00.000Z",
           failure_code: null,
           finished_at: null,
@@ -46,7 +46,7 @@ describe("D1 AgentRun repository", () => {
 
     const created = await new D1AgentRunRepository(db.asBinding()).createQueuedWithInput({
       agentRunId: "run-1",
-      agentRuntimeId: "goose",
+      agentRuntimeId: "pi",
       content: "Build a demo",
       inputMessageId: "message-1",
       modelId: "gemini-2.5-flash",
@@ -61,7 +61,7 @@ describe("D1 AgentRun repository", () => {
       inputMessage: { agentRunId: null, id: "message-1", sequence: 0 },
       kind: "created",
       run: {
-        agentRuntimeId: "goose",
+        agentRuntimeId: "pi",
         id: "run-1",
         status: "queued",
         usage: { totalTokens: 0 },

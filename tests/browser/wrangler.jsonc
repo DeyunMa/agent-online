@@ -4,10 +4,18 @@
   "main": "../../worker/index.ts",
   "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
+  "ratelimits": [
+    { "name": "MCP_RATE_LIMIT", "namespace_id": "1005", "simple": { "limit": 60, "period": 60 } },
+    {
+      "name": "MCP_REGISTRATION_LIMIT",
+      "namespace_id": "1006",
+      "simple": { "limit": 10, "period": 60 }
+    }
+  ],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/.well-known/*"]
   },
   "vars": {
     "ACCESS_MODE": "open",

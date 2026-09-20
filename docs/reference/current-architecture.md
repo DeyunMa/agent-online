@@ -1,10 +1,12 @@
 # 当前项目架构
 
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
 > 文档状态：当前实现基准
 >
 > 校准日期：2026-09-09（代码与远程验收基准）
 >
-> 适用范围：仓库当前代码、下一次 Cloudflare Preview 配置和 E2B 组合模板；远程已部署事实以资源台账为准
+> 适用范围：仓库当前代码、下一次 Cloudflare Preview 配置和 E2B Pi-only 模板；远程已部署事实以资源台账为准
 
 本文描述 Agent Online **现在实际运行的架构**。ADR 负责记录决策原因，阶段文档负责保存验收证据；本文只回答当前系统由什么组成、各层负责什么以及数据如何流动。
 
@@ -12,7 +14,7 @@
 
 Agent Online 是一个个人开发、开源导向的 Hosted Coding Agent SaaS 学习项目。用户通过浏览器注册、创建 Project，并在远程隔离沙箱中运行 Coding Agent。
 
-浏览器中展示的是 Agent 控制台，不是“浏览器内 Agent”。真实 Pi/Goose 进程、工具调用和 Project 文件都位于沙箱内；Cloudflare Worker 位于沙箱外，负责产品控制面。
+浏览器中展示的是 Agent 控制台，不是“浏览器内 Agent”。真实 Pi 进程、工具调用和 Project 文件都位于沙箱内；Cloudflare Worker 位于沙箱外，负责产品控制面。
 
 当前产品边界：
 
@@ -21,7 +23,7 @@ Agent Online 是一个个人开发、开源导向的 Hosted Coding Agent SaaS �
 - Project 可重命名或由所有者硬删除。删除拒绝活动 Run、Terminal/Preview，先停止空闲
   Provider sandbox，再级联删除 D1 子记录；没有回收站。
 - Project 文件只存在于当前沙箱文件系统；D1 不保存文件内容，R2 不参与当前版本。
-- Pi 是默认 Runtime；私有 Preview 的安全能力接口公布 Pi/Goose，已登录 allowlist 用户可按 AgentRun 选择。
+- Pi 是默认 Runtime；私有 Preview 的安全能力接口公布 Pi，已登录 allowlist 用户可按 AgentRun 选择。
 - 计量只做真实用量观察，不包含套餐、账单、支付或配额扣减。
 
 ## 2. 部署拓扑
@@ -41,13 +43,13 @@ flowchart LR
 
   subgraph SB["E2B Project Sandbox"]
     FS[("/workspace")]
-    AR["AgentRuntime<br/>Pi; Goose capability-gated"]
+    AR["AgentRuntime<br/>Pi"]
     PTY["Controlled PTY"]
     PV["Fixed Vite Preview"]
     GIT["Read-only Git inspection"]
   end
 
-  G["Gemini OpenAI-compatible API"]
+  G["Gemini native API via AI SDK"]
   S["Sentry Error Monitoring<br/>sanitized errors only"]
 
   B -->|"same-origin HTTPS / SSE / WebSocket"| H
@@ -90,8 +92,8 @@ flowchart LR
 | Markdown | react-markdown、remark-gfm | 最终回复的安全 GFM 展示；原始 HTML 和远程图片不渲染。 |
 | API 与认证 | Hono、Better Auth | 同源边界、会话认证、Project 授权和公开 DTO。 |
 | 数据访问 | D1、Drizzle、条件 SQL/batch | Drizzle 映射现有 12 张表并访问 Project/Message；复杂生命周期保留原子 SQL。迁移仍是物理 schema 真相源。 |
-| 执行 | Cloudflare Workflows、E2B、Pi/Goose adapter | Workflow 拥有 Run；Agent 进程及用户代码只在沙箱。 |
-| 模型协议与令牌 | ModelGateway、eventsource-parser、jose | 上游 SSE 边界解析、Gemini 协议转换、实际 usage 与短时 HS256 JWT。 |
+| 执行 | Cloudflare Workflows、E2B、Pi adapter | Workflow 拥有 Run；Agent 进程及用户代码只在沙箱。 |
+| 模型协议与令牌 | ModelGateway、AI SDK Core/Google Provider、jose | 统一模型调用、原生 Gemini 与 Agent 协议转换、实际 usage 与短时 HS256 JWT。 |
 | 验证与观测 | Vitest、Workers D1 tests、Playwright、Biome、Sentry | 工程门禁和脱敏 Error Monitoring。 |
 
 实际依赖版本以 [package.json](../../package.json) 和锁文件为准。
@@ -135,8 +137,8 @@ SandboxLease 是逻辑记录，不表示沙箱永久存在。连续 Run 可以�
 | `src/application/` | Project/Run/Files/Changes/Terminal/Preview/Usage 用例编排 | 不依赖 Hono 或浏览器状态。 |
 | `src/domain/` | AgentRun、SandboxLease 等 Provider 无关规则 | 不依赖框架、D1、E2B 或具体 Agent。 |
 | `src/observability/` | Provider 无关的诊断码、受控事件字段和 `DiagnosticReporter` 接口 | 不依赖 Hono、Cloudflare console、D1 或外部观测 SDK。 |
-| `src/runtime/` | Sandbox 生命周期、进程、文件、PTY、Preview、Changes 能力接口和 E2B/fake adapter | 不理解 Pi/Goose 协议或产品鉴权。 |
-| `src/agent/` | AgentRuntime 合同，以及 Pi/Goose CLI 协议归一化 | 不直接持有 Gemini Key，不管理 SandboxLease。 |
+| `src/runtime/` | Sandbox 生命周期、进程、文件、PTY、Preview、Changes 能力接口和 E2B/fake adapter | 不理解 Pi 协议或产品鉴权。 |
+| `src/agent/` | AgentRuntime 合同，以及 Pi CLI 协议归一化 | 不直接持有 Gemini Key，不管理 SandboxLease。 |
 | `src/shared/` | 最低层的公开协议字面量，以及浏览器和 Worker 共享的 DTO | 不导入内部 application/server 实现，不包含 Provider 私有字段。 |
 | `worker/` | Cloudflare Worker 导出入口 | 不承载业务用例实现。 |
 
@@ -316,7 +318,6 @@ Provider reference、Key、capability、异常 message 或 stack。
 | 邮箱密码注册/登录 | 已实现；可配置 open/allowlist。 |
 | Project、Message、AgentRun | 已实现。 |
 | Pi + Gemini | 已公开并通过真实 E2E。 |
-| Goose | adapter、组合模板和远端真实链路已完成；私有 Preview UI 按服务端能力向已登录用户公开。 |
 | Files | E2B 下受控读取；fake 下明确 unavailable。 |
 | File upload | E2B 下向现有空闲沙箱根目录上传一个受控文件；不创建沙箱或持久副本。 |
 | Usage | 合并现存 Run 与删除归档的当前用户 all-time 聚合；无计费语义。 |

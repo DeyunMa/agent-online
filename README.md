@@ -1,6 +1,8 @@
 # Agent Online
 
-> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-09-09 已部署对话界面与开发依赖简化，保留 v4 Workspace 模板、脱敏 Sentry、受控 Project 能力和 Pi/Goose 选择；配额、BYOK 和公开注册仍不在当前实现中。
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](./docs/adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
+> 状态：D2 真实执行、D3 受控 Files/Usage/Terminal/Preview/Changes、Project 生命周期和 D4 Goose 真实链路均已完成既定验收。2026-09-09 已部署对话界面与开发依赖简化，保留 v4 Workspace 模板、脱敏 Sentry、受控 Project 能力和 Pi 选择；配额、BYOK 和公开注册仍不在当前实现中。
 
 Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目。用户在浏览器中注册、创建 Project、启动隔离 Linux 沙箱，并通过受控界面使用 Agent、终端、文件、preview 和当前 Git changes。
 
@@ -26,15 +28,20 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
 
 ## 当前实现
 
+- 同一 Worker 提供有 OAuth 授权的只读 `/mcp`，覆盖系统语义、当前用户项目、Run 和
+  all-time 用量。接入及边界见 [MCP 合同](./docs/reference/mcp-api.md)，实际部署/验收状态见
+  [实施记录](./docs/status/2026-09-20-readonly-mcp.md)。
+
 - Better Auth 邮箱密码注册/登录，用户直接拥有 Project。
 - Project 支持受所有权保护的重命名和硬删除。删除会拒绝活动 Run、Terminal 或 Preview，
   先停止空闲沙箱，在同一 D1 batch 中归档最小 Run usage，再级联删除 Message、
   AgentRun 和 Lease；不提供回收站。
-- Pi 是默认 AgentRuntime；Goose 第二 Runtime 已按 ADR-0004 完成真实链路验收。私有 Preview 由 `/api/capabilities` 公布 Pi/Goose，已登录 allowlist 用户按 Run 选择。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
+- Pi 是默认 AgentRuntime；当前只安装 Pi adapter。私有 Preview 由 `/api/capabilities` 公布 Pi，已登录 allowlist 用户按 Run 选择。`FakeSandboxRuntime` 用于无外部成本的本地控制面开发，且明确不提供跨请求 Files；`E2BSandboxRuntime` 提供真实进程、受控文件读写、精确进程终止和沙箱停止。
 - D1 持久化认证、Project、用户输入、最终 assistant Message、Lease、Run 状态和聚合 usage；一个 Project 同时最多一个非终态 Run。成功终态、sandbox duration、最终 assistant Message 和 Project touch 在一个 D1 batch 中完成，取消竞态不会留下成功回复。
 - 普通产品 API 使用统一的点分错误码、HTTP/retryable 映射和 `requestId`；AgentRun 持久化稳定 `failureCode`。结构化日志使用 `requestId` 定位一次请求、使用已有 `runId` 关联创建、Workflow、ModelGateway、取消、终态和 idle cleanup。Preview 还启用了同一窄 `DiagnosticReporter` 外层的 Sentry Error Monitoring；两条路径都不记录用户内容或 Provider 私有值。
 - 普通产品 mutation 在进入鉴权和 JSON 解析前统一要求同源，并限制请求体为 256 KiB；API 与静态资源分别设置安全响应头，构建门禁会校验 `_headers` 未丢失。
 - 每个真实 Run 由一个 Cloudflare Workflow 拥有。Workflow 参数只有应用级 Project/Run ID，提示词从 D1 回读。
+- ModelGateway 的供应商调用已接入 AI SDK Core + Google Provider，保留 Pi 的 OpenAI 兼容入口；详见 [AI SDK 网关](./docs/reference/model-gateway-ai-sdk.md)。
 - Pi 通过短时 Run capability 调用 Worker ModelGateway。单次上游模型请求有 120 秒 deadline 且不自动重放非幂等 POST；Gemini Key、E2B Key、Provider sandbox ID 和进程引用不会进入浏览器或持久日志。
 - 取消只精确终止已知的当前 Agent 进程并保留 Project 沙箱；启动中的取消等待执行所有者收敛。deadline 和执行所有者丢失在确认终止后写入明确终态，终止失败保留非终态硬锁；Lease 释放和空闲清理使用 D1 条件更新，避免旧请求影响新活动。
 - SSE 当前发布 D1 Run 状态和终态。最终回复在 Run 完成后从 Message API 读取；不持久化 raw Pi transcript 或私有推理。
@@ -58,7 +65,6 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
   目标只有带显式 Cloudflare Account guard 的私有 Preview。`0006` 与 `0007` 均已按
   锁定、九项只读 D1 完整性预检、迁移和解锁顺序发布；同一流程保留为后续 trigger
   变更的发布门禁。
-- Goose 已作为独立 adapter 接入门控 registry；Pi + Goose 组合 E2B 模板已在本地 adapter 和远端产品路径完成 `Pi -> Goose -> Pi`、D1、最终 Message、usage、取消、deadline、空闲回收与 Key 隔离验收。浏览器 Runtime 选择由服务端能力驱动，最终 Message 会精确脱敏当前 Run capability；短时凭据的子工具继承是已记录的受限残余风险。
 - 当前 E2B 组合模板固定以非 root 用户运行，并让该用户拥有 `/workspace`。模板探针会验证目录可写、Git 初始化与 status 可用，避免 Terminal/Agent 创建的 repository 因所有权不一致触发 Git `safe.directory` 拒绝。
 - Project 查询经 application `ProjectReadService` 统一执行 owner scope；Run 空闲回收、
   Terminal/Preview 释放后的回收和手动停止复用同一 `SandboxReclaimer`。客户端将排他
@@ -71,7 +77,7 @@ Agent Online 是一个开源、个人开发的 Hosted Coding Agent 学习项目�
   模态检查器 Drawer。
 - Sentry 只启用 Error Monitoring。React、Hono 和 Workflow 异常经过严格 allowlist 清洗后上报；Logs、Tracing、Replay、Metrics 和用户内容采集均关闭。Preview 部署上传隐藏源码映射，上传后从 `dist` 删除 `.map`。
 
-Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi/Goose Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面独立 Inspector 面板、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi/Goose 选择均已部署；历次登录态浏览器验收覆盖 Inspector 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。
+Cloudflare 私有环境已验证包含沙箱工具调用、多次 Gemini 请求、最终 assistant Message 和真实 usage 的 Pi Run；长任务取消只终止当前 Agent 进程，临时 8 秒配置可准确收敛为 `timed_out`，恢复 1800 秒后长任务再次成功。临时 8 秒空闲 TTL 验证了 Workflow 原子脱离并停止组合模板沙箱；正式值已恢复为 600 秒。Files 已验证真实目录和文本、停止状态、手动停止以及停止后不显示陈旧缓存。Terminal 已验证真实 `/workspace` PTY、Run/Files/Stop 硬互斥、文件跨 Terminal/Pi Run 连续、显式关闭和断线清理。Project Preview 已验证真实 HTML/JS/CSS、Agent 修改后的手动刷新、与 Run/Terminal 并行、活动时阻止整沙箱 Stop、显式停止和 Workflow expiry。Changes 已验证 mixed staged/unstaged、rename、binary、untracked、大 diff 截断、主配置与 worktree config 拒绝、隐藏路径提示、非 repository 状态、no-store 与公开响应脱敏。桌面独立 Inspector 面板、240 px 紧凑左栏、移动端模态 Drawer、受控文件上传和 Pi 选择均已部署；历次登录态浏览器验收覆盖 Inspector 调宽、Pi 创建文件、Files 读回、Preview 渲染、Goose 取消、沙箱停止、Project 删除及删除后用量归档。
 
 2026-09-09 已将对话界面与开发依赖简化部署到私有 Cloudflare Preview，
 部署代码为 `4bb0fdf`，Worker 版本为 `ac6dc824-6d9e-4389-a481-895596b6c9cb`。
@@ -93,7 +99,7 @@ D2 的架构、表结构、远程证据、外部依赖和成本结论已冻结�
 - R2 Project 文件快照、文件版本、回滚、沙箱历史、原始 Agent transcript 或长期终端日志。
 - 团队、组织、Tenant、Membership 或共享 Project。
 - 套餐、价格、订阅、支付、充值、发票、退款和税务。
-- BYOK、第三方登录、Pi/Goose 之外未验收的 Runtime 选择，或把 Claude Code、Codex CLI 的名称直接当作已支持功能。
+- BYOK、第三方登录、Pi 之外未验收的 Runtime 选择，或把 Claude Code、Codex CLI 的名称直接当作已支持功能。
 - 每条消息新建沙箱，或为每个 Project 永久保留一个物理沙箱。
 
 计量仍在范围内，但它服务于成本观察、用户展示和以后接计费，不是商业账单系统。
@@ -136,7 +142,8 @@ V1 的产品数据基础设施只有 D1；Project 文件只存在于沙箱。运
 | [Cloudflare 私有 Preview 部署](./docs/setup/preview-deployment.md) | Preview 白名单、Run 开关、D1/Secret/迁移和分阶段验收步骤。 |
 | [Cloudflare Preview 资源台账](./docs/setup/cloudflare-preview-resources.md) | 已创建资源、Dashboard 查看路径、变量/Secret 名称、日志与运维命令。 |
 | [协调状态恢复](./docs/operations/coordination-recovery.md) | stale Run/Terminal/Preview/Lease 的诊断、停止顺序和受控恢复边界。 |
-| [E2B + Pi/Goose + Gemini E2E](./docs/testing/e2b-agent-runtimes-gemini.md) | 组合模板、两种 adapter、同沙箱文件连续性、usage 与取消的真实验证。 |
+| [ADR-0014](./docs/adr/0014-remove-goose-runtime.md) | 移除 Goose、Pi-only 模板与历史 Run 保留边界。 |
+| [E2B + Pi + Gemini E2E](./docs/testing/e2b-pi-gemini.md) | Pi-only 模板、同沙箱文件连续性、usage 与取消的真实验证。 |
 | [Hosted Preview E2E](./docs/testing/hosted-preview-e2e.md) | 从登录 UI 到真实 Pi、Files、usage、取消、停止和响应脱敏的发布后验收。 |
 | [2026-07-26 D2 阶段基线](./docs/status/2026-07-26-d2-baseline.md) | 当前架构、D1 表、远程验收、成本与 D3 实施顺序。 |
 | [2026-07-26 D3 Files 纵切](./docs/status/2026-07-26-d3-files.md) | 只读 Files 的合同、限制、测试、浏览器验收与剩余风险。 |

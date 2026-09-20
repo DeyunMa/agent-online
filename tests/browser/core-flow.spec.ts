@@ -140,7 +140,7 @@ test("selects an advertised Agent runtime for the next Run", async ({ page }) =>
   await page.route("**/api/capabilities", (route) =>
     route.fulfill({
       body: JSON.stringify({
-        agentRuntimeIds: ["pi", "goose"],
+        agentRuntimeIds: ["pi"],
         changesEnabled: false,
         defaultAgentRuntimeId: "pi",
         fileUploadEnabled: false,
@@ -155,16 +155,8 @@ test("selects an advertised Agent runtime for the next Run", async ({ page }) =>
   await registerAndCreateProject(page, "browser-runtime");
 
   const runtime = page.getByRole("combobox", { name: "Agent runtime", exact: true });
-  await expect(runtime).toBeEnabled();
+  await expect(runtime).toBeDisabled();
   await expect(runtime).toHaveText("Pi");
-  await runtime.focus();
-  await runtime.press("ArrowDown");
-  const runtimeOptions = page.getByRole("listbox", { name: "Agent runtime options" });
-  await expect(runtimeOptions.getByRole("option")).toHaveText(["Pi", "Goose"]);
-  await page.getByRole("option", { name: "Pi", exact: true }).press("ArrowDown");
-  await page.getByRole("option", { name: "Goose" }).press("Enter");
-  await expect(runtime).toHaveText("Goose");
-  await expect(runtime).toBeFocused();
 
   await page.getByLabel("Agent task").fill("Use the selected runtime");
   const requestPromise = page.waitForRequest(
@@ -174,10 +166,9 @@ test("selects an advertised Agent runtime for the next Run", async ({ page }) =>
   const request = await requestPromise;
 
   expect(request.postDataJSON()).toEqual({
-    agentRuntimeId: "goose",
+    agentRuntimeId: "pi",
     content: "Use the selected runtime",
   });
-  await expect(page.getByText("所选 Agent 当前不可用，请选择其他 Agent。")).toBeVisible();
 });
 
 test("uploads one file and opens the Files, Terminal, and Changes inspector views", async ({
@@ -187,7 +178,7 @@ test("uploads one file and opens the Files, Terminal, and Changes inspector view
   await page.route("**/api/capabilities", (route) =>
     route.fulfill({
       body: JSON.stringify({
-        agentRuntimeIds: ["pi", "goose"],
+        agentRuntimeIds: ["pi"],
         changesEnabled: true,
         defaultAgentRuntimeId: "pi",
         fileUploadEnabled: true,

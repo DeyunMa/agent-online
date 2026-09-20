@@ -19,6 +19,11 @@ Agent Online 的文档按用途分层，发生冲突时按以下优先级判断�
 
 ## 当前入口
 
+- [ModelGateway 的 AI SDK 接入](./reference/model-gateway-ai-sdk.md)
+- [只读 MCP 接口与接入说明](./reference/mcp-api.md)
+- [ADR-0013：只读产品分析 MCP](./adr/0013-readonly-product-insights-mcp.md)
+- [MCP 实施与验证过程](./status/2026-09-20-readonly-mcp.md)
+
 - [当前项目架构](./reference/current-architecture.md)
 - [D1 表设计](./reference/database-schema.md)
 - [HTTP、SSE 与 WebSocket 接口](./reference/http-api.md)

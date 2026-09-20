@@ -1,6 +1,8 @@
 # 运行时边界：SandboxRuntime 与 AgentRuntime
 
-> 状态：E2B、Pi/Goose、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-30 已部署受 allowlist 保护的 Pi/Goose UI 选择，并实现受控单文件上传。
+> 2026-09-20 当前代码：仅支持 Pi；Goose 已按 [ADR-0014](../adr/0014-remove-goose-runtime.md) 移除。文中较早的验收与部署记录属于历史事实。新 Pi-only 模板需构建、验证并部署后才会改变线上环境。
+
+> 状态：E2B、Pi、Files、Terminal、Preview 与 Changes 已通过既定验收；2026-07-30 已部署受 allowlist 保护的 Pi UI 选择，并实现受控单文件上传。
 > 关联：[ADR-0002](../adr/0002-run-agent-process-and-lease-lifecycle.md) · [ADR-0004](../adr/0004-goose-agent-runtime-spike.md) · [ADR-0005](../adr/0005-controlled-project-terminal.md) · [ADR-0006](../adr/0006-controlled-project-preview.md) · [ADR-0007](../adr/0007-controlled-project-changes.md) · [系统总览](./01-system-overview.md) · [数据与模型](./03-data-auth-and-models.md)
 
 ## 1. 当前结论
@@ -17,9 +19,7 @@
 | `SandboxChangesRuntime` | 用固定 Git 命令读取当前 working tree/index 的有界 status 与 staged/unstaged diff。 | 任意 Git 命令/revision/pathspec、Run 归因、历史保存或 repository 修改。 |
 | `AgentRuntime` | 以受控进程接口启动某个 Agent，并映射为统一 Agent 事件。 | 创建供应商沙箱、D1 写入、取得 Provider/Gemini 原始 Key。 |
 
-Pi 是默认且已验收的 AgentRuntime。Goose 独立 adapter 已通过组合模板的本地和
-Preview Workflow 真实 E2E，并在受 allowlist 保护的 Preview 中由安全 capability
-公布。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是
+Pi 是唯一已安装的 AgentRuntime。SandboxRuntime 可安装 `fake` 或 `e2b`；`fake` 是本地控制面验证实现，不是
 Linux 沙箱，也不执行真实 Agent 二进制。
 
 当前 E2B 实现仍只公开一个 `E2BSandboxRuntime` adapter；内部按变更原因拆为
@@ -145,7 +145,7 @@ interface AgentExecution {
 
 interface AgentRuntime {
   readonly capabilities: AgentRuntimeCapabilities;
-  readonly id: "pi" | "goose" | "claude-code" | "codex-cli";
+  readonly id: "pi" | "claude-code" | "codex-cli";
   start(
     context: {
       files: { write(path: string, content: string): Promise<void> };
@@ -156,7 +156,7 @@ interface AgentRuntime {
 }
 ```
 
-`AgentRunInput` 只带 Project、Run、应用 Lease ID、工作目录、用户任务和短时 ModelGateway capability。它不包含 Provider 管理凭据、真实 sandbox ID 或 Gemini Key。Pi 适配器实现 RPC JSONL、最终可见文本提取、工具事件归一化、abort 与进程终止；Goose adapter 只能实现自己的固定 headless JSONL 协议，不能复用 Runtime ID 生成任意命令。
+`AgentRunInput` 只带 Project、Run、应用 Lease ID、工作目录、用户任务和短时 ModelGateway capability。它不包含 Provider 管理凭据、真实 sandbox ID 或 Gemini Key。Pi 适配器实现 RPC JSONL、最终可见文本提取、工具事件归一化、abort 与进程终止；registry 只注册 Pi，未知或已退役的 ID 均拒绝执行。
 
 ## 3. 当前生命周期
 
@@ -179,7 +179,7 @@ stateDiagram-v2
 
 1. 每个 Project 只有一条逻辑 Lease。
 2. D1 部分唯一索引与 Terminal trigger 保证每个 Project 同时最多一个非终态 Run 或一条 Terminal 硬锁。
-3. Pi/Goose 适配器都通过受控进程接口得到事件；Goose 只在 `spike` 或 `public` 策略下加入可执行 registry，只有 `public` 才加入公开能力；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止、固定 Preview fetch、受控 Git Changes 和停止沙箱。
+3. Pi 适配器通过受控进程接口得到事件；E2B 适配器支持重连当前沙箱、启动进程与 PTY、按私有 PID 终止、固定 Preview fetch、受控 Git Changes 和停止沙箱。
 4. SSE 在自己的请求内轮询 D1，只返回应用级 `sandboxLeaseId`、Run 状态和终态；不跨请求搬运原始进程输出。
 5. Cloudflare Workflow 拥有长生命周期执行、deadline 和空闲 TTL；取消请求使用 D1 中的私有进程引用跨请求终止当前 Agent。
 
@@ -293,7 +293,6 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 | Runtime | 当前状态 | 能否让用户选择 |
 | --- | --- | --- |
 | Pi | 默认且已验收；支持 fake 控制面与真实 E2B 执行。 | 当前执行路径；选择 UI 随第二 Runtime 一起设计。 |
-| Goose | 独立 adapter、组合模板、ModelGateway、文件连续性、D1、usage、取消、deadline 与 TTL 的本地/Preview E2E 已通过；输出脱敏和浏览器验收待完成。 | 当前不可以。 |
 | Claude Code | 仅预留 Runtime ID。 | 不可以。 |
 | Codex CLI | 仅预留 Runtime ID。 | 不可以。 |
 
@@ -306,8 +305,8 @@ fake Runtime 不提供 Changes。D1 不新增表；平台不保存 diff、Git �
 - Cloudflare Workflow 的执行所有权、重试恢复、跨请求取消、deadline 和空闲 TTL。
 - 真实 Provider sandbox ID 和 process reference 的私有持久化与失效处理。
 - Pi RPC 的最终回复、受控 ModelGateway 通道和真实 usage 聚合。
-- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。当前 v4 组合模板
-  在同一镜像中固定 Node/Pi/Goose、npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/
+- E2B template 必须以 `E2B_TEMPLATE_ID` 指向项目维护的精确 build。当前 Pi-only v3 模板
+  在同一镜像中固定 Node/Pi、npm/pnpm、Python/pip、Git/Bash、rg/jq、归档/
   进程诊断/原生编译工具和只读平台 Preview Vite，并通过
   `/opt/agent-online/manifest.json` 描述平台能力。E2B 默认非 root 用户必须拥有可写的
   `/workspace`，模板探针需实际完成工具版本、目录权限和 Git init/status。不能按 Agent
@@ -334,7 +333,7 @@ E2B 通用进程的 stdout/stderr 合计最多 32 MiB；待消费输出最多 2 
 协调器继续负责失败终态和终止失败时的资源收敛。累计限制同时约束 E2B SDK 自身保留的
 stdout/stderr；它不是模型 token 或费用预算。
 
-Pi/Goose 按 LF 解析 JSONL，每条记录（包括未结束的分片）最多 1 MiB，最终回复最多
+Pi 按 LF 解析 JSONL，每条记录（包括未结束的分片）最多 1 MiB，最终回复最多
 256 KiB UTF-8。解析器逐条消费，不建立整批 JSON 对象数组。协议错误或超限会终止
 Agent 进程并走现有失败路径，不持久化原始协议或错误内容。
 
@@ -343,13 +342,10 @@ Pi 使用模板固定的 [0.82.0 RPC 协议](https://github.com/earendil-works/p
 决定最终回复；`agent_settled` 才结束 Run。工具回合和失败重试的中间说明不会拼入最终
 回复。缺少完整最终消息、最终 `toolUse/error/aborted` 或未 settled 就退出均不能成功。
 `stop/length` 属于可返回的完整 assistant 消息；空文本返回 null，不回退到中间回复。
-Goose 的任意 `toolRequest`（包括失败或不可见请求）都会清空此前的回复候选，
-避免工具尝试前的进度文本被拼接进最终回复。
 
 ## 11. 外部依据
 
 - [Pi RPC](https://pi.dev/docs/latest/rpc) 与 [Pi Provider 配置](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/models.md)
-- [Goose repository](https://github.com/aaif-goose/goose) 与 [Goose CLI commands](https://github.com/aaif-goose/goose/blob/main/documentation/docs/guides/goose-cli-commands.md)
 - [E2B Sandbox 文档](https://e2b.dev/docs/sandbox)
 - [E2B PTY 文档](https://e2b.dev/docs/sandbox/pty)
 - [Cloudflare Workers WebSocket](https://developers.cloudflare.com/workers/runtime-apis/websockets/)

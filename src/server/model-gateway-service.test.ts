@@ -16,18 +16,10 @@ describe("Run-authorized ModelGateway", () => {
       capabilitySecret: secret,
       fetchImplementation: async () =>
         Response.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              index: 0,
-              message: { content: "done", role: "assistant" },
-            },
+          candidates: [
+            { content: { role: "model", parts: [{ text: "done" }] }, finishReason: "STOP" },
           ],
-          usage: {
-            completion_tokens: 4,
-            prompt_tokens: 9,
-            total_tokens: 13,
-          },
+          usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 4, totalTokenCount: 13 },
         }),
       geminiApiKey: "test-gemini-key",
       now: () => now,
@@ -126,8 +118,10 @@ describe("Run-authorized ModelGateway", () => {
     expect((await gateway(createCompletionRequest(token))).status).toBe(429);
     releaseUpstream?.(
       Response.json({
-        choices: [],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        candidates: [
+          { content: { role: "model", parts: [{ text: "done" }] }, finishReason: "STOP" },
+        ],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
       }),
     );
     const response = await first;

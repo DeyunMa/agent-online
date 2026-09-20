@@ -116,7 +116,7 @@ export type UsageMetricsResponse = z.infer<typeof usageMetricsResponseSchema>;
 export const userUsageResponseSchema = z.object({
   agentRuntimes: z.array(
     z.object({
-      agentRuntimeId: agentRuntimeIdSchema,
+      agentRuntimeId: z.string().min(1),
       usage: usageMetricsResponseSchema,
     }),
   ),
@@ -134,7 +134,7 @@ export const userUsageResponseSchema = z.object({
 export type UserUsageResponse = z.infer<typeof userUsageResponseSchema>;
 
 export const agentRunResponseSchema = z.object({
-  agentRuntimeId: agentRuntimeIdSchema,
+  agentRuntimeId: z.string().min(1),
   createdAt: z.string(),
   failureCode: z.enum(agentRunFailureCodes).nullable(),
   finishedAt: z.string().nullable(),
